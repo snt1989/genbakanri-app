@@ -424,8 +424,15 @@
       var cfg = await cfgRes.json();
       if(!cfg || !cfg.apiKey || !cfg.projectId) return null;
 
-      var appMod = await import("https://cdn.jsdelivr.net/npm/firebase@10.12.2/app/+esm");
-      var fsMod = await import("https://cdn.jsdelivr.net/npm/firebase@10.12.2/firestore/+esm");
+      // Use Google's own gstatic CDN (not jsdelivr's "+esm" wrapper) for both
+      // modules. jsdelivr's "+esm" wrapper bundles each Firebase subpackage
+      // (app, firestore) separately, which can give them two independent
+      // internal Firebase registries -- initializeApp() registers the app in
+      // one registry while getFirestore() looks for it in the other, failing
+      // with "Service firestore is not available". gstatic's modular URLs
+      // are Google's officially supported, mutually-compatible build.
+      var appMod = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
+      var fsMod = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
       var app = appMod.initializeApp(cfg);
       var fs = fsMod.getFirestore(app);
 
