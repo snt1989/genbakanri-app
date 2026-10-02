@@ -303,6 +303,8 @@
   .login-remember{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-soft);margin:2px 0 16px;cursor:pointer;}
   .login-error{font-size:11.5px;color:var(--danger);margin-bottom:10px;display:none;}
   .login-error.show{display:block;}
+  .login-hint{font-size:11px;color:var(--accent);background:var(--accent-soft);padding:9px 11px;border-radius:8px;margin-bottom:16px;display:none;line-height:1.5;}
+  .login-hint.show{display:block;}
 </style>
 
 <div id="app">
@@ -338,6 +340,7 @@
       <div class="login-brand-name">現場管理アプリ</div>
     </div>
     <div class="login-sub">ログインID（氏名）とパスワードを入力してください<br>初期パスワード：1234</div>
+    <div id="login-hint" class="login-hint"></div>
     <div class="login-field"><label>ログインID</label><input type="text" id="login-name" autocomplete="username" placeholder="例：阿部 晋太郎"></div>
     <div class="login-field"><label>パスワード</label><input type="password" id="login-password" autocomplete="current-password" placeholder="パスワード"></div>
     <label class="login-remember"><input type="checkbox" id="login-remember" checked> ログイン状態を保持する</label>
@@ -511,7 +514,7 @@
       state.loaded.customers=true; render();
     }, onErr);
     db.collection("members").onSnapshot(function(snap){
-      state.members = snap.docs.map(toObj); state.loaded.members=true; render(); tryAutoLogin();
+      state.members = snap.docs.map(toObj); state.loaded.members=true; state.offlineMode=false; updateLoginHint(); render(); tryAutoLogin();
     }, onErr);
     db.collection("tasks").orderBy("dueDate").onSnapshot(function(snap){
       state.tasks = snap.docs.map(toObj); state.loaded.tasks=true; render();
@@ -533,7 +536,19 @@
     state.tasks = SAMPLE_TASKS.slice();
     state.chats = SAMPLE_CHATS.slice();
     Object.keys(state.loaded).forEach(function(k){state.loaded[k]=true;});
+    state.offlineMode = true;
+    updateLoginHint();
     tryAutoLogin();
+  }
+  function updateLoginHint(){
+    var el = document.getElementById("login-hint");
+    if(!el) return;
+    if(state.offlineMode){
+      el.textContent = "現在オフライン（デモ）モードで動作しています。実際のメンバー情報には接続できていません。デモ用ログイン「佐藤 裕之」「瀬戸 美奈」「鷹羽 悠希」のいずれか／パスワード「1234」でお試しください。";
+      el.classList.add("show");
+    } else {
+      el.classList.remove("show");
+    }
   }
 
   /* ============ helpers ============ */
