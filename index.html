@@ -690,6 +690,7 @@
   function startLoadWatchdog(){
     setTimeout(function(){
       var stillLoading = Object.keys(state.loaded).some(function(k){ return !state.loaded[k]; });
+      console.log("[watchdog] fired, state.loaded=", JSON.stringify(state.loaded), "stillLoading=", stillLoading);
       if(stillLoading){
         setPreview();
         state.loadTimedOut = true;
@@ -710,7 +711,16 @@
     try{ return await withTimeout(window.__fbDbPromise, 12000); }catch(e){ return null; }
   }
 
+  // TEMPORARY DIAGNOSTIC HOOKS -- expose internal state/db for live
+  // console inspection while tracking down why the standalone (Vercel)
+  // deployment stays in offline mode even though a manual, hand-typed
+  // subscription to window.__fbDbPromise successfully receives all 8 real
+  // members. Safe to remove once the root cause is found.
+  window.__debugState = function(){ return state; };
+  window.__debugDb = function(){ return db; };
+
   async function boot(){
+    console.log("[boot] start, window.claude=", !!window.claude);
     bindLoginAndTopbarEvents();
     renderShell(); render();
     startLoadWatchdog();
@@ -729,9 +739,12 @@
       // Use the Firebase-backed persistence layer instead, so data
       // actually survives reloads/redeploys rather than always resetting
       // to the hardcoded sample data.
-      try{ db = await connectFirebase(); }catch(e){ db=null; }
-      if(!db){ setPreview(); render(); return; }
+      console.log("[boot] connecting firebase...");
+      try{ db = await connectFirebase(); }catch(e){ console.log("[boot] connectFirebase threw", e); db=null; }
+      console.log("[boot] db=", db);
+      if(!db){ console.log("[boot] db is null, falling back to preview"); setPreview(); render(); return; }
     }
+    console.log("[boot] calling subscribeAll()");
     subscribeAll();
     db.doc("settings/org").get().then(function(snap){ if(snap.exists){ state.orgSettings = Object.assign({}, state.orgSettings, snap.data()); render(); } }).catch(function(){});
   }
@@ -745,14 +758,18 @@
   }
 
   function subscribeAll(){
+    console.log("[subscribeAll] registering listeners, db=", db);
     db.collection("projects").onSnapshot(function(snap){
+      console.log("[subscribeAll] projects snapshot", snap.docs.length);
       state.projects = snap.docs.map(toObj); state.loaded.projects=true; render();
     }, onErr);
     db.collection("customers").onSnapshot(function(snap){
+      console.log("[subscribeAll] customers snapshot", snap.docs.length);
       state.customers = snap.docs.map(toObj).sort(function(a,b){return (b.registeredDate||"").localeCompare(a.registeredDate||"");});
       state.loaded.customers=true; render();
     }, onErr);
     db.collection("members").onSnapshot(function(snap){
+      console.log("[subscribeAll] members snapshot", snap.docs.length);
       state.members = snap.docs.map(toObj); state.loaded.members=true; state.offlineMode=false; updateLoginHint();
       // Keep the logged-in user's admin flag in sync if another admin
       // changes it (or their own record) while they're signed in.
@@ -773,6 +790,7 @@
     }, onErr);
   }
   function onErr(e){
+    console.log("[onErr]", e);
     toast("同期エラー: "+(e&&e.code||"unknown"));
     // A read error on some collection means its onSnapshot will never call
     // back with real data. setPreview() only backfills collections that
