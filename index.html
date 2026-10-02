@@ -337,7 +337,7 @@
       <div class="brand-mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V9l7-5 7 5v12"/><path d="M9 21v-6h6v6"/></svg></div>
       <div class="login-brand-name">現場管理アプリ</div>
     </div>
-    <div class="login-sub">ログインID（氏名）とパスワードを入力してください</div>
+    <div class="login-sub">ログインID（氏名）とパスワードを入力してください<br>初期パスワード：1234</div>
     <div class="login-field"><label>ログインID</label><input type="text" id="login-name" autocomplete="username" placeholder="例：阿部 晋太郎"></div>
     <div class="login-field"><label>パスワード</label><input type="password" id="login-password" autocomplete="current-password" placeholder="パスワード"></div>
     <label class="login-remember"><input type="checkbox" id="login-remember" checked> ログイン状態を保持する</label>
@@ -1562,9 +1562,9 @@
   /* ============ offline preview sample data ============ */
   var t0 = todayISO();
   var SAMPLE_MEMBERS = [
-    {id:"m1", name:"佐藤 裕之", company:"株式会社サノー", store:"盛岡店", roles:["営業"], kind:"internal", password:"demo1234"},
-    {id:"m2", name:"瀬戸 美奈", company:"株式会社サノー", store:"盛岡店", roles:["現場監督"], kind:"internal", password:"demo1234"},
-    {id:"m3", name:"鷹羽 悠希", company:"株式会社サノー", store:"仙台店", roles:["営業"], kind:"internal", password:"demo1234"},
+    {id:"m1", name:"佐藤 裕之", company:"株式会社サノー", store:"盛岡店", roles:["営業"], kind:"internal", password:"1234"},
+    {id:"m2", name:"瀬戸 美奈", company:"株式会社サノー", store:"盛岡店", roles:["現場監督"], kind:"internal", password:"1234"},
+    {id:"m3", name:"鷹羽 悠希", company:"株式会社サノー", store:"仙台店", roles:["営業"], kind:"internal", password:"1234"},
     {id:"m4", name:"小見 清志", company:"有限会社小見塗装", store:"", roles:["塗装"], kind:"external"}
   ];
   var SAMPLE_CUSTOMERS = [
