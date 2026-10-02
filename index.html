@@ -484,23 +484,39 @@
     });
   }
 
-  async function boot(){
-    bindLoginAndTopbarEvents();
-    renderShell(); render();
-
-    // Watchdog: scheduled synchronously, BEFORE any await, so it fires even if
-    // claude.use(...) itself never settles (e.g. a stalled capability prompt)
-    // or an onSnapshot subscription never calls back.
+  // Watchdog: scheduled synchronously, BEFORE any await, so it fires even if
+  // claude.use(...) itself never settles (e.g. a stalled capability prompt)
+  // or an onSnapshot subscription never calls back (e.g. a permission rule
+  // silently denies a read with no error callback).
+  //
+  // IMPORTANT: always fall back to setPreview() here, even when `db` itself
+  // resolved non-null. Previously this only called setPreview() when db was
+  // null, and otherwise just force-marked every collection as "loaded" while
+  // leaving state.members (etc.) as an empty array. That produced a silent
+  // broken state: the login screen showed no offline-mode hint (because
+  // offlineMode was never set), yet state.members.find(...) could never
+  // match anything, so every login attempt failed with "ログインIDまたは
+  // パスワードが正しくありません" even for verified-correct credentials.
+  // Falling back to sample data + the visible offline hint whenever a
+  // collection fails to load in time means the user always sees *why*
+  // login isn't working against the real data, and can still use the
+  // documented demo credentials in the meantime.
+  function startLoadWatchdog(){
     setTimeout(function(){
       var stillLoading = Object.keys(state.loaded).some(function(k){ return !state.loaded[k]; });
       if(stillLoading){
-        if(!db) setPreview();
-        Object.keys(state.loaded).forEach(function(k){ state.loaded[k]=true; });
+        setPreview();
         state.loadTimedOut = true;
         toast("データの読み込みに時間がかかっています");
         render();
       }
     }, 9000);
+  }
+
+  async function boot(){
+    bindLoginAndTopbarEvents();
+    renderShell(); render();
+    startLoadWatchdog();
 
     try{ db = await withTimeout(claude.use("db"), 7000); }catch(e){ db=null; }
     if(!db){ setPreview(); render(); return; }
@@ -518,6 +534,7 @@
     state.loadTimedOut = false;
     Object.keys(state.loaded).forEach(function(k){ state.loaded[k]=false; });
     render();
+    startLoadWatchdog();
     if(db) subscribeAll();
   }
 
@@ -542,7 +559,15 @@
       state.files = snap.docs.map(toObj); state.loaded.files=true; render();
     }, onErr);
   }
-  function onErr(e){ toast("同期エラー: "+(e&&e.code||"unknown")); }
+  function onErr(e){
+    toast("同期エラー: "+(e&&e.code||"unknown"));
+    // A read error (e.g. a permission rule denying this viewer) means this
+    // collection's onSnapshot will never call back with real data. Don't
+    // wait for the 9s watchdog in that case -- fall back to demo data right
+    // away so the login screen shows the offline hint instead of silently
+    // failing every login attempt against an empty member list.
+    if(!state.offlineMode){ setPreview(); render(); }
+  }
   function toObj(d){ var o=d.data()||{}; o.id=d.id; return o; }
 
   function setPreview(){
