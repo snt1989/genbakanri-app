@@ -766,7 +766,15 @@
     // collection that already loaded real data successfully.
     setPreview(); render();
   }
-  function toObj(d){ var o=d.data()||{}; o.id=d.id; return o; }
+  // IMPORTANT: build a NEW object rather than mutating d.data()'s return
+  // value in place. claude.ai's own "db" capability returns frozen/
+  // non-extensible document snapshots (to stop accidental mutation), so
+  // `o.id = d.id` on that object throws "Cannot add property id, object is
+  // not extensible" -- silently aborting whichever collection's onSnapshot
+  // callback hit it (before state.loaded.<collection> ever got set true),
+  // which is what was causing customers/members to be stuck "loading"
+  // forever and falling back to the offline/demo dataset.
+  function toObj(d){ var o=d.data()||{}; return Object.assign({}, o, {id:d.id}); }
 
   // IMPORTANT: this only fills in collections that have NOT already loaded
   // real data. It used to unconditionally overwrite every collection with
