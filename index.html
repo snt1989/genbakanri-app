@@ -368,14 +368,14 @@
       {id:"c5", data:{name:"亀田 幸宏", phone:"090-3364-6725", address:"岩手県盛岡市月が丘1丁目4-22", registeredDate:"2026-09-17"}}
     ],
     members: [
-      {id:"m1", data:{name:"阿部 晋太郎", company:"株式会社サノー", store:"盛岡店", roles:["営業"], kind:"internal", password:"1234", isAdmin:true}},
-      {id:"m2", data:{name:"佐藤 裕之", company:"株式会社サノー", store:"盛岡店", roles:["営業"], kind:"internal", password:"1234"}},
-      {id:"m3", data:{name:"瀬戸 美奈", company:"株式会社サノー", store:"盛岡店", roles:["現場監督"], kind:"internal", password:"1234"}},
-      {id:"m4", data:{name:"鷹羽 悠希", company:"株式会社サノー", store:"仙台店", roles:["営業"], kind:"internal", password:"1234", isAdmin:true}},
-      {id:"m5", data:{name:"松草 美佳子", company:"株式会社サノー", store:"盛岡店", roles:["ハウスクリーニング"], kind:"internal", password:"1234"}},
-      {id:"m6", data:{name:"因幡 隆", company:"株式会社サノー", store:"盛岡店", roles:["現場監督"], kind:"internal", password:"1234"}},
-      {id:"m7", data:{name:"小見 清志", company:"有限会社小見塗装", store:"", roles:["塗装"], kind:"external", password:"1234"}},
-      {id:"m8", data:{name:"熊谷 義男", company:"株式会社三桜", store:"", roles:["解体"], kind:"external", password:"1234"}}
+      {id:"m1", data:{name:"阿部 晋太郎", company:"株式会社サノー", store:"盛岡店", roles:["営業"], kind:"internal", password:"1234", isAdmin:true, permission:"admin"}},
+      {id:"m2", data:{name:"佐藤 裕之", company:"株式会社サノー", store:"盛岡店", roles:["営業"], kind:"internal", password:"1234", permission:"general"}},
+      {id:"m3", data:{name:"瀬戸 美奈", company:"株式会社サノー", store:"盛岡店", roles:["現場監督"], kind:"internal", password:"1234", permission:"general"}},
+      {id:"m4", data:{name:"鷹羽 悠希", company:"株式会社サノー", store:"仙台店", roles:["営業"], kind:"internal", password:"1234", isAdmin:true, permission:"admin"}},
+      {id:"m5", data:{name:"松草 美佳子", company:"株式会社サノー", store:"盛岡店", roles:["ハウスクリーニング"], kind:"internal", password:"1234", permission:"general"}},
+      {id:"m6", data:{name:"因幡 隆", company:"株式会社サノー", store:"盛岡店", roles:["現場監督"], kind:"internal", password:"1234", permission:"general"}},
+      {id:"m7", data:{name:"小見 清志", company:"有限会社小見塗装", store:"", roles:["塗装"], kind:"external", password:"1234", permission:"external"}},
+      {id:"m8", data:{name:"熊谷 義男", company:"株式会社三桜", store:"", roles:["解体"], kind:"external", password:"1234", permission:"external"}}
     ],
     projects: [
       {id:"p1", data:{name:"福川伸夫様邸 除草作業", type:"除草・草刈作業", status:"施工中", store:"盛岡店", customerId:"c1", customerName:"福川 伸夫", address:"岩手県盛岡市箱清水1-7-16", amount:178200, assignees:["阿部 晋太郎","鷹羽 悠希"], startDate:"2026-09-29", endDate:"2026-09-30", createdAt:"2026-09-10T09:00:00.000Z"}},
@@ -485,26 +485,25 @@
         }
       }catch(e){ /* non-fatal: app still works, just starts empty */ }
 
-      // One-time admin bootstrap: if this database has no admin yet (e.g.
-      // it was seeded before the admin-permission feature existed, or the
-      // designated admins' names change), grant admin to the named
-      // members below. Runs on every boot but is a no-op once any member
-      // is already marked as admin, so it's safe to leave in place.
+      // One-time permission-field migration: backfills the unified
+      // "permission" field (admin/general/external) on any member record
+      // that predates it, deriving it from the older isAdmin/kind fields
+      // where present, and granting admin to the named members below
+      // otherwise. Idempotent -- skips any member that already has a
+      // permission field -- so it's safe to run on every boot.
       try{
         var membersSnap = await fsMod.getDocs(fsMod.collection(fs, "members"));
-        var hasAdmin = membersSnap.docs.some(function(d){ return d.data().isAdmin; });
-        if(!hasAdmin){
-          var BOOTSTRAP_ADMIN_NAMES = ["阿部 晋太郎", "鷹羽 悠希"];
-          var adminBatch = fsMod.writeBatch(fs);
-          var any = false;
-          membersSnap.docs.forEach(function(d){
-            if(BOOTSTRAP_ADMIN_NAMES.indexOf(d.data().name)!==-1){
-              adminBatch.update(fsMod.doc(fs, "members", d.id), { isAdmin: true });
-              any = true;
-            }
-          });
-          if(any) await adminBatch.commit();
-        }
+        var BOOTSTRAP_ADMIN_NAMES = ["阿部 晋太郎", "鷹羽 悠希"];
+        var migBatch = fsMod.writeBatch(fs);
+        var any = false;
+        membersSnap.docs.forEach(function(d){
+          var data = d.data();
+          if(data.permission) return;
+          var perm = data.isAdmin ? "admin" : (data.kind==="external" ? "external" : (BOOTSTRAP_ADMIN_NAMES.indexOf(data.name)!==-1 ? "admin" : "general"));
+          migBatch.update(fsMod.doc(fs, "members", d.id), { permission: perm, isAdmin: perm==="admin", kind: perm==="external"?"external":"internal" });
+          any = true;
+        });
+        if(any) await migBatch.commit();
       }catch(e){ /* non-fatal */ }
 
       return {
@@ -612,7 +611,7 @@
   function completeLogin(m, remember){
     state.authed = true;
     state.myName = m.name;
-    state.isAdmin = !!m.isAdmin;
+    state.isAdmin = memberPermission(m)==="admin";
     try{
       if(remember){ localStorage.setItem("gc_login_name", m.name); localStorage.setItem("gc_login_password", m.password); }
       else { localStorage.removeItem("gc_login_name"); localStorage.removeItem("gc_login_password"); }
@@ -737,7 +736,7 @@
       // changes it (or their own record) while they're signed in.
       if(state.authed && state.myName){
         var me = state.members.find(function(x){ return x.name===state.myName; });
-        if(me) state.isAdmin = !!me.isAdmin;
+        if(me) state.isAdmin = memberPermission(me)==="admin";
       }
       render(); tryAutoLogin();
     }, onErr);
@@ -1305,7 +1304,10 @@
     html += formRow("店舗", false, false, selectHtml("f-mstore", ["未選択"].concat(STORES), "未選択"));
     html += formRow("職種", true, false, '<div class="assignee-pick" id="f-mroles">'+ROLES.map(function(r){return '<span class="chip-toggle" data-role-pick="'+esc(r)+'">'+esc(r)+'</span>';}).join("")+'</div>');
     html += formRow("ログインパスワード", true, true, '<div class="pw-wrap" style="max-width:280px"><input type="password" id="f-mpassword" placeholder="アプリへのログインに使用します"><button type="button" class="pw-toggle" id="f-mpassword-toggle" tabindex="-1" title="パスワードを表示">'+iEye()+'</button></div>');
-    html += formRow("管理者権限", false, false, '<label style="display:flex;align-items:center;gap:6px;font-size:12.5px"><input type="checkbox" id="f-madmin"> このメンバーに管理者権限（メンバー管理・設定編集）を付与する</label>');
+    html += formRow("権限", true, false, '<select id="f-mpermission">'+
+      PERMISSION_LEVELS.filter(function(p){return p[0]!=="external";}).map(function(p){
+        return '<option value="'+p[0]+'"'+(p[0]==="general"?" selected":"")+'>'+p[1]+'</option>';
+      }).join("")+'</select>');
     html += '</div>';
     html += '<div class="formfoot"><button class="btn primary" id="f-submit" style="padding:11px 34px" disabled>登録する</button></div>';
     html += '</div>';
@@ -1336,18 +1338,34 @@
       var password = document.getElementById("f-mpassword").value.trim();
       if(!name||!phone||!password||picked.length===0) return;
       var store = document.getElementById("f-mstore").value;
-      var data = {
+      var data = Object.assign({
         name:name, phone:phone, kana:document.getElementById("f-mkana").value.trim(),
         email:document.getElementById("f-memail").value.trim(),
         company: state.orgSettings.companyName,
-        store: store==="未選択"?"":store, roles:picked, kind:"internal", password:password,
-        isAdmin: !!document.getElementById("f-madmin").checked
-      };
+        store: store==="未選択"?"":store, roles:picked, password:password
+      }, permissionFields(document.getElementById("f-mpermission").value));
       writeDoc("members", null, data, "メンバーを登録しました", function(){ setTab("members"); });
     });
   }
 
   /* ============ MEMBERS ============ */
+  // Unified 3-tier permission: "admin" (管理者), "general" (一般), "external"
+  // (外部). Older records only have isAdmin/kind, so this derives the tier
+  // from whichever fields are present without needing a one-time migration.
+  var PERMISSION_LEVELS = [["admin","管理者"],["general","一般"],["external","外部"]];
+  function memberPermission(m){
+    if(m.permission) return m.permission;
+    if(m.isAdmin) return "admin";
+    if(m.kind==="external") return "external";
+    return "general";
+  }
+  function permissionLabel(p){ var f=PERMISSION_LEVELS.find(function(x){return x[0]===p;}); return f?f[1]:p; }
+  function permissionFields(p){
+    // Keeps the legacy kind/isAdmin fields in sync with the new permission
+    // field, so existing code that reads m.kind / m.isAdmin still works.
+    return { permission:p, isAdmin: p==="admin", kind: p==="external"?"external":"internal" };
+  }
+
   function renderMembers(){
     if(!state.loaded.members) return skeleton();
     var list = state.members.filter(function(m){
@@ -1365,19 +1383,25 @@
     html += '<div class="segmented" style="margin-bottom:16px">'+
       seg("all","すべて")+seg("internal","自社メンバー")+seg("external","社外メンバー")+'</div>';
     if(!state.isAdmin){
-      html += '<div style="font-size:11.5px;color:var(--ink-faint);margin-bottom:10px">メンバーの追加・削除・管理者権限の変更は管理者のみ行えます</div>';
+      html += '<div style="font-size:11.5px;color:var(--ink-faint);margin-bottom:10px">メンバーの追加・削除・権限の変更は管理者のみ行えます</div>';
     }
     if(list.length===0){
       html += emptyState(iUsers,"メンバーが登録されていません","");
     }else{
       html += '<div class="tablewrap"><table><thead><tr><th>氏名</th><th>所属会社</th><th>店舗</th><th>職種</th><th>権限</th>'+(state.isAdmin?'<th></th>':'')+'</tr></thead><tbody>';
       html += list.map(function(m){
+        var perm = memberPermission(m);
+        var permCell = state.isAdmin ?
+          '<select class="perm-select" data-perm-select="'+m.id+'">'+PERMISSION_LEVELS.map(function(p){
+            return '<option value="'+p[0]+'"'+(p[0]===perm?" selected":"")+'>'+p[1]+'</option>';
+          }).join("")+'</select>' :
+          '<span class="tag'+(perm==="admin"?"":" muted")+'" style="'+(perm==="admin"?'background:var(--sidebar-active);color:#fff':'')+'">'+esc(permissionLabel(perm))+'</span>';
         return '<tr class="rowhover"><td><div class="member-name"><span class="mini-avatar" style="background:'+avaColor(m.name)+'">'+esc(initials(m.name))+'</span>'+esc(m.name)+'</div></td>'+
           '<td>'+esc(m.company||"—")+'</td><td>'+esc(m.store||"—")+'</td>'+
           '<td><div class="tagrow">'+(m.roles||[]).map(function(r){return '<span class="tag muted">'+esc(r)+'</span>';}).join("")+'</div></td>'+
-          '<td>'+(m.isAdmin?'<span class="tag" style="background:var(--sidebar-active);color:#fff">管理者</span>':'<span style="color:var(--ink-faint);font-size:11.5px">—</span>')+'</td>'+
+          '<td>'+permCell+'</td>'+
           (state.isAdmin ?
-            '<td style="white-space:nowrap"><button class="btn sm outline" data-toggle-admin="'+m.id+'" style="margin-right:6px">'+(m.isAdmin?'管理者を解除':'管理者にする')+'</button><button class="iconbtn" data-del-member="'+m.id+'">'+iTrash()+'</button></td>'
+            '<td style="white-space:nowrap"><button class="iconbtn" data-del-member="'+m.id+'">'+iTrash()+'</button></td>'
             : ''
           )+'</tr>';
       }).join("");
@@ -1572,7 +1596,7 @@
     document.getElementById("f-invite").onclick = function(){
       var phone = document.getElementById("f-iphone").value.trim();
       if(!phone){ toast("携帯番号を入力してください"); return; }
-      var data = {name:"招待中（"+phone+"）", phone:phone, company:"", store:"", roles:[], kind:"external"};
+      var data = Object.assign({name:"招待中（"+phone+"）", phone:phone, company:"", store:"", roles:[]}, permissionFields("external"));
       writeDoc("members", null, data, "招待を送信しました");
     };
   }
@@ -1692,13 +1716,20 @@
     c.querySelectorAll("[data-newproject]").forEach(function(el){ el.addEventListener("click", function(){ goProjectForm(el.getAttribute("data-newproject"), null); }); });
     c.querySelectorAll("[data-del-project]").forEach(function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-del-project"); confirmDelete("この案件を削除しますか？",function(){deleteDoc("projects",id,"案件を削除しました", function(){ setTab(state.returnTab); }); }); }); });
     c.querySelectorAll("[data-del-member]").forEach(function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-del-member"); confirmDelete("このメンバーを削除しますか？",function(){deleteDoc("members",id,"メンバーを削除しました");}); }); });
-    c.querySelectorAll("[data-toggle-admin]").forEach(function(el){ el.addEventListener("click", function(){
-      var id = el.getAttribute("data-toggle-admin");
+    c.querySelectorAll("[data-perm-select]").forEach(function(el){ el.addEventListener("change", function(){
+      var id = el.getAttribute("data-perm-select");
       var m = state.members.find(function(x){ return x.id===id; });
       if(!m) return;
-      var adminCount = state.members.filter(function(x){ return x.isAdmin; }).length;
-      if(m.isAdmin && adminCount<=1){ toast("最後の管理者の権限は解除できません"); return; }
-      writeDoc("members", id, {isAdmin: !m.isAdmin}, m.isAdmin?"管理者権限を解除しました":"管理者にしました");
+      var newPerm = el.value;
+      var oldPerm = memberPermission(m);
+      if(newPerm===oldPerm) return;
+      var adminCount = state.members.filter(function(x){ return memberPermission(x)==="admin"; }).length;
+      if(oldPerm==="admin" && newPerm!=="admin" && adminCount<=1){
+        toast("最後の管理者の権限は変更できません");
+        el.value = oldPerm;
+        return;
+      }
+      writeDoc("members", id, permissionFields(newPerm), "権限を「"+permissionLabel(newPerm)+"」に変更しました");
     }); });
     c.querySelectorAll("[data-del-customer]").forEach(function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-del-customer"); confirmDelete("この顧客を削除しますか？",function(){deleteDoc("customers",id,"顧客を削除しました");}); }); });
     c.querySelectorAll("[data-done-task]").forEach(function(el){ el.addEventListener("click", function(){ writeDoc("tasks", el.getAttribute("data-done-task"), {done:true}, "タスクを完了しました"); }); });
@@ -1842,10 +1873,10 @@
   /* ============ offline preview sample data ============ */
   var t0 = todayISO();
   var SAMPLE_MEMBERS = [
-    {id:"m1", name:"佐藤 裕之", company:"株式会社サノー", store:"盛岡店", roles:["営業"], kind:"internal", password:"1234"},
-    {id:"m2", name:"瀬戸 美奈", company:"株式会社サノー", store:"盛岡店", roles:["現場監督"], kind:"internal", password:"1234"},
-    {id:"m3", name:"鷹羽 悠希", company:"株式会社サノー", store:"仙台店", roles:["営業"], kind:"internal", password:"1234", isAdmin:true},
-    {id:"m4", name:"小見 清志", company:"有限会社小見塗装", store:"", roles:["塗装"], kind:"external"}
+    {id:"m1", name:"佐藤 裕之", company:"株式会社サノー", store:"盛岡店", roles:["営業"], kind:"internal", password:"1234", permission:"general"},
+    {id:"m2", name:"瀬戸 美奈", company:"株式会社サノー", store:"盛岡店", roles:["現場監督"], kind:"internal", password:"1234", permission:"general"},
+    {id:"m3", name:"鷹羽 悠希", company:"株式会社サノー", store:"仙台店", roles:["営業"], kind:"internal", password:"1234", isAdmin:true, permission:"admin"},
+    {id:"m4", name:"小見 清志", company:"有限会社小見塗装", store:"", roles:["塗装"], kind:"external", permission:"external"}
   ];
   var SAMPLE_CUSTOMERS = [
     {id:"c1", name:"福川 伸夫", address:"岩手県盛岡市箱清水1-7-16", phone:"090-3365-4901", registeredDate:t0},
