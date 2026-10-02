@@ -353,6 +353,13 @@
   </div>
 </div>
 
+<!--
+  Supabase client, used only for the standalone/Vercel deployment (where
+  window.claude's "db" capability does not exist). Harmless no-op on the
+  claude.ai Artifact, which keeps using its own "db" capability as before.
+-->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
 <script>
 (function(){
   "use strict";
@@ -513,19 +520,140 @@
     }, 9000);
   }
 
+  // ------------------------------------------------------------------
+  // Supabase-backed persistence layer, used only when this page is NOT
+  // running inside claude.ai (no window.claude, so the "db" capability
+  // does not exist -- e.g. the standalone Vercel deployment). It mimics
+  // just the small slice of the Firestore-like "db" capability API that
+  // this app actually calls (collection/doc, add/set/update/delete,
+  // orderBy/limit, onSnapshot), so the rest of the app's code works
+  // unchanged against either backend.
+  // ------------------------------------------------------------------
+  function createSupabaseDb(sb){
+    function rowsToSnap(rows){
+      return { docs: rows.map(function(r){ return { id: r.id, data: function(){ return r.data || {}; } }; }) };
+    }
+    function fetchRows(table, filterCol, filterVal){
+      var q = sb.from(table).select("*");
+      if(filterCol) q = q.eq(filterCol, filterVal);
+      return q.then(function(r){ if(r.error) throw r.error; return r.data || []; });
+    }
+    function subscribeTable(table, filterCol, filterVal, orderField, limitN, cb, errCb){
+      function reload(){
+        fetchRows(table, filterCol, filterVal).then(function(rows){
+          if(orderField){
+            rows.sort(function(a,b){
+              var av=(a.data&&a.data[orderField])||"", bv=(b.data&&b.data[orderField])||"";
+              return av<bv?-1:(av>bv?1:0);
+            });
+          }
+          if(limitN) rows = rows.slice(0, limitN);
+          cb(rowsToSnap(rows));
+        }).catch(function(e){ if(errCb) errCb(e); });
+      }
+      reload();
+      var opts = { event:"*", schema:"public", table:table };
+      if(filterCol) opts.filter = filterCol+"=eq."+filterVal;
+      var channelName = "ch_"+table+"_"+(filterVal||"all")+"_"+Math.random().toString(36).slice(2);
+      sb.channel(channelName).on("postgres_changes", opts, reload).subscribe();
+    }
+    function makeDoc(table, id, parentFilterCol, parentFilterVal){
+      return {
+        id: id,
+        get: function(){
+          return sb.from(table).select("*").eq("id", id).maybeSingle().then(function(r){
+            if(r.error) throw r.error;
+            return { exists: !!r.data, data: function(){ return (r.data && r.data.data) || {}; }, id: id };
+          });
+        },
+        set: function(data){
+          var row = { id: id, data: data };
+          if(parentFilterCol) row[parentFilterCol] = parentFilterVal;
+          return sb.from(table).upsert(row).then(function(r){ if(r.error) throw r.error; });
+        },
+        update: function(patch){
+          return sb.from(table).select("data").eq("id", id).maybeSingle().then(function(r){
+            if(r.error) throw r.error;
+            var merged = Object.assign({}, (r.data && r.data.data) || {}, patch);
+            var row = { id: id, data: merged };
+            if(parentFilterCol) row[parentFilterCol] = parentFilterVal;
+            return sb.from(table).upsert(row).then(function(r2){ if(r2.error) throw r2.error; });
+          });
+        },
+        delete: function(){
+          return sb.from(table).delete().eq("id", id).then(function(r){ if(r.error) throw r.error; });
+        },
+        collection: function(sub){
+          // The only nested subcollection this app uses is chats/{id}/messages.
+          var subTable = (table==="chats" && sub==="messages") ? "chat_messages" : sub;
+          var filterCol = (table==="chats" && sub==="messages") ? "chat_id" : null;
+          return makeCollection(subTable, filterCol, id);
+        }
+      };
+    }
+    function makeCollection(table, filterCol, filterVal){
+      var orderField=null, limitN=null;
+      var api = {
+        doc: function(id){ return makeDoc(table, id, filterCol, filterVal); },
+        add: function(data){
+          var row = { data: data };
+          if(filterCol) row[filterCol] = filterVal;
+          return sb.from(table).insert(row).select().single().then(function(r){
+            if(r.error) throw r.error;
+            return { id: r.data.id };
+          });
+        },
+        orderBy: function(f){ orderField=f; return api; },
+        limit: function(n){ limitN=n; return api; },
+        onSnapshot: function(cb, errCb){ subscribeTable(table, filterCol, filterVal, orderField, limitN, cb, errCb); }
+      };
+      return api;
+    }
+    return {
+      collection: function(name){ return makeCollection(name, null, null); },
+      doc: function(path){
+        var parts = path.split("/");
+        return makeDoc(parts[0], parts[1], null, null);
+      }
+    };
+  }
+
+  async function connectSupabase(){
+    if(!window.supabase) return null;
+    var cfg = null;
+    try{
+      var res = await withTimeout(fetch("/api/config"), 5000);
+      if(res && res.ok) cfg = await res.json();
+    }catch(e){ cfg = null; }
+    if(!cfg || !cfg.url || !cfg.anonKey) return null;
+    try{
+      var sb = window.supabase.createClient(cfg.url, cfg.anonKey);
+      return createSupabaseDb(sb);
+    }catch(e){ return null; }
+  }
+
   async function boot(){
     bindLoginAndTopbarEvents();
     renderShell(); render();
     startLoadWatchdog();
 
-    try{ db = await withTimeout(claude.use("db"), 7000); }catch(e){ db=null; }
-    if(!db){ setPreview(); render(); return; }
-    try{ downloadsCap = await withTimeout(claude.use("downloads"), 5000); }catch(e){ downloadsCap=null; }
-    try{ assetsCap = await withTimeout(claude.use("assets"), 5000); }catch(e){ assetsCap=null; }
-    try{
-      var user = await withTimeout(claude.use("user"), 5000);
-      if(user && user.can){ var can = user.can("data.write"); if(can===false) state.canWrite=false; }
-    }catch(e){}
+    if(window.claude){
+      try{ db = await withTimeout(claude.use("db"), 7000); }catch(e){ db=null; }
+      if(!db){ setPreview(); render(); return; }
+      try{ downloadsCap = await withTimeout(claude.use("downloads"), 5000); }catch(e){ downloadsCap=null; }
+      try{ assetsCap = await withTimeout(claude.use("assets"), 5000); }catch(e){ assetsCap=null; }
+      try{
+        var user = await withTimeout(claude.use("user"), 5000);
+        if(user && user.can){ var can = user.can("data.write"); if(can===false) state.canWrite=false; }
+      }catch(e){}
+    } else {
+      // Standalone deployment (e.g. Vercel): no claude.ai capabilities.
+      // Use the Supabase-backed persistence layer instead, so data
+      // actually survives reloads/redeploys rather than always resetting
+      // to the hardcoded sample data.
+      try{ db = await withTimeout(connectSupabase(), 7000); }catch(e){ db=null; }
+      if(!db){ setPreview(); render(); return; }
+    }
     subscribeAll();
     db.doc("settings/org").get().then(function(snap){ if(snap.exists){ state.orgSettings = Object.assign({}, state.orgSettings, snap.data()); render(); } }).catch(function(){});
   }
