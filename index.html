@@ -706,9 +706,39 @@
   // same collection/doc/onSnapshot/add/update/delete/orderBy/limit shape
   // this file already calls against claude.ai's own "db" capability -- as
   // window.__fbDbPromise. This just awaits that, with a timeout.
+  //
+  // IMPORTANT -- this used to just check `if(!window.__fbDbPromise) return
+  // null` ONCE and bail immediately if it wasn't there yet. But a <script
+  // type="module"> is deferred by spec (it only runs after the whole
+  // document has been parsed), while this plain, non-deferred <script>
+  // runs immediately as the parser reaches it and calls boot() right away
+  // at the bottom of the file. So on every load, this code almost always
+  // ran BEFORE the module script had assigned window.__fbDbPromise at
+  // all -- the check saw `undefined`, returned null instantly (not after
+  // any timeout), and the app fell straight into offline/demo mode. This
+  // was the actual, final root cause: confirmed via diagnostic logging
+  // showing "[boot] db= null" logged essentially instantly, while a
+  // manual, hand-typed await of window.__fbDbPromise (typed into the
+  // console after the page had finished loading, i.e. with no race) always
+  // resolved correctly and received all 8 real members right away.
+  //
+  // Fixed by polling for window.__fbDbPromise to actually exist (the
+  // module script assigns it within milliseconds of starting) before
+  // awaiting it, instead of only checking once.
+  function waitForFbPromise(timeoutMs){
+    return new Promise(function(resolve){
+      var start = Date.now();
+      (function poll(){
+        if(window.__fbDbPromise){ resolve(window.__fbDbPromise); return; }
+        if(Date.now() - start > timeoutMs){ resolve(null); return; }
+        setTimeout(poll, 50);
+      })();
+    });
+  }
   async function connectFirebase(){
-    if(!window.__fbDbPromise) return null;
-    try{ return await withTimeout(window.__fbDbPromise, 12000); }catch(e){ return null; }
+    var p = await waitForFbPromise(5000);
+    if(!p) return null;
+    try{ return await withTimeout(p, 12000); }catch(e){ return null; }
   }
 
   // TEMPORARY DIAGNOSTIC HOOKS -- expose internal state/db for live
