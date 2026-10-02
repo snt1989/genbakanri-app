@@ -474,44 +474,59 @@
         };
       }
 
-      // Seed the real current data (exported from the claude.ai version of
-      // this app) on first connect only, i.e. only while "projects" is
-      // still empty -- never overwrites real data once any exists.
-      try{
-        var existing = await fsMod.getDocs(fsMod.collection(fs, "projects"));
-        if(existing.empty){
-          var SEED = window.__GENBA_SEED_DATA__ || {};
-          var batch = fsMod.writeBatch(fs);
-          (SEED.customers||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "customers", r.id), r.data); });
-          (SEED.members||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "members", r.id), r.data); });
-          (SEED.projects||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "projects", r.id), r.data); });
-          (SEED.tasks||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "tasks", r.id), r.data); });
-          (SEED.chats||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "chats", r.id), r.data); });
-          (SEED.messages||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "chats", r.chatId, "messages", r.id), r.data); });
-          await batch.commit();
-        }
-      }catch(e){ /* non-fatal: app still works, just starts empty */ }
+      // IMPORTANT: run the one-time seed + permission-migration checks in the
+      // BACKGROUND, without awaiting them here. They used to be awaited
+      // before this promise resolved, which meant window.__fbDbPromise
+      // (and therefore the whole app's "db ready" signal) stayed pending
+      // until TWO extra Firestore round-trips completed on top of the
+      // initial connection. On a cold connection that easily took longer
+      // than connectFirebase()'s timeout, so the app silently gave up and
+      // fell back to offline/demo mode -- with no console error at all,
+      // since withTimeout() just resolves null when it times out. The app
+      // itself (subscribeAll's onSnapshot calls) doesn't need either of
+      // these to have finished; they only backfill/migrate data that may
+      // already be there, so let them run independently and let the app
+      // connect immediately.
+      (async function(){
+        try{
+          var existing = await fsMod.getDocs(fsMod.collection(fs, "projects"));
+          if(existing.empty){
+            var SEED = window.__GENBA_SEED_DATA__ || {};
+            var batch = fsMod.writeBatch(fs);
+            (SEED.customers||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "customers", r.id), r.data); });
+            (SEED.members||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "members", r.id), r.data); });
+            (SEED.projects||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "projects", r.id), r.data); });
+            (SEED.tasks||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "tasks", r.id), r.data); });
+            (SEED.chats||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "chats", r.id), r.data); });
+            (SEED.messages||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "chats", r.chatId, "messages", r.id), r.data); });
+            await batch.commit();
+          }
+        }catch(e){ console.error("Firestore seed failed (non-fatal)", e); }
+      })();
 
       // One-time permission-field migration: backfills the unified
       // "permission" field (admin/general/external) on any member record
       // that predates it, deriving it from the older isAdmin/kind fields
       // where present, and granting admin to the named members below
       // otherwise. Idempotent -- skips any member that already has a
-      // permission field -- so it's safe to run on every boot.
-      try{
-        var membersSnap = await fsMod.getDocs(fsMod.collection(fs, "members"));
-        var BOOTSTRAP_ADMIN_NAMES = ["阿部 晋太郎", "鷹羽 悠希"];
-        var migBatch = fsMod.writeBatch(fs);
-        var any = false;
-        membersSnap.docs.forEach(function(d){
-          var data = d.data();
-          if(data.permission) return;
-          var perm = data.isAdmin ? "admin" : (data.kind==="external" ? "external" : (BOOTSTRAP_ADMIN_NAMES.indexOf(data.name)!==-1 ? "admin" : "general"));
-          migBatch.update(fsMod.doc(fs, "members", d.id), { permission: perm, isAdmin: perm==="admin", kind: perm==="external"?"external":"internal" });
-          any = true;
-        });
-        if(any) await migBatch.commit();
-      }catch(e){ /* non-fatal */ }
+      // permission field -- so it's safe to run on every boot. Also
+      // backgrounded, same reasoning as the seed step above.
+      (async function(){
+        try{
+          var membersSnap = await fsMod.getDocs(fsMod.collection(fs, "members"));
+          var BOOTSTRAP_ADMIN_NAMES = ["阿部 晋太郎", "鷹羽 悠希"];
+          var migBatch = fsMod.writeBatch(fs);
+          var any = false;
+          membersSnap.docs.forEach(function(d){
+            var data = d.data();
+            if(data.permission) return;
+            var perm = data.isAdmin ? "admin" : (data.kind==="external" ? "external" : (BOOTSTRAP_ADMIN_NAMES.indexOf(data.name)!==-1 ? "admin" : "general"));
+            migBatch.update(fsMod.doc(fs, "members", d.id), { permission: perm, isAdmin: perm==="admin", kind: perm==="external"?"external":"internal" });
+            any = true;
+          });
+          if(any) await migBatch.commit();
+        }catch(e){ console.error("Firestore permission migration failed (non-fatal)", e); }
+      })();
 
       return {
         collection: function(name){ return makeCollectionRef(name); },
@@ -681,7 +696,7 @@
         toast("データの読み込みに時間がかかっています");
         render();
       }
-    }, 9000);
+    }, 15000);
   }
 
   // Standalone deployment (e.g. Vercel) persistence: a small <script
@@ -692,7 +707,7 @@
   // window.__fbDbPromise. This just awaits that, with a timeout.
   async function connectFirebase(){
     if(!window.__fbDbPromise) return null;
-    try{ return await withTimeout(window.__fbDbPromise, 8000); }catch(e){ return null; }
+    try{ return await withTimeout(window.__fbDbPromise, 12000); }catch(e){ return null; }
   }
 
   async function boot(){
