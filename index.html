@@ -289,6 +289,20 @@
 
   #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(16px);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:10px;font-size:12.5px;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:80;}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  #login-screen{position:fixed;inset:0;background:var(--bg);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;}
+  #login-screen.hidden{display:none;}
+  .login-card{width:100%;max-width:340px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:28px 26px;}
+  .login-brand{display:flex;align-items:center;gap:9px;margin-bottom:4px;}
+  .login-brand-name{font-size:16px;font-weight:700;}
+  .login-sub{font-size:12px;color:var(--ink-faint);margin:4px 0 18px;}
+  .login-field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;}
+  .login-field label{font-size:11.5px;color:var(--ink-soft);font-weight:700;}
+  .login-field input{border:1px solid var(--border);border-radius:8px;padding:9px 11px;font-size:13px;background:var(--surface);color:var(--ink);}
+  .login-field input:focus{outline:2px solid var(--accent-soft);border-color:var(--accent);}
+  .login-remember{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-soft);margin:2px 0 16px;cursor:pointer;}
+  .login-error{font-size:11.5px;color:var(--danger);margin-bottom:10px;display:none;}
+  .login-error.show{display:block;}
 </style>
 
 <div id="app">
@@ -305,7 +319,7 @@
     <header class="topbar">
       <button class="menubtn" id="menu-toggle"></button>
       <div class="bellwrap" id="bell-icon"></div>
-      <div class="topbar-user"><div class="avatar" id="user-avatar">阿</div><span id="user-name">阿部 晋太郎（株式会社サノー）</span></div>
+      <div class="topbar-user"><div class="avatar" id="user-avatar">阿</div><span id="user-name">阿部 晋太郎（株式会社サノー）</span><button class="iconbtn" id="logout-btn" title="ログアウト"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg></button></div>
     </header>
     <div class="content" id="content"></div>
   </div>
@@ -316,6 +330,21 @@
   <div class="modal-box" id="modal-box"></div>
 </div>
 <div id="toast"></div>
+
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="brand-mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V9l7-5 7 5v12"/><path d="M9 21v-6h6v6"/></svg></div>
+      <div class="login-brand-name">現場管理アプリ</div>
+    </div>
+    <div class="login-sub">ログインID（氏名）とパスワードを入力してください</div>
+    <div class="login-field"><label>ログインID</label><input type="text" id="login-name" autocomplete="username" placeholder="例：阿部 晋太郎"></div>
+    <div class="login-field"><label>パスワード</label><input type="password" id="login-password" autocomplete="current-password" placeholder="パスワード"></div>
+    <label class="login-remember"><input type="checkbox" id="login-remember" checked> ログイン状態を保持する</label>
+    <div id="login-error" class="login-error"></div>
+    <button class="btn primary" id="login-submit" style="width:100%;justify-content:center;padding:11px">ログイン</button>
+  </div>
+</div>
 
 <script>
 (function(){
@@ -360,6 +389,7 @@
     activeChat:null,
     chatMsgs:{},
     myName:null,
+    authed:false,
     editingProject:null,
     formMode:"sales",
     viewingProjectId:null,
@@ -367,6 +397,64 @@
   };
 
   var db=null, downloadsCap=null, assetsCap=null;
+
+  /* ============ login ============ */
+  function bindLoginAndTopbarEvents(){
+    var submit = document.getElementById("login-submit");
+    if(submit) submit.addEventListener("click", attemptLogin);
+    ["login-name","login-password"].forEach(function(id){
+      var el = document.getElementById(id);
+      if(el) el.addEventListener("keydown", function(ev){ if(ev.key==="Enter") attemptLogin(); });
+    });
+    var logoutBtn = document.getElementById("logout-btn");
+    if(logoutBtn) logoutBtn.addEventListener("click", logout);
+  }
+  function showLoginError(msg){
+    var el = document.getElementById("login-error");
+    el.textContent = msg; el.classList.add("show");
+  }
+  function clearLoginError(){
+    var el = document.getElementById("login-error");
+    el.textContent = ""; el.classList.remove("show");
+  }
+  function attemptLogin(){
+    clearLoginError();
+    var name = document.getElementById("login-name").value.trim();
+    var pass = document.getElementById("login-password").value;
+    if(!name || !pass){ showLoginError("ログインIDとパスワードを入力してください"); return; }
+    if(!state.loaded.members){ showLoginError("データを読み込み中です。少し待ってから再度お試しください"); return; }
+    var m = state.members.find(function(x){ return x.name===name && x.password && x.password===pass; });
+    if(!m){ showLoginError("ログインIDまたはパスワードが正しくありません"); return; }
+    completeLogin(m, document.getElementById("login-remember").checked);
+  }
+  function completeLogin(m, remember){
+    state.authed = true;
+    state.myName = m.name;
+    try{
+      if(remember){ localStorage.setItem("gc_login_name", m.name); localStorage.setItem("gc_login_password", m.password); }
+      else { localStorage.removeItem("gc_login_name"); localStorage.removeItem("gc_login_password"); }
+      localStorage.setItem("gc_myname", m.name);
+    }catch(e){}
+    var scr = document.getElementById("login-screen");
+    if(scr) scr.classList.add("hidden");
+    renderShell(); render();
+  }
+  function tryAutoLogin(){
+    if(state.authed) return;
+    var name, pass;
+    try{ name = localStorage.getItem("gc_login_name"); pass = localStorage.getItem("gc_login_password"); }catch(e){ return; }
+    if(!name || !pass) return;
+    var m = state.members.find(function(x){ return x.name===name && x.password===pass; });
+    if(m) completeLogin(m, true);
+  }
+  function logout(){
+    state.authed = false;
+    try{ localStorage.removeItem("gc_login_name"); localStorage.removeItem("gc_login_password"); }catch(e){}
+    var scr = document.getElementById("login-screen");
+    if(scr) scr.classList.remove("hidden");
+    var pf = document.getElementById("login-password"); if(pf) pf.value = "";
+    clearLoginError();
+  }
 
   /* ============ boot ============ */
   function withTimeout(promise, ms){
@@ -378,7 +466,7 @@
   }
 
   async function boot(){
-    try{ state.myName = localStorage.getItem("gc_myname"); }catch(e){}
+    bindLoginAndTopbarEvents();
     renderShell(); render();
 
     // Watchdog: scheduled synchronously, BEFORE any await, so it fires even if
@@ -423,7 +511,7 @@
       state.loaded.customers=true; render();
     }, onErr);
     db.collection("members").onSnapshot(function(snap){
-      state.members = snap.docs.map(toObj); state.loaded.members=true; render();
+      state.members = snap.docs.map(toObj); state.loaded.members=true; render(); tryAutoLogin();
     }, onErr);
     db.collection("tasks").orderBy("dueDate").onSnapshot(function(snap){
       state.tasks = snap.docs.map(toObj); state.loaded.tasks=true; render();
@@ -445,6 +533,7 @@
     state.tasks = SAMPLE_TASKS.slice();
     state.chats = SAMPLE_CHATS.slice();
     Object.keys(state.loaded).forEach(function(k){state.loaded[k]=true;});
+    tryAutoLogin();
   }
 
   /* ============ helpers ============ */
@@ -521,7 +610,10 @@
     document.getElementById("menu-toggle").innerHTML = iMenu();
     document.getElementById("sidebar").classList.toggle("open", state.sidebarOpen);
     var un = document.getElementById("user-name");
-    if(un) un.textContent = state.orgSettings.representative+"（"+state.orgSettings.companyName+"）";
+    var displayName = state.myName || state.orgSettings.representative;
+    if(un) un.textContent = displayName+"（"+state.orgSettings.companyName+"）";
+    var av = document.getElementById("user-avatar");
+    if(av) av.textContent = initials(displayName);
   }
   function overdueOrToday(t){ return !t.done && t.dueDate<=todayISO(); }
 
@@ -955,6 +1047,7 @@
     html += formRow("所属会社", false, false, '<div style="font-size:12.5px;padding:8px 0">'+esc(state.orgSettings.companyName)+'</div>');
     html += formRow("店舗", false, false, selectHtml("f-mstore", ["未選択"].concat(STORES), "未選択"));
     html += formRow("職種", true, false, '<div class="assignee-pick" id="f-mroles">'+ROLES.map(function(r){return '<span class="chip-toggle" data-role-pick="'+esc(r)+'">'+esc(r)+'</span>';}).join("")+'</div>');
+    html += formRow("ログインパスワード", true, true, '<input type="text" id="f-mpassword" placeholder="アプリへのログインに使用します">');
     html += '</div>';
     html += '<div class="formfoot"><button class="btn primary" id="f-submit" style="padding:11px 34px" disabled>登録する</button></div>';
     html += '</div>';
@@ -966,10 +1059,10 @@
     var c = document.getElementById("content");
     var submit = document.getElementById("f-submit");
     function refreshEnabled(){
-      var ok = document.getElementById("f-mphone").value.trim() && document.getElementById("f-mname").value.trim() && picked.length>0;
+      var ok = document.getElementById("f-mphone").value.trim() && document.getElementById("f-mname").value.trim() && document.getElementById("f-mpassword").value.trim() && picked.length>0;
       submit.disabled = !ok;
     }
-    ["f-mphone","f-mname"].forEach(function(id){ var el=document.getElementById(id); if(el) el.addEventListener("input", refreshEnabled); });
+    ["f-mphone","f-mname","f-mpassword"].forEach(function(id){ var el=document.getElementById(id); if(el) el.addEventListener("input", refreshEnabled); });
     var rolesWrap = document.getElementById("f-mroles");
     if(rolesWrap) rolesWrap.querySelectorAll(".chip-toggle").forEach(function(chip){
       chip.addEventListener("click", function(){
@@ -981,13 +1074,14 @@
     if(submit) submit.addEventListener("click", function(){
       var name = document.getElementById("f-mname").value.trim();
       var phone = document.getElementById("f-mphone").value.trim();
-      if(!name||!phone||picked.length===0) return;
+      var password = document.getElementById("f-mpassword").value.trim();
+      if(!name||!phone||!password||picked.length===0) return;
       var store = document.getElementById("f-mstore").value;
       var data = {
         name:name, phone:phone, kana:document.getElementById("f-mkana").value.trim(),
         email:document.getElementById("f-memail").value.trim(),
         company: state.orgSettings.companyName,
-        store: store==="未選択"?"":store, roles:picked, kind:"internal"
+        store: store==="未選択"?"":store, roles:picked, kind:"internal", password:password
       };
       writeDoc("members", null, data, "メンバーを登録しました", function(){ setTab("members"); });
     });
@@ -1468,9 +1562,9 @@
   /* ============ offline preview sample data ============ */
   var t0 = todayISO();
   var SAMPLE_MEMBERS = [
-    {id:"m1", name:"佐藤 裕之", company:"株式会社サノー", store:"盛岡店", roles:["営業"], kind:"internal"},
-    {id:"m2", name:"瀬戸 美奈", company:"株式会社サノー", store:"盛岡店", roles:["現場監督"], kind:"internal"},
-    {id:"m3", name:"鷹羽 悠希", company:"株式会社サノー", store:"仙台店", roles:["営業"], kind:"internal"},
+    {id:"m1", name:"佐藤 裕之", company:"株式会社サノー", store:"盛岡店", roles:["営業"], kind:"internal", password:"demo1234"},
+    {id:"m2", name:"瀬戸 美奈", company:"株式会社サノー", store:"盛岡店", roles:["現場監督"], kind:"internal", password:"demo1234"},
+    {id:"m3", name:"鷹羽 悠希", company:"株式会社サノー", store:"仙台店", roles:["営業"], kind:"internal", password:"demo1234"},
     {id:"m4", name:"小見 清志", company:"有限会社小見塗装", store:"", roles:["塗装"], kind:"external"}
   ];
   var SAMPLE_CUSTOMERS = [
