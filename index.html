@@ -353,12 +353,145 @@
   </div>
 </div>
 
+<script>
+  // Real current data, exported from the claude.ai version of this app,
+  // used to seed the standalone/Vercel deployment's Firestore database
+  // the first time it connects (see the module script below). Only
+  // applied when the "projects" collection is still empty, so it never
+  // overwrites real data once any has been entered.
+  window.__GENBA_SEED_DATA__ = {
+    customers: [
+      {id:"c1", data:{name:"福川 伸夫", phone:"090-3365-4901", address:"岩手県盛岡市箱清水1-7-16", registeredDate:"2026-09-10"}},
+      {id:"c2", data:{name:"(株)リーガルスムーズ", phone:"", address:"東京都", registeredDate:"2026-09-17"}},
+      {id:"c3", data:{name:"今増 真喜子", phone:"080-3321-0805", address:"岩手県盛岡市永井20地割5-68", registeredDate:"2026-09-10"}},
+      {id:"c4", data:{name:"紫波町役場 都市計画課", phone:"", address:"岩手県", registeredDate:"2026-09-18"}},
+      {id:"c5", data:{name:"亀田 幸宏", phone:"090-3364-6725", address:"岩手県盛岡市月が丘1丁目4-22", registeredDate:"2026-09-17"}}
+    ],
+    members: [
+      {id:"m1", data:{name:"阿部 晋太郎", company:"株式会社サノー", store:"盛岡店", roles:["営業"], kind:"internal", password:"1234"}},
+      {id:"m2", data:{name:"佐藤 裕之", company:"株式会社サノー", store:"盛岡店", roles:["営業"], kind:"internal", password:"1234"}},
+      {id:"m3", data:{name:"瀬戸 美奈", company:"株式会社サノー", store:"盛岡店", roles:["現場監督"], kind:"internal", password:"1234"}},
+      {id:"m4", data:{name:"鷹羽 悠希", company:"株式会社サノー", store:"仙台店", roles:["営業"], kind:"internal", password:"1234"}},
+      {id:"m5", data:{name:"松草 美佳子", company:"株式会社サノー", store:"盛岡店", roles:["ハウスクリーニング"], kind:"internal", password:"1234"}},
+      {id:"m6", data:{name:"因幡 隆", company:"株式会社サノー", store:"盛岡店", roles:["現場監督"], kind:"internal", password:"1234"}},
+      {id:"m7", data:{name:"小見 清志", company:"有限会社小見塗装", store:"", roles:["塗装"], kind:"external", password:"1234"}},
+      {id:"m8", data:{name:"熊谷 義男", company:"株式会社三桜", store:"", roles:["解体"], kind:"external", password:"1234"}}
+    ],
+    projects: [
+      {id:"p1", data:{name:"福川伸夫様邸 除草作業", type:"除草・草刈作業", status:"施工中", store:"盛岡店", customerId:"c1", customerName:"福川 伸夫", address:"岩手県盛岡市箱清水1-7-16", amount:178200, assignees:["阿部 晋太郎","鷹羽 悠希"], startDate:"2026-09-29", endDate:"2026-09-30", createdAt:"2026-09-10T09:00:00.000Z"}},
+      {id:"p2", data:{name:"【リーガル】桜井ビル3階 原状回復工事", type:"原状回復工事", status:"施工中", store:"盛岡店", customerId:"c2", customerName:"(株)リーガルスムーズ", address:"岩手県花巻市吹張町9-16", amount:0, assignees:["因幡 隆","佐藤 裕之","瀬戸 美奈","鷹羽 悠希","松草 美佳子","小見 清志"], startDate:"", endDate:"", createdAt:"2026-09-09T09:00:00.000Z"}},
+      {id:"p3", data:{name:"【リーガル】ロイヤルコーポ青山101 原状回復工事", type:"原状回復工事", status:"施工中", store:"盛岡店", customerId:"c2", customerName:"(株)リーガルスムーズ", address:"青森県青森県十和田市東二十三番町28-63", amount:0, assignees:["佐藤 裕之","瀬戸 美奈","松草 美佳子","小見 清志"], startDate:"2026-09-11", endDate:"", createdAt:"2026-09-01T09:00:00.000Z"}},
+      {id:"p4", data:{name:"多田宅（今増真喜子様）庭木剪定・伐採", type:"その他", status:"見積提出済", store:"盛岡店", customerId:"c3", customerName:"今増 真喜子", address:"岩手県盛岡市永井20地割5-68", amount:500000, assignees:["阿部 晋太郎","鷹羽 悠希"], startDate:"", endDate:"2026-10-28", createdAt:"2026-09-10T09:00:00.000Z"}},
+      {id:"p5", data:{name:"R8【秋田仙北】千屋地区(4)林道除草作業", type:"除草・草刈作業", status:"施工中", store:"秋田店", customerId:"c4", customerName:"紫波町役場 都市計画課", address:"秋田県仙北市田沢湖生保内武蔵野1-1-7", amount:0, assignees:["阿部 晋太郎","佐藤 裕之","瀬戸 美奈"], startDate:"", endDate:"", createdAt:"2026-08-26T09:00:00.000Z"}},
+      {id:"p6", data:{name:"【大東・維持】10月分 ラッフィナート 建物・敷地清掃", type:"建物・敷地清掃", status:"現地調査済", store:"盛岡店", customerId:"c5", customerName:"亀田 幸宏", address:"岩手県盛岡市中堤町2番地25", amount:0, assignees:["瀬戸 美奈","松草 美佳子"], startDate:"", endDate:"", createdAt:"2026-09-27T09:00:00.000Z"}},
+      {id:"p7", data:{name:"赤坂智仙様 遺品整理", type:"その他", status:"見積提出済", store:"盛岡店", customerId:"c3", customerName:"今増 真喜子", address:"福島県いわき市平南白土字竹ノ下1-1-301", amount:0, assignees:["瀬戸 美奈","鷹羽 悠希","松草 美佳子","小見 清志"], startDate:"", endDate:"", createdAt:"2026-09-25T09:00:00.000Z"}},
+      {id:"p8", data:{name:"県南清掃(株) 排水管清掃", type:"排水管清掃", status:"失注", store:"秋田店", customerId:"c5", customerName:"亀田 幸宏", address:"青森県十和田市三本木字野崎40-370", amount:0, assignees:["佐藤 裕之"], startDate:"", endDate:"", createdAt:"2026-09-03T09:00:00.000Z"}}
+    ],
+    tasks: [
+      {id:"t1", data:{title:"報告書提出", projectId:"p1", projectName:"福川伸夫様邸 除草作業", dueDate:"2026-09-29", done:false}},
+      {id:"t2", data:{title:"現地確認（大蔵沢林道）", projectId:"p5", projectName:"R8【秋田仙北】千屋地区(4)林道除草作業", dueDate:"2026-09-30", done:false}},
+      {id:"t3", data:{title:"見積書送付", projectId:"p4", projectName:"多田宅（今増真喜子様）庭木剪定・伐採", dueDate:"2026-09-30", done:false}},
+      {id:"t4", data:{title:"契約書回収", projectId:"p2", projectName:"【リーガル】桜井ビル3階 原状回復工事", dueDate:"2026-10-02", done:false}},
+      {id:"t5", data:{title:"安全巡回", projectId:"p3", projectName:"【リーガル】ロイヤルコーポ青山101 原状回復工事", dueDate:"2026-10-01", done:false}}
+    ],
+    chats: [
+      {id:"ch1", data:{kind:"project", name:"福川伸夫様邸 除草作業", projectId:"p1", updatedAt:"2026-09-29T08:00:00.000Z"}},
+      {id:"ch2", data:{kind:"group", name:"【共有】秋田林道グループ", updatedAt:"2026-09-28T17:00:00.000Z"}},
+      {id:"ch3", data:{kind:"project", name:"【リーガル】桜井ビル3階 原状回復工事", projectId:"p2", updatedAt:"2026-09-27T12:00:00.000Z"}}
+    ],
+    messages: [
+      {id:"msg1", chatId:"ch1", data:{author:"瀬戸 美奈", text:"本日の除草作業、予定通り完了しました。写真は後ほど共有します。", ts:"2026-09-29T08:10:00.000Z"}},
+      {id:"msg2", chatId:"ch1", data:{author:"阿部 晋太郎", text:"お疲れ様です。報告書の提出も本日中にお願いします。", ts:"2026-09-29T08:15:00.000Z"}},
+      {id:"msg3", chatId:"ch2", data:{author:"佐藤 裕之", text:"千屋地区の林道除草、明日の現地確認よろしくお願いします。", ts:"2026-09-28T17:00:00.000Z"}}
+    ]
+  };
+</script>
+
 <!--
-  Supabase client, used only for the standalone/Vercel deployment (where
-  window.claude's "db" capability does not exist). Harmless no-op on the
-  claude.ai Artifact, which keeps using its own "db" capability as before.
+  Firebase/Firestore client, used only for the standalone/Vercel deployment
+  (where window.claude's "db" capability does not exist). Harmless no-op on
+  the claude.ai Artifact, which keeps using its own "db" capability as
+  before. Loaded as an ES module (via jsdelivr's npm "+esm" wrapper) so it
+  can use the modern modular Firebase SDK without a build step; it exposes
+  a tiny Firestore-backed shim on window.__fbDbPromise that the main script
+  below awaits.
 -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script type="module">
+  window.__fbDbPromise = (async function(){
+    try{
+      var cfgRes = await fetch("/api/config");
+      if(!cfgRes.ok) return null;
+      var cfg = await cfgRes.json();
+      if(!cfg || !cfg.apiKey || !cfg.projectId) return null;
+
+      var appMod = await import("https://cdn.jsdelivr.net/npm/firebase@10.12.2/app/+esm");
+      var fsMod = await import("https://cdn.jsdelivr.net/npm/firebase@10.12.2/firestore/+esm");
+      var app = appMod.initializeApp(cfg);
+      var fs = fsMod.getFirestore(app);
+
+      function wrapSnap(qs){
+        return { docs: qs.docs.map(function(d){ return { id: d.id, data: function(){ return d.data(); } }; }) };
+      }
+      function makeCollectionRef(path){
+        var orderField = null, limitN = null;
+        var api = {
+          doc: function(id){ return makeDocRef(path+"/"+id); },
+          add: function(data){
+            return fsMod.addDoc(fsMod.collection(fs, path), data).then(function(ref){ return { id: ref.id }; });
+          },
+          orderBy: function(f){ orderField = f; return api; },
+          limit: function(n){ limitN = n; return api; },
+          onSnapshot: function(cb, errCb){
+            var constraints = [];
+            if(orderField) constraints.push(fsMod.orderBy(orderField));
+            if(limitN) constraints.push(fsMod.limit(limitN));
+            var q = constraints.length ? fsMod.query.apply(null, [fsMod.collection(fs, path)].concat(constraints)) : fsMod.collection(fs, path);
+            return fsMod.onSnapshot(q, function(qs){ cb(wrapSnap(qs)); }, errCb);
+          }
+        };
+        return api;
+      }
+      function makeDocRef(path){
+        var ref = fsMod.doc(fs, path);
+        return {
+          id: path.split("/").pop(),
+          get: function(){
+            return fsMod.getDoc(ref).then(function(snap){
+              return { exists: snap.exists(), data: function(){ return snap.data(); }, id: snap.id };
+            });
+          },
+          set: function(data){ return fsMod.setDoc(ref, data); },
+          update: function(data){ return fsMod.updateDoc(ref, data); },
+          delete: function(){ return fsMod.deleteDoc(ref); },
+          collection: function(sub){ return makeCollectionRef(path+"/"+sub); }
+        };
+      }
+
+      // Seed the real current data (exported from the claude.ai version of
+      // this app) on first connect only, i.e. only while "projects" is
+      // still empty -- never overwrites real data once any exists.
+      try{
+        var existing = await fsMod.getDocs(fsMod.collection(fs, "projects"));
+        if(existing.empty){
+          var SEED = window.__GENBA_SEED_DATA__ || {};
+          var batch = fsMod.writeBatch(fs);
+          (SEED.customers||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "customers", r.id), r.data); });
+          (SEED.members||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "members", r.id), r.data); });
+          (SEED.projects||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "projects", r.id), r.data); });
+          (SEED.tasks||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "tasks", r.id), r.data); });
+          (SEED.chats||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "chats", r.id), r.data); });
+          (SEED.messages||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "chats", r.chatId, "messages", r.id), r.data); });
+          await batch.commit();
+        }
+      }catch(e){ /* non-fatal: app still works, just starts empty */ }
+
+      return {
+        collection: function(name){ return makeCollectionRef(name); },
+        doc: function(path){ return makeDocRef(path); }
+      };
+    }catch(e){ console.error("Firebase init failed", e); return null; }
+  })();
+</script>
 
 <script>
 (function(){
@@ -520,116 +653,15 @@
     }, 9000);
   }
 
-  // ------------------------------------------------------------------
-  // Supabase-backed persistence layer, used only when this page is NOT
-  // running inside claude.ai (no window.claude, so the "db" capability
-  // does not exist -- e.g. the standalone Vercel deployment). It mimics
-  // just the small slice of the Firestore-like "db" capability API that
-  // this app actually calls (collection/doc, add/set/update/delete,
-  // orderBy/limit, onSnapshot), so the rest of the app's code works
-  // unchanged against either backend.
-  // ------------------------------------------------------------------
-  function createSupabaseDb(sb){
-    function rowsToSnap(rows){
-      return { docs: rows.map(function(r){ return { id: r.id, data: function(){ return r.data || {}; } }; }) };
-    }
-    function fetchRows(table, filterCol, filterVal){
-      var q = sb.from(table).select("*");
-      if(filterCol) q = q.eq(filterCol, filterVal);
-      return q.then(function(r){ if(r.error) throw r.error; return r.data || []; });
-    }
-    function subscribeTable(table, filterCol, filterVal, orderField, limitN, cb, errCb){
-      function reload(){
-        fetchRows(table, filterCol, filterVal).then(function(rows){
-          if(orderField){
-            rows.sort(function(a,b){
-              var av=(a.data&&a.data[orderField])||"", bv=(b.data&&b.data[orderField])||"";
-              return av<bv?-1:(av>bv?1:0);
-            });
-          }
-          if(limitN) rows = rows.slice(0, limitN);
-          cb(rowsToSnap(rows));
-        }).catch(function(e){ if(errCb) errCb(e); });
-      }
-      reload();
-      var opts = { event:"*", schema:"public", table:table };
-      if(filterCol) opts.filter = filterCol+"=eq."+filterVal;
-      var channelName = "ch_"+table+"_"+(filterVal||"all")+"_"+Math.random().toString(36).slice(2);
-      sb.channel(channelName).on("postgres_changes", opts, reload).subscribe();
-    }
-    function makeDoc(table, id, parentFilterCol, parentFilterVal){
-      return {
-        id: id,
-        get: function(){
-          return sb.from(table).select("*").eq("id", id).maybeSingle().then(function(r){
-            if(r.error) throw r.error;
-            return { exists: !!r.data, data: function(){ return (r.data && r.data.data) || {}; }, id: id };
-          });
-        },
-        set: function(data){
-          var row = { id: id, data: data };
-          if(parentFilterCol) row[parentFilterCol] = parentFilterVal;
-          return sb.from(table).upsert(row).then(function(r){ if(r.error) throw r.error; });
-        },
-        update: function(patch){
-          return sb.from(table).select("data").eq("id", id).maybeSingle().then(function(r){
-            if(r.error) throw r.error;
-            var merged = Object.assign({}, (r.data && r.data.data) || {}, patch);
-            var row = { id: id, data: merged };
-            if(parentFilterCol) row[parentFilterCol] = parentFilterVal;
-            return sb.from(table).upsert(row).then(function(r2){ if(r2.error) throw r2.error; });
-          });
-        },
-        delete: function(){
-          return sb.from(table).delete().eq("id", id).then(function(r){ if(r.error) throw r.error; });
-        },
-        collection: function(sub){
-          // The only nested subcollection this app uses is chats/{id}/messages.
-          var subTable = (table==="chats" && sub==="messages") ? "chat_messages" : sub;
-          var filterCol = (table==="chats" && sub==="messages") ? "chat_id" : null;
-          return makeCollection(subTable, filterCol, id);
-        }
-      };
-    }
-    function makeCollection(table, filterCol, filterVal){
-      var orderField=null, limitN=null;
-      var api = {
-        doc: function(id){ return makeDoc(table, id, filterCol, filterVal); },
-        add: function(data){
-          var row = { data: data };
-          if(filterCol) row[filterCol] = filterVal;
-          return sb.from(table).insert(row).select().single().then(function(r){
-            if(r.error) throw r.error;
-            return { id: r.data.id };
-          });
-        },
-        orderBy: function(f){ orderField=f; return api; },
-        limit: function(n){ limitN=n; return api; },
-        onSnapshot: function(cb, errCb){ subscribeTable(table, filterCol, filterVal, orderField, limitN, cb, errCb); }
-      };
-      return api;
-    }
-    return {
-      collection: function(name){ return makeCollection(name, null, null); },
-      doc: function(path){
-        var parts = path.split("/");
-        return makeDoc(parts[0], parts[1], null, null);
-      }
-    };
-  }
-
-  async function connectSupabase(){
-    if(!window.supabase) return null;
-    var cfg = null;
-    try{
-      var res = await withTimeout(fetch("/api/config"), 5000);
-      if(res && res.ok) cfg = await res.json();
-    }catch(e){ cfg = null; }
-    if(!cfg || !cfg.url || !cfg.anonKey) return null;
-    try{
-      var sb = window.supabase.createClient(cfg.url, cfg.anonKey);
-      return createSupabaseDb(sb);
-    }catch(e){ return null; }
+  // Standalone deployment (e.g. Vercel) persistence: a small <script
+  // type="module"> block earlier in this document connects to Firebase/
+  // Firestore and exposes a tiny Firestore-backed shim -- matching the
+  // same collection/doc/onSnapshot/add/update/delete/orderBy/limit shape
+  // this file already calls against claude.ai's own "db" capability -- as
+  // window.__fbDbPromise. This just awaits that, with a timeout.
+  async function connectFirebase(){
+    if(!window.__fbDbPromise) return null;
+    try{ return await withTimeout(window.__fbDbPromise, 8000); }catch(e){ return null; }
   }
 
   async function boot(){
@@ -648,10 +680,10 @@
       }catch(e){}
     } else {
       // Standalone deployment (e.g. Vercel): no claude.ai capabilities.
-      // Use the Supabase-backed persistence layer instead, so data
+      // Use the Firebase-backed persistence layer instead, so data
       // actually survives reloads/redeploys rather than always resetting
       // to the hardcoded sample data.
-      try{ db = await withTimeout(connectSupabase(), 7000); }catch(e){ db=null; }
+      try{ db = await connectFirebase(); }catch(e){ db=null; }
       if(!db){ setPreview(); render(); return; }
     }
     subscribeAll();
