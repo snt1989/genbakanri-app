@@ -752,23 +752,30 @@
   }
   function onErr(e){
     toast("同期エラー: "+(e&&e.code||"unknown"));
-    // A read error (e.g. a permission rule denying this viewer) means this
-    // collection's onSnapshot will never call back with real data. Don't
-    // wait for the 9s watchdog in that case -- fall back to demo data right
-    // away so the login screen shows the offline hint instead of silently
-    // failing every login attempt against an empty member list.
-    if(!state.offlineMode){ setPreview(); render(); }
+    // A read error on some collection means its onSnapshot will never call
+    // back with real data. setPreview() only backfills collections that
+    // are still missing (state.loaded.X===false), so calling it here just
+    // fills the one gap this error left -- it no longer touches any other
+    // collection that already loaded real data successfully.
+    setPreview(); render();
   }
   function toObj(d){ var o=d.data()||{}; o.id=d.id; return o; }
 
+  // IMPORTANT: this only fills in collections that have NOT already loaded
+  // real data. It used to unconditionally overwrite every collection with
+  // sample data, which meant a single slow/erroring collection (e.g.
+  // "files", rarely touched) would silently wipe out an already-correctly-
+  // loaded "members" list back down to the 4-person demo roster -- the
+  // real data was fine, but the app threw it away a few seconds later.
+  // Only flip the offline-mode hint when "members" itself is one of the
+  // gaps being filled, since that's what actually breaks login.
   function setPreview(){
-    state.projects = SAMPLE_PROJECTS.slice();
-    state.customers = SAMPLE_CUSTOMERS.slice();
-    state.members = SAMPLE_MEMBERS.slice();
-    state.tasks = SAMPLE_TASKS.slice();
-    state.chats = SAMPLE_CHATS.slice();
+    if(!state.loaded.projects) state.projects = SAMPLE_PROJECTS.slice();
+    if(!state.loaded.customers) state.customers = SAMPLE_CUSTOMERS.slice();
+    if(!state.loaded.members){ state.members = SAMPLE_MEMBERS.slice(); state.offlineMode = true; }
+    if(!state.loaded.tasks) state.tasks = SAMPLE_TASKS.slice();
+    if(!state.loaded.chats) state.chats = SAMPLE_CHATS.slice();
     Object.keys(state.loaded).forEach(function(k){state.loaded[k]=true;});
-    state.offlineMode = true;
     updateLoginHint();
     tryAutoLogin();
   }
