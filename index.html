@@ -2726,7 +2726,7 @@
   // (admins only: stats, permission/password management, backup).
   function settingsSections(){
     var s = [["company","会社情報"],["personal","個人情報"]];
-    if(state.isAdmin){ s.push(["admin","管理画面"]); s.push(["master","マスタ管理"]); s.push(["trash","ゴミ箱"]); }
+    if(state.isAdmin){ s.push(["admin","管理画面"]); s.push(["master","マスタ管理"]); s.push(["trash","ゴミ箱"]); s.push(["backup","バックアップ"]); }
     return s;
   }
   function myMember(){
@@ -2738,12 +2738,13 @@
     if(!sections.some(function(x){return x[0]===state.settingsSeg;})) state.settingsSeg = "company";
     var html = '<h1 class="pagetitle">設定</h1><div style="height:14px"></div>';
     html += '<div class="segmented" style="margin-bottom:16px">'+sections.map(function(x){
-      return '<div class="segopt'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+((x[0]==="admin"||x[0]==="master"||x[0]==="trash")?iAdmin():'')+x[1]+'</div>';
+      return '<div class="segopt'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+((x[0]==="admin"||x[0]==="master"||x[0]==="trash"||x[0]==="backup")?iAdmin():'')+x[1]+'</div>';
     }).join("")+'</div>';
     if(state.settingsSeg==="personal") html += renderSettingsPersonal();
     else if(state.settingsSeg==="admin") html += renderSettingsAdmin();
     else if(state.settingsSeg==="master") html += renderSettingsMaster();
     else if(state.settingsSeg==="trash") html += renderSettingsTrash();
+    else if(state.settingsSeg==="backup") html += renderSettingsBackup();
     else html += renderSettingsCompany();
     return html;
   }
@@ -2989,23 +2990,96 @@
     return html;
   }
 
-  function backupAllData(){
-    var payload = {
-      exportedAt: new Date().toISOString(),
-      orgSettings: state.orgSettings,
-      members: state.members.map(function(m){ var c=Object.assign({},m); delete c.password; return c; }),
-      projects: state.projects, customers: state.customers, tasks: state.tasks, chats: state.chats, events: state.events, steps: state.steps, folders: state.folders
-    };
+  /* ============ バックアップ / 復元 ============ */
+  var BACKUP_COLS = [["projects","案件"],["customers","顧客"],["members","メンバー"],["tasks","タスク"],["chats","チャット"],["files","ファイル"],["folders","フォルダ"],["events","予定"],["steps","工程"],["trash","ゴミ箱"]];
+  function lastBackupAt(){ try{ return localStorage.getItem("genba_last_backup")||state.lastBackup||""; }catch(e){ return state.lastBackup||""; } }
+  function markBackup(){ var t=new Date().toISOString(); state.lastBackup=t; try{ localStorage.setItem("genba_last_backup", t); }catch(e){} }
+  function buildBackup(includePw){
+    var data = {}, counts = {};
+    BACKUP_COLS.forEach(function(c){
+      data[c[0]] = rawOf(c[0]).map(function(o){ var x=Object.assign({},o); if(c[0]==="members" && !includePw) delete x.password; return x; });
+      counts[c[0]] = data[c[0]].length;
+    });
+    var master = {}; MASTERS.forEach(function(m){ master[m.key] = m.arr.slice(); });
+    return {format:"genba-backup", version:2, exportedAt:new Date().toISOString(), exportedBy:state.myName||"", includesPasswords:!!includePw,
+      counts:counts, settings:{org:state.orgSettings, secret:{defaults:secretDefaults()}, master:master}, data:data};
+  }
+  function backupAllData(includePw){
+    var payload = buildBackup(includePw===true);
     var blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
     var filename = "genba-backup-"+todayISO()+".json";
+    var done = function(){ markBackup(); toast("バックアップを保存しました（"+BACKUP_COLS.reduce(function(n,c){return n+payload.counts[c[0]];},0)+"件）"); render(); };
     if(downloadsCap){
-      downloadsCap.save({filename:filename, data:blob}).catch(function(){ toast("ダウンロードがキャンセルされました"); });
+      downloadsCap.save({filename:filename, data:blob}).then(done).catch(function(){ toast("ダウンロードがキャンセルされました"); });
     } else {
       var a = document.createElement("a");
       a.href = URL.createObjectURL(blob); a.download = filename;
       document.body.appendChild(a); a.click();
       setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+      done();
     }
+  }
+  // 古い形式（コレクションが最上位にある旧バックアップ）も読めるように正規化する
+  function parseBackup(text){
+    var j; try{ j = JSON.parse(text); }catch(e){ return {error:"JSONとして読み込めませんでした"}; }
+    if(!j || typeof j!=="object") return {error:"バックアップファイルの形式が正しくありません"};
+    var src = j.format==="genba-backup" ? (j.data||{}) : j;
+    var data = {}, total = 0;
+    BACKUP_COLS.forEach(function(c){
+      var arr = Array.isArray(src[c[0]]) ? src[c[0]].filter(function(x){ return x && typeof x==="object" && x.id; }) : [];
+      data[c[0]] = arr; total += arr.length;
+    });
+    var st = j.format==="genba-backup" ? (j.settings||{}) : {org:j.orgSettings};
+    if(!total && !st.org) return {error:"復元できるデータが見つかりませんでした"};
+    return {data:data, settings:st, exportedAt:j.exportedAt||"", exportedBy:j.exportedBy||"", total:total, hasPw:!!j.includesPasswords, legacy:j.format!=="genba-backup"};
+  }
+  function restoreBackup(b){
+    var ps = [];
+    BACKUP_COLS.forEach(function(c){
+      var col = c[0];
+      b.data[col].forEach(function(item){
+        var id = item.id, d = Object.assign({}, item); delete d.id;
+        if(col==="members"){
+          var ex = rawOf("members").find(function(x){return x.id===id;});
+          if(!d.password) d.password = (ex && ex.password) || "1234";
+        }
+        if(!db){
+          var arr = rawOf(col), i = arr.findIndex(function(x){return x.id===id;});
+          if(i>-1) arr[i] = Object.assign({id:id}, d); else arr.push(Object.assign({id:id}, d));
+          ps.push(Promise.resolve());
+        } else ps.push(db.collection(col).doc(id).set(d));
+      });
+    });
+    var st = b.settings||{}, stamp = new Date().toISOString();
+    if(st.org){ state.orgSettings = Object.assign({}, state.orgSettings, st.org); if(db) ps.push(db.doc("settings/org").set(Object.assign({}, st.org, {updatedAt:stamp}))); }
+    if(st.secret && Array.isArray(st.secret.defaults)){ state.secretDefaults = st.secret.defaults; if(db) ps.push(db.doc("settings/secret").set({defaults:st.secret.defaults, updatedAt:stamp})); }
+    if(st.master){ applyMasters(st.master); if(db) ps.push(db.doc("settings/master").set(Object.assign({}, st.master, {updatedAt:stamp}))); }
+    state.backupPreview = null;
+    return runBatch(ps, "復元");
+  }
+  function renderSettingsBackup(){
+    var last = lastBackupAt(), days = last ? Math.floor((Date.now()-new Date(last).getTime())/86400000) : null;
+    var html = '<h2 style="font-size:13.5px;margin:4px 0 10px">バックアップ</h2>';
+    html += '<div class="card" style="padding:16px 18px;max-width:560px;display:flex;flex-direction:column;gap:12px">';
+    html += '<div class="side-stat" style="padding:0;border:none">最後のバックアップ<b style="font-size:12.5px">'+(last?esc(last.slice(0,10)+" "+last.slice(11,16))+"（"+days+"日前）":"まだありません")+'</b></div>';
+    if(days===null || days>=7) html += '<div class="badge" style="background:#fff4e5;color:#a55b00;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.5">'+(days===null?'バックアップがまだ取られていません。':'最後のバックアップから'+days+'日経っています。')+'定期的に保存しておくと安心です。</div>';
+    html += '<div style="font-size:12px;color:var(--ink-3);line-height:1.6">案件・顧客・メンバー・タスク・チャット・ファイル情報・フォルダ・予定・工程・ゴミ箱と、会社情報・社外秘の初期設定・マスタを1つのJSONに保存します。ファイル本体（画像など）は含まれません。</div>';
+    html += '<label style="font-size:12px;display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="bk-pw"> ログインパスワードも含める（取り扱い注意）</label>';
+    html += '<div><button class="btn primary" id="bk-run">'+iAdmin()+'今すぐバックアップ（JSON）</button></div>';
+    html += '</div>';
+    html += '<h2 style="font-size:13.5px;margin:22px 0 10px">バックアップから復元</h2>';
+    html += '<div class="card" style="padding:16px 18px;max-width:560px;display:flex;flex-direction:column;gap:12px">';
+    html += '<div style="font-size:12px;color:var(--ink-3);line-height:1.6">同じIDのデータは上書き、無いデータは追加されます。バックアップに無い現在のデータは削除されません。</div>';
+    html += '<input type="file" id="bk-file" accept=".json,application/json">';
+    var pv = state.backupPreview;
+    if(pv){
+      html += '<div style="font-size:12.5px;font-weight:700">'+esc(pv.name)+(pv.exportedAt?'（'+esc(pv.exportedAt.slice(0,10))+' 作成）':'')+(pv.legacy?' ・旧形式':'')+'</div>';
+      html += '<table class="tbl" style="font-size:12px"><thead><tr><th>項目</th><th style="text-align:right">バックアップ</th><th style="text-align:right">現在</th></tr></thead><tbody>'+
+        BACKUP_COLS.map(function(c){ return '<tr><td>'+esc(c[1])+'</td><td style="text-align:right">'+pv.data[c[0]].length+'</td><td style="text-align:right">'+rawOf(c[0]).length+'</td></tr>'; }).join("")+'</tbody></table>';
+      html += '<div style="display:flex;gap:8px"><button class="btn primary" id="bk-restore" style="background:var(--danger);border-color:var(--danger)">この内容で復元する</button><button class="btn outline" id="bk-cancel">キャンセル</button></div>';
+    }
+    html += '</div>';
+    return html;
   }
 
   /* ============ modal / small forms ============ */
@@ -4408,6 +4482,22 @@
     });
     var backupBtn = document.getElementById("admin-backup");
     if(backupBtn) backupBtn.addEventListener("click", function(){ if(!state.isAdmin) return; backupAllData(); });
+    var bkRun = document.getElementById("bk-run");
+    if(bkRun) bkRun.addEventListener("click", function(){ if(!state.isAdmin) return; backupAllData(document.getElementById("bk-pw").checked); });
+    var bkFile = document.getElementById("bk-file");
+    if(bkFile) bkFile.addEventListener("change", function(){
+      var f = bkFile.files && bkFile.files[0]; if(!f || !state.isAdmin) return;
+      var r = new FileReader();
+      r.onload = function(){ var b = parseBackup(String(r.result||"")); if(b.error){ state.backupPreview=null; toast(b.error); render(); return; } b.name=f.name; state.backupPreview=b; render(); };
+      r.readAsText(f);
+    });
+    var bkCancel = document.getElementById("bk-cancel");
+    if(bkCancel) bkCancel.addEventListener("click", function(){ state.backupPreview=null; render(); });
+    var bkRestore = document.getElementById("bk-restore");
+    if(bkRestore) bkRestore.addEventListener("click", function(){
+      var b = state.backupPreview; if(!b || !state.isAdmin) return;
+      confirmDelete("バックアップ（"+b.total+"件）の内容で現在のデータを上書き・追加します。", function(){ restoreBackup(b); }, {title:"復元の確認", button:"復元する"});
+    });
   }
 
   document.addEventListener("click", function(e){
