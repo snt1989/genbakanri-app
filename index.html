@@ -282,6 +282,16 @@
   .member-side-name{font-weight:700;font-size:12.5px;}
   .member-side-sub{font-size:10.5px;color:var(--ink-faint);margin-top:1px;}
 
+  .cf-section{padding:6px 0 14px;}
+  .cf-section + .cf-section{border-top:1px solid var(--border);padding-top:16px;}
+  .cf-section h3{font-size:13px;margin:0 0 10px;}
+  .cf-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 16px;}
+  .cf-field{display:flex;flex-direction:column;gap:4px;min-width:0;}
+  .cf-label{font-size:11px;color:var(--ink-faint);font-weight:600;}
+  .cf-label .req{color:var(--danger);font-size:10px;font-weight:700;margin-left:4px;}
+  .cf-spacer{display:block;}
+  @media (max-width:640px){.cf-grid{.cf-spacer{display:none;}grid-template-columns:repeat(2,minmax(0,1fr));}.cf-field{grid-column:span 2 !important;}}
+
   /* ---- Modal ---- */
   #modal-layer{position:fixed;inset:0;z-index:50;display:none;}
   #modal-layer.open{display:block;}
@@ -1237,20 +1247,22 @@
       fetch("https://zipcloud.ibsnet.jp/api/search?zipcode="+zip).then(function(r){ return r.json(); }).then(parse).catch(jsonp);
     }catch(e){ jsonp(); }
   }
-  // Wires two postal inputs (3 + 4 digits) to the 都道府県 select and 住所 input.
+  // Wires postal input(s) to the 都道府県 select and 住所 input. With id2 it is
+  // the 3+4 digit pair; with id2 === null it is one field ("020-0033").
   function bindPostalLookup(id1, id2, prefId, addrId){
-    var e1 = document.getElementById(id1), e2 = document.getElementById(id2);
+    var e1 = document.getElementById(id1), e2 = id2 ? document.getElementById(id2) : null;
     var pref = document.getElementById(prefId), addr = document.getElementById(addrId);
-    if(!e1 || !e2 || !pref || !addr) return;
+    if(!e1 || (id2 && !e2) || !pref || !addr) return;
     var seq = 0;
     // A typed address is never overwritten; one we filled in ourselves may be refreshed.
     addr.addEventListener("input", function(){ addr.removeAttribute("data-auto"); });
     function toHalf(v){ return String(v).replace(/[０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0)-0xFEE0); }).replace(/[^0-9]/g, ""); }
+    function digits(){ return e2 ? toHalf(e1.value)+toHalf(e2.value) : toHalf(e1.value); }
     function run(){
-      var z1 = toHalf(e1.value), z2 = toHalf(e2.value);
-      if(z1.length!==3 || z2.length!==4) return;
+      var z = digits();
+      if(z.length!==7 || (e2 && (toHalf(e1.value).length!==3 || toHalf(e2.value).length!==4))) return;
       var my = ++seq;
-      lookupPostal(z1+z2, function(res, err){
+      lookupPostal(z, function(res, err){
         if(my!==seq) return;
         if(!res){ toast(err==="notfound" ? "該当する住所が見つかりませんでした" : "住所を取得できませんでした。手入力してください"); return; }
         if(Array.prototype.some.call(pref.options, function(o){ return o.value===res.prefecture; })) pref.value = res.prefecture;
@@ -1258,11 +1270,19 @@
         toast("郵便番号から住所を入力しました");
       });
     }
+    if(!e2){
+      e1.addEventListener("input", function(){
+        var d = toHalf(e1.value).slice(0,7);
+        e1.value = d.length>3 ? d.slice(0,3)+"-"+d.slice(3) : d;
+        run();
+      });
+      return;
+    }
     e1.addEventListener("input", function(){
       var d = toHalf(e1.value);
       if(d.length>3){ e2.value = d.slice(3,7); d = d.slice(0,3); }   // pasted "0200866" / "020-0866"
       e1.value = d;
-      if(d.length===3 && e1.value.length===3 && e2.value.length<4 && document.activeElement===e1 && toHalf(e2.value)==="") e2.focus();
+      if(d.length===3 && toHalf(e2.value)==="") e2.focus();
       run();
     });
     e2.addEventListener("input", function(){ e2.value = toHalf(e2.value).slice(0,4); run(); });
@@ -1923,36 +1943,87 @@
     };
   }
 
+  // 顧客の登録・編集: 基本情報 / 住所 / 書類に使用する名称 / 担当者
+  var CUSTOMER_HONORIFICS = ["未選択","御中","様","殿"];
+  function customerPostal(c){
+    if(!c) return "";
+    if(c.postalCode) return c.postalCode;
+    return c.postalCode1 ? c.postalCode1+(c.postalCode2?"-"+c.postalCode2:"") : "";
+  }
   function openCustomerForm(editId){
     var cu = editId ? state.customers.find(function(x){ return x.id===editId; }) : null;
     if(editId && !cu) return;
     var v = function(k){ return esc(cu && cu[k]!=null ? cu[k] : ""); };
-    var body = '<div style="margin:-16px -18px">'+
-      formRow("顧客名", true, false, '<input type="text" id="f-cname" placeholder="例：山田花子" value="'+v("name")+'">')+
-      formRow("連絡先", false, false, '<div class="inline2"><input type="text" id="f-ccontact" placeholder="奥様/担当者" value="'+v("contactName")+'"><input type="tel" id="f-cphone" placeholder="電話番号" value="'+v("phone")+'"><input type="email" id="f-cemail" placeholder="メールアドレス" value="'+v("email")+'"></div>')+
-      formRow("郵便番号", false, false, '<div class="inline2" style="max-width:260px"><input type="text" id="f-cpostal1" placeholder="例：123" maxlength="3" value="'+v("postalCode1")+'"><span>-</span><input type="text" id="f-cpostal2" placeholder="例：4567" maxlength="4" value="'+v("postalCode2")+'"></div>')+
-      formRow("都道府県", false, false, '<div style="max-width:180px">'+selectHtml("f-cpref", ["未選択"].concat(PREFS), cu ? (cu.prefecture||"未選択") : "岩手県")+'</div>')+
-      formRow("住所", false, false, '<input type="text" id="f-caddress" placeholder="例：渋谷区恵比寿南2-16-13" value="'+v("address")+'">')+
-      formRow("備考/お客様情報", false, false, '<textarea id="f-cnotes" placeholder="例：昼間は仕事のため連絡NG" style="min-height:130px">'+v("notes")+'</textarea>')+
+    var cf = function(label, inner, req, span){
+      return '<label class="cf-field" style="'+(span?'grid-column:span '+span:'')+'"><span class="cf-label">'+esc(label)+(req?' <span class="req">必須</span>':'')+'</span>'+inner+'</label>';
+    };
+    var sel = function(id, opts, val){ return selectHtml(id, opts, val||opts[0]); };
+    var sec = function(title, inner){ return '<div class="cf-section"><h3>'+esc(title)+'</h3><div class="cf-grid">'+inner+'</div></div>'; };
+    var body = '<div style="margin:-4px 0">'+
+      sec("基本情報",
+        cf("名前", '<input type="text" id="f-cname" placeholder="例：山田花子 / 株式会社〇〇" value="'+v("name")+'">', true, 2)+
+        cf("名前（ふりがな）", '<input type="text" id="f-ckana" placeholder="例：やまだはなこ" value="'+v("kana")+'">', false, 2)+
+        cf("適格請求書発行事業者", sel("f-cinvoice", ["未選択","該当する","該当しない"], cu && cu.invoiceIssuer ? cu.invoiceIssuer : "未選択"), false, 1)+
+        cf("登録番号（13桁）", '<input type="text" id="f-cinvno" placeholder="例：T1234567890123" maxlength="14" value="'+v("invoiceNumber")+'">', false, 2)+
+        cf("事業所種別", sel("f-cetype", ["未選択","法人","個人"], cu && cu.entityType ? cu.entityType : "未選択"), false, 1)+
+        cf("法人番号", '<input type="text" id="f-ccorpno" placeholder="13桁" maxlength="13" value="'+v("corporateNumber")+'">', false, 2)+
+        cf("社内メモ", '<textarea id="f-cnotes" placeholder="例：昼間は仕事のため連絡NG" style="min-height:70px">'+v("notes")+'</textarea>', false, 4)
+      )+
+      sec("取引先住所",
+        cf("地域", sel("f-cregion", ["国内","海外"], cu && cu.region ? cu.region : "国内"), false, 1)+
+        '<span class="cf-spacer" style="grid-column:span 3"></span>'+
+        cf("郵便番号", '<input type="text" id="f-cpostal" placeholder="例：020-0033" maxlength="8" value="'+esc(customerPostal(cu))+'">', false, 1)+
+        cf("都道府県", sel("f-cpref", ["未選択"].concat(PREFS), cu ? (cu.prefecture||"未選択") : "岩手県"), false, 1)+
+        cf("市区町村・番地", '<input type="text" id="f-caddress" placeholder="例：盛岡市盛岡駅前通10-38" value="'+v("address")+'">', false, 2)+
+        cf("建物名・部屋番号など", '<input type="text" id="f-cbuilding" value="'+v("building")+'">', false, 4)
+      )+
+      sec("書類に使用する名称",
+        cf("正式名称（帳票に表示される名称）", '<input type="text" id="f-cformal" value="'+v("formalName")+'">', false, 2)+
+        cf("正式名称（カナ）", '<input type="text" id="f-cformalkana" value="'+v("formalKana")+'">', false, 1)+
+        cf("敬称", sel("f-chonor", CUSTOMER_HONORIFICS, cu && cu.honorific ? cu.honorific : "未選択"), false, 1)
+      )+
+      sec("取引先担当者",
+        cf("担当者名", '<input type="text" id="f-ccontact" placeholder="奥様/担当者" value="'+v("contactName")+'">', false, 2)+
+        cf("敬称", sel("f-ccontacthonor", CUSTOMER_HONORIFICS, cu && cu.contactHonorific ? cu.contactHonorific : "未選択"), false, 1)+
+        cf("部署", '<input type="text" id="f-cdept" value="'+v("department")+'">', false, 1)+
+        cf("メールアドレス", '<input type="email" id="f-cemail" value="'+v("email")+'">', false, 2)+
+        cf("電話番号", '<input type="tel" id="f-cphone" placeholder="090-0000-0000" value="'+v("phone")+'">', false, 2)
+      )+
     '</div>';
     openModal(cu?"顧客情報の編集":"顧客情報の登録", body, '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-submit" disabled>'+(cu?"保存する":"追加する")+'</button>');
     var box = document.getElementById("modal-box");
-    box.style.maxWidth = "820px";
+    box.style.maxWidth = "860px";
     var foot = box.querySelector(".modal-foot");
     if(foot){ foot.style.background = "var(--surface-2)"; foot.style.borderRadius = "0 0 16px 16px"; }
-    bindPostalLookup("f-cpostal1", "f-cpostal2", "f-cpref", "f-caddress");
+    bindPostalLookup("f-cpostal", null, "f-cpref", "f-caddress");
+
+    // 登録番号(T+13桁) -> 法人番号 (法人のとき、空欄なら補完)
+    var invEl = document.getElementById("f-cinvno"), corpEl = document.getElementById("f-ccorpno"), typeEl = document.getElementById("f-cetype");
+    invEl.addEventListener("input", function(){
+      invEl.value = invEl.value.replace(/[Ａ-Ｚａ-ｚ０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0)-0xFEE0); }).replace(/[\s\-]/g,"").toUpperCase();
+    });
+    invEl.addEventListener("blur", function(){
+      var m = /^T?(\d{13})$/.exec(invEl.value);
+      if(m){ invEl.value = "T"+m[1]; if(!corpEl.value.trim() && typeEl.value==="法人") corpEl.value = m[1]; }
+    });
     var nameEl = document.getElementById("f-cname"), submit = document.getElementById("f-submit");
     var refresh = function(){ submit.disabled = !nameEl.value.trim(); };
     nameEl.addEventListener("input", refresh); refresh();
     submit.onclick = function(){
       var name = nameEl.value.trim();
-      if(!name){ toast("顧客名を入力してください"); return; }
+      if(!name){ toast("名前を入力してください"); return; }
       var val = function(id){ return document.getElementById(id).value.trim(); };
-      var pref = document.getElementById("f-cpref").value;
+      var pick = function(id){ var x = document.getElementById(id).value; return x==="未選択" ? "" : x; };
+      var invNo = val("f-cinvno");
+      if(invNo && !/^T\d{13}$/.test(invNo)){ toast("登録番号は T + 13桁の数字で入力してください"); return; }
+      var corp = val("f-ccorpno");
+      if(corp && !/^\d{13}$/.test(corp)){ toast("法人番号は13桁の数字で入力してください"); return; }
       var data = {
-        name:name, contactName:val("f-ccontact"), phone:val("f-cphone"), email:val("f-cemail"),
-        postalCode1:val("f-cpostal1"), postalCode2:val("f-cpostal2"),
-        prefecture: pref==="未選択" ? "" : pref, address:val("f-caddress"), notes:val("f-cnotes")
+        name:name, kana:val("f-ckana"),
+        invoiceIssuer:pick("f-cinvoice"), invoiceNumber:invNo, entityType:pick("f-cetype"), corporateNumber:corp, notes:val("f-cnotes"),
+        region:val("f-cregion"), postalCode:val("f-cpostal"), prefecture:pick("f-cpref"), address:val("f-caddress"), building:val("f-cbuilding"),
+        formalName:val("f-cformal"), formalKana:val("f-cformalkana"), honorific:pick("f-chonor"),
+        contactName:val("f-ccontact"), contactHonorific:pick("f-ccontacthonor"), department:val("f-cdept"), email:val("f-cemail"), phone:val("f-cphone")
       };
       if(!cu){ data.registeredDate = todayISO(); writeDoc("customers", null, data, "顧客を登録しました"); return; }
       writeDoc("customers", cu.id, data, "顧客情報を更新しました", function(){
@@ -2079,19 +2150,32 @@
       }
     },
     customers:{
-      label:"顧客", col:"customers", nameKey:"name", importable:true, requiredLabel:"顧客名",
+      label:"顧客", col:"customers", nameKey:"name", importable:true, requiredLabel:"名前",
       columns:[
         {key:"id",label:"ID",readonly:true},
-        {key:"name",label:"顧客名"},
-        {key:"contactName",label:"奥様/担当者"},
-        {key:"phone",label:"電話番号",bulk:true},
-        {key:"email",label:"メールアドレス"},
+        {key:"name",label:"名前"},
+        {key:"kana",label:"名前（ふりがな）"},
+        {key:"invoiceIssuer",label:"適格請求書発行事業者",options:["該当する","該当しない"]},
+        {key:"invoiceNumber",label:"登録番号"},
+        {key:"entityType",label:"事業所種別",options:["法人","個人"],bulk:true},
+        {key:"corporateNumber",label:"法人番号"},
+        {key:"region",label:"地域",options:["国内","海外"]},
+        {key:"postalCode",label:"郵便番号"},
         {key:"prefecture",label:"都道府県",options:PREFS,bulk:true},
-        {key:"address",label:"住所",bulk:true},
-        {key:"notes",label:"備考/お客様情報"},
+        {key:"address",label:"市区町村・番地",bulk:true},
+        {key:"building",label:"建物名・部屋番号など"},
+        {key:"formalName",label:"正式名称"},
+        {key:"formalKana",label:"正式名称（カナ）"},
+        {key:"honorific",label:"敬称",options:["御中","様","殿"],bulk:true},
+        {key:"contactName",label:"担当者名"},
+        {key:"contactHonorific",label:"担当者の敬称",options:["御中","様","殿"]},
+        {key:"department",label:"部署"},
+        {key:"email",label:"メールアドレス"},
+        {key:"phone",label:"電話番号",bulk:true},
+        {key:"notes",label:"社内メモ"},
         {key:"registeredDate",label:"登録日",type:"date",bulk:true}
       ],
-      sample:{name:"山田 太郎",contactName:"山田 花子",phone:"090-0000-0000",email:"yamada@example.com",prefecture:"岩手県",address:"盛岡市本宮7丁目7番41号",notes:"昼間は仕事のため連絡NG",registeredDate:"2026-10-06"},
+      sample:{name:"山田 太郎",kana:"やまだ たろう",entityType:"個人",region:"国内",postalCode:"020-0866",prefecture:"岩手県",address:"盛岡市本宮7丁目7番41号",honorific:"様",contactName:"山田 花子",contactHonorific:"様",email:"yamada@example.com",phone:"090-0000-0000",notes:"昼間は仕事のため連絡NG",registeredDate:"2026-10-06"},
       all:function(){ return state.customers; },
       fileLabel:function(){ return "顧客一覧"; },
       finalize:function(patch, existing){
