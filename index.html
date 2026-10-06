@@ -207,23 +207,71 @@
   .mini-avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;flex:none;}
 
   /* ---- Chat ---- */
-  .chat-shell{display:flex;width:100%;min-height:calc(100vh - 62px);border-top:1px solid var(--border);}
-  .chat-list{width:290px;flex:none;border-right:1px solid var(--border);overflow-y:auto;}
-  .chat-list-head{padding:16px 18px 10px;display:flex;justify-content:space-between;align-items:center;}
-  .chat-item{display:flex;gap:10px;padding:12px 16px;cursor:pointer;border-bottom:1px solid var(--border);align-items:flex-start;}
-  .chat-item:hover,.chat-item.active{background:var(--surface-2);}
-  .chat-ava{width:34px;height:34px;border-radius:9px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;flex:none;}
-  .chat-ava svg{width:16px;height:16px;}
-  .chat-item-name{font-weight:700;font-size:12.5px;line-height:1.35;}
-  .chat-item-meta{font-size:10.5px;color:var(--ink-faint);margin-top:3px;}
-  .chat-pane{flex:1;display:flex;flex-direction:column;min-width:0;}
-  .chat-pane-head{padding:14px 20px;border-bottom:1px solid var(--border);font-weight:700;font-size:13.5px;}
-  .chat-msgs{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:12px;}
-  .msg{max-width:70%;padding:9px 13px;border-radius:12px;font-size:12.5px;line-height:1.55;background:var(--surface-2);align-self:flex-start;}
-  .msg .ma{font-size:10.5px;font-weight:700;color:var(--ink-faint);margin-bottom:3px;}
-  .msg.me{background:var(--accent-soft);color:var(--ink);align-self:flex-end;}
-  .chat-input-row{display:flex;gap:8px;padding:14px 18px;border-top:1px solid var(--border);}
-  .chat-input-row input{flex:1;}
+  .chat-page{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--surface);}
+  .chat-top{display:flex;align-items:center;gap:18px;padding:16px 30px;border-bottom:1px solid var(--border);background:var(--surface-2);}
+  .chat-top h1{font-size:26px;font-weight:500;margin:0;letter-spacing:.04em;}
+  .chat-top .pill{border:1.5px solid var(--accent);color:var(--accent);background:transparent;border-radius:999px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
+  .chat-top .pill:hover{background:var(--accent-soft);}
+  .chat-shell{display:flex;width:100%;flex:1;min-height:calc(100vh - 130px);}
+  .chat-list{width:270px;flex:none;background:var(--surface-2);display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--border);}
+  .chat-search{display:flex;gap:6px;padding:14px 12px;align-items:center;}
+  .chat-search .sb{flex:1;display:flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:4px;background:var(--surface);padding:0 8px;}
+  .chat-search input{border:none;outline:none;background:transparent;padding:8px 0;width:100%;font-size:13px;min-width:0;}
+  .chat-search button{background:var(--accent);color:#fff;border:none;border-radius:4px;padding:8px 10px;font-size:12px;font-weight:700;cursor:pointer;opacity:.85;font-family:inherit;}
+  .chat-list-body{overflow-y:auto;flex:1;}
+  .chat-item{display:flex;gap:12px;padding:16px 14px;cursor:pointer;border-bottom:1px solid var(--border);align-items:flex-start;min-height:92px;}
+  .chat-item:hover{background:#efeee9;}
+  .chat-item.active{background:var(--surface);}
+  .chat-ava{width:46px;height:46px;border-radius:50%;background:#e4e3dd;color:#fff;display:flex;align-items:center;justify-content:center;flex:none;}
+  .chat-ava svg{width:22px;height:22px;stroke:#fff;}
+  .chat-item.active .chat-ava{background:#dedcd5;}
+  .chat-item-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;}
+  .chat-item-name{font-weight:700;font-size:13.5px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-all;}
+  .chat-item-meta{font-size:11px;color:var(--ink-faint);display:flex;justify-content:space-between;gap:6px;}
+  .chat-pane{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;}
+  .chat-msgs{flex:1;overflow-y:auto;padding:14px 26px 8px;display:flex;flex-direction:column;gap:14px;max-height:calc(100vh - 260px);}
+  .cm{display:flex;gap:10px;align-items:flex-start;}
+  .cm .cav{width:42px;height:42px;border-radius:50%;flex:none;color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:15px;}
+  .cm .cbody{min-width:0;max-width:86%;}
+  .cm .cname{font-size:11px;color:var(--ink-faint);margin-bottom:3px;}
+  .cm .crow{display:flex;align-items:flex-end;gap:10px;}
+  .cm .cbub{background:#e9e8e3;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.65;word-break:break-word;}
+  .cm .ctime{font-size:11px;color:var(--ink-faint);white-space:nowrap;padding-bottom:2px;}
+  .cm.me{justify-content:flex-end;}
+  .cm.me .crow{flex-direction:row-reverse;}
+  .cm.me .cbub{background:var(--accent-soft);}
+  .cm .cbub b.mention{font-weight:700;}
+  .cm .cbub img.catt{display:block;max-width:260px;max-height:200px;border-radius:6px;margin-top:6px;}
+  .cm .cbub a.cfile{display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;text-decoration:underline;}
+  .cdate{text-align:center;font-size:14px;color:var(--ink-soft);margin:4px 0;}
+  .csys{align-self:center;background:#9a9a96;color:#fff;border-radius:14px;padding:10px 26px;text-align:center;font-size:12.5px;line-height:1.5;max-width:340px;}
+  .chat-input-wrap{border-top:1px solid var(--border);padding:12px 20px 8px;position:relative;}
+  .chat-tools{display:flex;gap:14px;align-items:center;margin-bottom:6px;}
+  .chat-tools button{background:none;border:none;cursor:pointer;color:#666;padding:2px;display:flex;font-size:22px;font-weight:700;font-family:inherit;line-height:1;}
+  .chat-tools button:hover{color:var(--accent);}
+  .chat-tools svg{width:26px;height:26px;}
+  .chat-input-row{display:flex;gap:12px;align-items:flex-start;}
+  .chat-input-row textarea{flex:1;min-height:48px;max-height:140px;resize:vertical;border:1px solid var(--border);border-radius:3px;padding:10px 12px;font-size:13px;font-family:inherit;}
+  .chat-send{background:var(--accent);color:#fff;border:none;border-radius:4px;padding:12px 18px;font-size:13px;font-weight:700;cursor:pointer;opacity:.4;font-family:inherit;}
+  .chat-send.ready{opacity:1;}
+  .chat-hint{text-align:right;font-size:11px;color:var(--ink-faint);margin-top:4px;}
+  .chat-pop{position:absolute;bottom:100%;left:20px;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);padding:8px;z-index:5;max-width:320px;max-height:240px;overflow:auto;}
+  .chat-pop .emo{display:grid;grid-template-columns:repeat(8,1fr);gap:2px;}
+  .chat-pop .emo button{font-size:20px;background:none;border:none;cursor:pointer;padding:3px;border-radius:6px;}
+  .chat-pop .emo button:hover,.chat-pop .mem:hover{background:var(--surface-2);}
+  .chat-pop .mem{display:block;width:100%;text-align:left;background:none;border:none;padding:6px 10px;font-size:13px;cursor:pointer;border-radius:6px;font-family:inherit;}
+  .chat-side{width:290px;flex:none;border-left:1px solid var(--border);display:flex;flex-direction:column;background:var(--surface);}
+  .chat-side .goproj{display:flex;align-items:center;gap:8px;padding:26px 20px;font-weight:700;font-size:14px;}
+  .chat-side h3{margin:0;padding:12px 0 10px;background:var(--surface-2);font-size:15px;font-weight:700;}
+  .chat-side .mlist{flex:1;overflow-y:auto;max-height:calc(100vh - 380px);}
+  .chat-side .mi{display:flex;gap:10px;align-items:center;padding:14px 12px;border-bottom:1px solid var(--border);}
+  .chat-side .mi .cav{width:46px;height:46px;border-radius:50%;flex:none;color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;}
+  .chat-side .mi .mn{font-weight:700;text-decoration:underline;color:var(--accent);font-size:14px;}
+  .chat-side .mi .ms{font-size:11.5px;color:var(--ink-soft);line-height:1.5;}
+  .chat-del{margin:18px;border:1.5px solid var(--accent);color:var(--accent);background:transparent;border-radius:999px;padding:11px 18px;font-weight:700;font-size:13.5px;cursor:pointer;display:flex;align-items:center;gap:8px;width:max-content;font-family:inherit;}
+  .chat-del:hover{background:var(--accent-soft);}
+  @media (max-width:1100px){.chat-side{display:none;}}
+  @media (max-width:760px){.chat-list{width:200px;}.chat-top{padding:12px 16px;}.chat-msgs{padding:12px;}}
   .chat-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--ink-faint);font-size:13px;}
 
   /* ---- Form page (project / member) ---- */
@@ -2764,44 +2812,105 @@
   }
 
   /* ============ CHAT ============ */
+  var CHAT_EMOJI = ["😀","😊","😂","🙂","😉","😍","🤔","😅","🙏","👍","👏","🙌","💪","✨","🔥","🎉","✅","❌","⚠️","📷","📄","🚧","🔧","🌧️","☀️","🚛","🕐","❗","❓","🙇","👌","🤝"];
+  function fmtAgo(iso){
+    if(!iso) return "";
+    var d = (Date.now()-new Date(iso).getTime())/1000;
+    if(isNaN(d)) return "";
+    if(d<60) return "たった今";
+    if(d<3600) return Math.floor(d/60)+"分前";
+    if(d<86400) return Math.floor(d/3600)+"時間前";
+    return Math.floor(d/86400)+"日前";
+  }
+  function chatTime(iso){ var d=new Date(iso); return isNaN(d)?"":String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
+  function chatDay(iso){ var d=new Date(iso); return isNaN(d)?"":d.getFullYear()+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+String(d.getDate()).padStart(2,"0"); }
+  function chatText(t){
+    var h = esc(t||"");
+    state.members.map(function(m){return m.name;}).filter(Boolean).sort(function(a,b){return b.length-a.length;}).forEach(function(n){
+      h = h.split("@"+esc(n)).join('<b class="mention">@'+esc(n)+'</b>');
+    });
+    return h.replace(/\n/g,"<br>");
+  }
+  function chatProject(chat){
+    if(!chat || chat.kind!=="project") return null;
+    return state.projects.find(function(x){return x.id===chat.projectId;}) || state.projects.find(function(x){return x.name===chat.name;}) || null;
+  }
+  function chatMembers(chat){
+    if(!chat) return [];
+    var names;
+    if(chat.kind==="project"){
+      var p = chatProject(chat);
+      names = p ? normalizeAssignees(p.assignees).map(function(a){return a.name;}) : [];
+    } else names = Array.isArray(chat.members) && chat.members.length ? chat.members : state.members.map(function(m){return m.name;});
+    return names.map(function(n){ return state.members.find(function(m){return m.name===n;}) || {name:n}; });
+  }
   function renderChat(){
     if(!state.loaded.chats) return skeleton();
-    if(!state.activeChat && state.chats.length) state.activeChat = state.chats[0].id;
-    var chat = state.chats.find(function(c){return c.id===state.activeChat;});
-    var html = '<div class="chat-shell">';
-    html += '<div class="chat-list"><div class="chat-list-head"><h2 style="font-size:14.5px">チャット</h2><button class="btn sm outline" data-open="chat-form">'+iPlus()+' 新規</button></div>';
-    if(state.chats.length===0){ html += '<div class="empty">チャットがありません</div>'; }
+    var visibleChats = state.chats.filter(function(c){ return c.kind!=="project" || !c.projectId || projectVisibleId(c.projectId); });
+    var q = (state.chatQ||"").trim().toLowerCase();
+    var listChats = visibleChats.filter(function(c){ return !q || (c.name||"").toLowerCase().indexOf(q)!==-1; });
+    if(!visibleChats.some(function(c){return c.id===state.activeChat;})) state.activeChat = visibleChats.length ? visibleChats[0].id : null;
+    var chat = visibleChats.find(function(c){return c.id===state.activeChat;});
+    var html = '<div class="chat-page"><div class="chat-top"><h1>チャット</h1><button class="pill" data-open="chat-form">グループチャットを作成</button></div><div class="chat-shell">';
+    html += '<div class="chat-list"><div class="chat-search"><div class="sb"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8"/></svg><input type="text" id="chat-q" placeholder="チャット名" value="'+esc(state.chatQ||"")+'"></div><button id="chat-qbtn">検索</button></div><div class="chat-list-body">';
+    if(listChats.length===0){ html += '<div class="empty" style="padding:20px;font-size:12px;color:var(--ink-faint)">'+(q?"該当するチャットがありません":"チャットがありません")+'</div>'; }
     else{
-      html += state.chats.slice().sort(function(a,b){return (b.updatedAt||"").localeCompare(a.updatedAt||"");}).map(function(c){
-        return '<div class="chat-item'+(c.id===state.activeChat?" active":"")+'" data-select-chat="'+c.id+'">'+
+      html += listChats.slice().sort(function(a,b){return (b.updatedAt||"").localeCompare(a.updatedAt||"");}).map(function(c){
+        return '<div class="chat-item'+(c.id===state.activeChat?" active":"")+'" data-select-chat="'+esc(c.id)+'">'+
           '<div class="chat-ava">'+(c.kind==="group"?iUsers():iDoc())+'</div>'+
-          '<div><div class="chat-item-name">'+esc(c.name)+'</div><div class="chat-item-meta">'+(c.kind==="group"?"グループ":"案件")+'</div></div>'+
+          '<div class="chat-item-main"><div class="chat-item-name">'+esc(c.name)+'</div><div class="chat-item-meta"><span>'+(c.kind==="group"?"グループ":"案件")+'</span><span>'+esc(fmtAgo(c.updatedAt))+'</span></div></div>'+
         '</div>';
       }).join("");
     }
-    html += '</div>';
+    html += '</div></div>';
     html += '<div class="chat-pane">';
     if(!chat){
-      html += '<div class="chat-empty">左のリストからチャットを選択してください</div>';
+      html += '<div class="chat-empty">左のリストからチャットを選択してください</div></div>';
     }else{
-      html += '<div class="chat-pane-head">'+esc(chat.name)+'</div>';
       html += '<div class="chat-msgs" id="chat-msgs">';
       var msgs = state.chatMsgs[chat.id] || [];
       if(msgs.length===0){ html += '<div style="color:var(--ink-faint);font-size:12px;text-align:center;margin-top:20px">まだメッセージはありません</div>'; }
       else{
+        var lastDay = "";
         html += msgs.map(function(m){
+          var out = "", day = chatDay(m.ts);
+          if(day && day!==lastDay){ out += '<div class="cdate">'+esc(day)+'</div>'; lastDay = day; }
+          if(m.system) return out+'<div class="csys">'+esc(chatTime(m.ts))+'<br>'+esc(m.text)+'</div>';
           var mine = state.myName && m.author===state.myName;
-          return '<div class="msg'+(mine?" me":"")+'"><div class="ma">'+esc(m.author)+'</div>'+esc(m.text)+'</div>';
+          var att = m.attachment ? (String(m.attachment.contentType||"").indexOf("image/")===0 ?
+              '<a href="'+esc(m.attachment.url)+'" target="_blank" rel="noopener"><img class="catt" src="'+esc(m.attachment.url)+'" alt=""></a>' :
+              '<br><a class="cfile" href="'+esc(m.attachment.url)+'" target="_blank" rel="noopener">'+iDoc()+esc(m.attachment.filename||"ファイル")+'</a>') : '';
+          return out+'<div class="cm'+(mine?" me":"")+'">'+(mine?'':'<div class="cav" style="background:'+avaColor(m.author)+'">'+esc(initials(m.author))+'</div>')+
+            '<div class="cbody">'+(mine?'':'<div class="cname">'+esc(m.author)+'</div>')+'<div class="crow"><div class="cbub">'+chatText(m.text)+att+'</div><div class="ctime">'+esc(chatTime(m.ts))+'</div></div></div></div>';
         }).join("");
       }
       html += '</div>';
-      html += '<div class="chat-input-row"><input type="text" id="chat-input" placeholder="メッセージを入力…"><button class="btn primary" id="chat-send">'+iSend()+' 送信</button></div>';
+      var draft = (state.chatDraft||{})[chat.id] || "";
+      html += '<div class="chat-input-wrap">';
+      if(state.chatPop==="emoji") html += '<div class="chat-pop"><div class="emo">'+CHAT_EMOJI.map(function(e){ return '<button data-chat-emoji="'+e+'">'+e+'</button>'; }).join("")+'</div></div>';
+      if(state.chatPop==="mention") html += '<div class="chat-pop">'+chatMembers(chat).map(function(m){ return '<button class="mem" data-chat-mention="'+esc(m.name)+'">@'+esc(m.name)+'</button>'; }).join("")+'</div>';
+      html += '<div class="chat-tools">'+
+        '<button type="button" data-chat-tool="emoji" title="絵文字"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c1 1.3 2.2 2 3.5 2s2.5-.7 3.5-2"/><path d="M9 9.5h.01M15 9.5h.01"/></svg></button>'+
+        '<button type="button" data-chat-tool="mention" title="メンションする">@</button>'+
+        '<button type="button" data-chat-tool="file" title="ファイルを添付"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 2h8l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm7 1.5V8h4.5L13 3.5z"/></svg></button>'+
+        '<button type="button" data-chat-tool="image" title="写真を添付"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4 18 5-5 4 4 3-3 4 4"/></svg></button>'+
+        '<input type="file" id="chat-file" style="display:none"><input type="file" id="chat-image" accept="image/*" style="display:none"></div>'+
+        '<div class="chat-input-row"><textarea id="chat-input" placeholder="メッセージ">'+esc(draft)+'</textarea><button class="chat-send'+(draft.trim()?' ready':'')+'" id="chat-send">送信</button></div>'+
+        '<div class="chat-hint">Ctrl + Enter で送信、Enter で改行</div></div></div>';
+    }
+    if(chat){
+      var mem = chatMembers(chat);
+      html += '<div class="chat-side">'+(chatProject(chat)?'<a class="goproj" href="#" data-open-project="'+esc(chatProject(chat).id)+'">'+iDoc()+' 案件詳細へ</a>':'<div style="height:12px"></div>')+
+        '<h3 style="padding-left:12px">メンバー</h3><div class="mlist">'+
+        (mem.length ? mem.map(function(m){
+          return '<div class="mi"><div class="cav" style="background:'+avaColor(m.name)+'">'+esc(initials(m.name))+'</div><div><div class="mn">'+esc(m.name)+'</div><div class="ms">'+esc(m.company||"")+(m.store?'<br>'+esc(m.store):'')+((m.roles||[]).length?'<br>'+esc(m.roles.join(",")):'')+'</div></div></div>';
+        }).join("") : '<div style="padding:16px;font-size:12px;color:var(--ink-faint)">メンバーが登録されていません</div>')+
+        '</div><button class="chat-del" id="chat-del">'+iTrash()+' チャットを削除する</button></div>';
     }
     html += '</div></div>';
     if(chat && !state.chatMsgs[chat.id]) loadChatMsgs(chat.id);
     return html;
   }
-
   function loadChatMsgs(chatId){
     if(!db){ state.chatMsgs[chatId] = SAMPLE_MSGS[chatId] || []; render(); return; }
     db.collection("chats").doc(chatId).collection("messages").orderBy("ts").limit(200).onSnapshot(function(snap){
@@ -3597,13 +3706,15 @@
   }
 
   function openChatForm(){
-    var body = field("チャット名 *", '<input type="text" id="f-chname" placeholder="例）〇〇邸 原状回復工事">') +
-      field("種類", selectHtml("f-chkind", ["案件","グループ"], "案件"));
-    openModal("新規チャット", body, '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-submit">作成する</button>');
+    var body = field("チャット名 *", '<input type="text" id="f-chname" placeholder="例）〇〇現場 共有グループ">') +
+      '<div class="field">メンバー（選んだ人がチャットのメンバーに表示されます）<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;max-height:220px;overflow:auto">'+
+      state.members.map(function(m){ return '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin:0"><input type="checkbox" data-chat-member="'+esc(m.name)+'"'+(m.name===state.myName?' checked':'')+'> '+esc(m.name)+'<span style="color:var(--ink-faint);font-size:11px">'+esc(m.store||"")+'</span></label>'; }).join("")+'</div></div>';
+    openModal("グループチャットを作成", body, '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-submit">作成する</button>');
     document.getElementById("f-submit").onclick = function(){
       var name = document.getElementById("f-chname").value.trim();
       if(!name){ toast("チャット名を入力してください"); return; }
-      var data = { name:name, kind: document.getElementById("f-chkind").value==="グループ"?"group":"project", updatedAt:new Date().toISOString() };
+      var members = Array.prototype.map.call(document.querySelectorAll("[data-chat-member]:checked"), function(el){ return el.getAttribute("data-chat-member"); });
+      var data = { name:name, kind:"group", members:members, updatedAt:new Date().toISOString() };
       if(!db){ data.id=uid(); state.chats.unshift(data); state.activeChat=data.id; closeModal(); render(); return; }
       db.collection("chats").add(data).then(function(ref){ state.activeChat=ref.id; closeModal(); }).catch(function(){toast("作成に失敗しました");});
     };
@@ -4684,31 +4795,73 @@
 
     c.querySelectorAll("[data-seg]").forEach(function(el){ el.addEventListener("click", function(){ state.memberSeg = el.getAttribute("data-seg"); render(); }); });
 
-    c.querySelectorAll("[data-select-chat]").forEach(function(el){ el.addEventListener("click", function(){ state.activeChat = el.getAttribute("data-select-chat"); render(); }); });
+    c.querySelectorAll("[data-select-chat]").forEach(function(el){ el.addEventListener("click", function(){ state.activeChat = el.getAttribute("data-select-chat"); state.chatPop=""; render(); }); });
+    var chatQ = document.getElementById("chat-q");
+    if(chatQ){
+      var doSearch = function(){ state.chatQ = chatQ.value; render(); };
+      document.getElementById("chat-qbtn").addEventListener("click", doSearch);
+      chatQ.addEventListener("keydown", function(e){ if(e.key==="Enter") doSearch(); });
+    }
     var sendBtn = document.getElementById("chat-send");
     if(sendBtn){
+      state.chatDraft = state.chatDraft || {};
+      var input = document.getElementById("chat-input");
+      var postMsg = function(msg, done){
+        if(!state.myName){ state.myName = "自分"; try{ localStorage.setItem("gc_myname", state.myName); }catch(e){} }
+        msg.author = state.myName; msg.ts = new Date().toISOString();
+        var cid = state.activeChat;
+        if(!db){ state.chatMsgs[cid] = (state.chatMsgs[cid]||[]).concat([msg]); var ch=state.chats.find(function(x){return x.id===cid;}); if(ch) ch.updatedAt=msg.ts; if(done) done(); render(); return; }
+        db.collection("chats").doc(cid).collection("messages").add(msg).then(function(){
+          db.collection("chats").doc(cid).update({updatedAt:msg.ts}).catch(function(){});
+          if(done) done();
+        }).catch(function(){ toast("送信に失敗しました"); });
+      };
       var doSend = function(){
-        var input = document.getElementById("chat-input");
         var text = input.value.trim();
         if(!text) return;
-        if(!state.myName){
-          state.myName = "自分";
-          try{ localStorage.setItem("gc_myname", state.myName); }catch(e){}
-        }
-        var msg = { author: state.myName, text: text, ts: new Date().toISOString() };
-        if(!db){
-          state.chatMsgs[state.activeChat] = (state.chatMsgs[state.activeChat]||[]).concat([msg]);
-          input.value=""; render(); return;
-        }
-        db.collection("chats").doc(state.activeChat).collection("messages").add(msg).then(function(){
-          db.collection("chats").doc(state.activeChat).update({updatedAt:new Date().toISOString()}).catch(function(){});
-        }).catch(function(){ toast("送信に失敗しました"); });
-        input.value="";
+        state.chatDraft[state.activeChat] = ""; state.chatPop = "";
+        postMsg({text:text}, null);
+        if(db){ input.value=""; sendBtn.classList.remove("ready"); }
       };
       sendBtn.addEventListener("click", doSend);
-      var chatInput = document.getElementById("chat-input");
-      if(chatInput) chatInput.addEventListener("keydown", function(e){ if(e.key==="Enter") doSend(); });
+      input.addEventListener("input", function(){ state.chatDraft[state.activeChat] = input.value; sendBtn.classList.toggle("ready", !!input.value.trim()); });
+      input.addEventListener("keydown", function(e){ if(e.key==="Enter" && (e.ctrlKey||e.metaKey)){ e.preventDefault(); doSend(); } });
+      c.querySelectorAll("[data-chat-tool]").forEach(function(el){ el.addEventListener("click", function(){
+        var k = el.getAttribute("data-chat-tool");
+        if(k==="file"||k==="image"){
+          if(!assetsCap){ toast("この環境ではファイルを添付できません"); return; }
+          document.getElementById(k==="file"?"chat-file":"chat-image").click(); return;
+        }
+        state.chatDraft[state.activeChat] = input.value; state.chatPop = state.chatPop===k ? "" : k; render();
+      }); });
+      var insertText = function(t){ var cur = input.value; state.chatDraft[state.activeChat] = cur + t; state.chatPop = ""; render(); var i2=document.getElementById("chat-input"); if(i2){ i2.focus(); i2.setSelectionRange(i2.value.length,i2.value.length); } };
+      c.querySelectorAll("[data-chat-emoji]").forEach(function(el){ el.addEventListener("click", function(){ insertText(el.getAttribute("data-chat-emoji")); }); });
+      c.querySelectorAll("[data-chat-mention]").forEach(function(el){ el.addEventListener("click", function(){ insertText("@"+el.getAttribute("data-chat-mention")+" "); }); });
+      ["chat-file","chat-image"].forEach(function(id){
+        var fi = document.getElementById(id);
+        fi.addEventListener("change", function(){
+          var f = fi.files && fi.files[0]; if(!f) return;
+          var chat = state.chats.find(function(x){return x.id===state.activeChat;});
+          toast("アップロード中…");
+          assetsCap.upload(f).then(function(res){
+            var pr = chatProject(chat);
+            if(pr){
+              saveRaw("files", null, {projectId:pr.id, projectName:pr?pr.name:"", folderId:null, assetId:res.id, url:res.url||null, filename:f.name||"ファイル", contentType:f.type||"", size:f.size||0, uploadedAt:new Date().toISOString(), uploadedBy:state.myName||""});
+            }
+            postMsg({text:"", attachment:{url:res.url, filename:f.name||"ファイル", contentType:f.type||""}}, function(){ toast("送信しました"); });
+          }).catch(function(){ toast("アップロードに失敗しました"); });
+        });
+      });
     }
+    var chatDel = document.getElementById("chat-del");
+    if(chatDel) chatDel.addEventListener("click", function(){
+      var cid = state.activeChat, ch = state.chats.find(function(x){return x.id===cid;}); if(!ch) return;
+      confirmDelete("チャット「"+ch.name+"」を削除します。メッセージも見られなくなります。", function(){
+        var after = function(){ state.activeChat = null; delete state.chatMsgs[cid]; closeModal(); toast("チャットを削除しました"); render(); };
+        if(!db){ state.chats = state.chats.filter(function(x){return x.id!==cid;}); after(); return; }
+        db.collection("chats").doc(cid).delete().then(after).catch(function(){ toast("削除に失敗しました"); });
+      });
+    });
 
     c.querySelectorAll("[data-setseg]").forEach(function(el){ el.addEventListener("click", function(){ state.settingsSeg = el.getAttribute("data-setseg"); render(); }); });
 
