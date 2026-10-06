@@ -237,6 +237,14 @@
   .cm .crow{display:flex;align-items:flex-end;gap:10px;}
   .cm .cbub{background:#e9e8e3;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.65;word-break:break-word;}
   .cm .ctime{font-size:11px;color:var(--ink-faint);white-space:nowrap;padding-bottom:2px;}
+  .cm .cact{display:flex;gap:2px;opacity:0;transition:opacity .12s;}
+  .cm:hover .cact,.cm .cact:focus-within{opacity:1;}
+  @media (hover:none){.cm .cact{opacity:1;}}
+  .cm .cact button{background:none;border:none;cursor:pointer;color:var(--ink-faint);padding:3px;border-radius:5px;display:flex;}
+  .cm .cact button:hover{background:var(--surface-2);color:var(--accent);}
+  .cm .cact button.del:hover{color:var(--danger);}
+  .cm .cact svg{width:15px;height:15px;}
+  .cm .cedited{font-size:10.5px;color:var(--ink-faint);margin-left:6px;}
   .cm.me{justify-content:flex-end;}
   .cm.me .crow{flex-direction:row-reverse;}
   .cm.me .cbub{background:var(--accent-soft);}
@@ -2881,7 +2889,9 @@
               '<a href="'+esc(m.attachment.url)+'" target="_blank" rel="noopener"><img class="catt" src="'+esc(m.attachment.url)+'" alt=""></a>' :
               '<br><a class="cfile" href="'+esc(m.attachment.url)+'" target="_blank" rel="noopener">'+iDoc()+esc(m.attachment.filename||"ファイル")+'</a>') : '';
           return out+'<div class="cm'+(mine?" me":"")+'">'+(mine?'':'<div class="cav" style="background:'+avaColor(m.author)+'">'+esc(initials(m.author))+'</div>')+
-            '<div class="cbody">'+(mine?'':'<div class="cname">'+esc(m.author)+'</div>')+'<div class="crow"><div class="cbub">'+chatText(m.text)+att+'</div><div class="ctime">'+esc(chatTime(m.ts))+'</div></div></div></div>';
+            '<div class="cbody">'+(mine?'':'<div class="cname">'+esc(m.author)+'</div>')+'<div class="crow"><div class="cbub">'+chatText(m.text)+att+'</div><div class="ctime">'+esc(chatTime(m.ts))+(m.edited?'<span class="cedited">編集済み</span>':'')+'</div>'+
+            ((mine||state.isAdmin) && m.id ? '<div class="cact">'+(mine?'<button data-chat-medit="'+esc(m.id)+'" title="編集">'+iEdit()+'</button>':'')+'<button class="del" data-chat-mdel="'+esc(m.id)+'" title="削除">'+iTrash()+'</button></div>' : '')+
+            '</div></div></div>';
         }).join("");
       }
       html += '</div>';
@@ -2901,7 +2911,7 @@
     if(chat){
       var mem = chatMembers(chat);
       html += '<div class="chat-side">'+(chatProject(chat)?'<a class="goproj" href="#" data-open-project="'+esc(chatProject(chat).id)+'">'+iDoc()+' 案件詳細へ</a>':'<div style="height:12px"></div>')+
-        '<h3 style="padding-left:12px">メンバー</h3><div class="mlist">'+
+        '<h3 style="padding-left:12px;display:flex;justify-content:space-between;align-items:center;padding-right:12px">メンバー<button class="btn sm outline" id="chat-edit">'+iEdit()+' チャットを編集</button></h3><div class="mlist">'+
         (mem.length ? mem.map(function(m){
           return '<div class="mi"><div class="cav" style="background:'+avaColor(m.name)+'">'+esc(initials(m.name))+'</div><div><div class="mn">'+esc(m.name)+'</div><div class="ms">'+esc(m.company||"")+(m.store?'<br>'+esc(m.store):'')+((m.roles||[]).length?'<br>'+esc(m.roles.join(",")):'')+'</div></div></div>';
         }).join("") : '<div style="padding:16px;font-size:12px;color:var(--ink-faint)">メンバーが登録されていません</div>')+
@@ -2912,7 +2922,7 @@
     return html;
   }
   function loadChatMsgs(chatId){
-    if(!db){ state.chatMsgs[chatId] = SAMPLE_MSGS[chatId] || []; render(); return; }
+    if(!db){ state.chatMsgs[chatId] = (SAMPLE_MSGS[chatId] || []).map(function(m){ return m.id ? m : Object.assign({id:uid()}, m); }); render(); return; }
     db.collection("chats").doc(chatId).collection("messages").orderBy("ts").limit(200).onSnapshot(function(snap){
       state.chatMsgs[chatId] = snap.docs.map(toObj);
       if(state.activeChat===chatId) render();
@@ -3705,15 +3715,24 @@
     };
   }
 
-  function openChatForm(){
-    var body = field("チャット名 *", '<input type="text" id="f-chname" placeholder="例）〇〇現場 共有グループ">') +
-      '<div class="field">メンバー（選んだ人がチャットのメンバーに表示されます）<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;max-height:220px;overflow:auto">'+
-      state.members.map(function(m){ return '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin:0"><input type="checkbox" data-chat-member="'+esc(m.name)+'"'+(m.name===state.myName?' checked':'')+'> '+esc(m.name)+'<span style="color:var(--ink-faint);font-size:11px">'+esc(m.store||"")+'</span></label>'; }).join("")+'</div></div>';
-    openModal("グループチャットを作成", body, '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-submit">作成する</button>');
+  function openChatForm(chat){
+    var edit = !!chat, isGroup = !edit || chat.kind==="group";
+    var cur = edit && Array.isArray(chat.members) ? chat.members : (edit ? null : [state.myName]);
+    var body = field("チャット名 *", '<input type="text" id="f-chname" placeholder="例）〇〇現場 共有グループ" value="'+esc(edit?chat.name:"")+'">') +
+      (isGroup ? '<div class="field">メンバー（選んだ人がチャットのメンバーに表示されます）<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;max-height:220px;overflow:auto">'+
+      state.members.map(function(m){ return '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin:0"><input type="checkbox" data-chat-member="'+esc(m.name)+'"'+((cur===null||cur.indexOf(m.name)!==-1)?' checked':'')+'> '+esc(m.name)+'<span style="color:var(--ink-faint);font-size:11px">'+esc(m.store||"")+'</span></label>'; }).join("")+'</div></div>'
+        : '<div style="font-size:12px;color:var(--ink-faint)">案件チャットのメンバーは、案件の担当者から自動で決まります。</div>');
+    openModal(edit?"チャットの編集":"グループチャットを作成", body, '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-submit">'+(edit?"保存する":"作成する")+'</button>');
     document.getElementById("f-submit").onclick = function(){
       var name = document.getElementById("f-chname").value.trim();
       if(!name){ toast("チャット名を入力してください"); return; }
       var members = Array.prototype.map.call(document.querySelectorAll("[data-chat-member]:checked"), function(el){ return el.getAttribute("data-chat-member"); });
+      if(edit){
+        var patch = {name:name}; if(isGroup) patch.members = members;
+        if(!db){ Object.assign(chat, patch); closeModal(); toast("チャットを更新しました（プレビューのみ）"); render(); return; }
+        db.collection("chats").doc(chat.id).update(patch).then(function(){ closeModal(); toast("チャットを更新しました"); }).catch(function(){ toast("保存に失敗しました"); });
+        return;
+      }
       var data = { name:name, kind:"group", members:members, updatedAt:new Date().toISOString() };
       if(!db){ data.id=uid(); state.chats.unshift(data); state.activeChat=data.id; closeModal(); render(); return; }
       db.collection("chats").add(data).then(function(ref){ state.activeChat=ref.id; closeModal(); }).catch(function(){toast("作成に失敗しました");});
@@ -4808,7 +4827,7 @@
       var input = document.getElementById("chat-input");
       var postMsg = function(msg, done){
         if(!state.myName){ state.myName = "自分"; try{ localStorage.setItem("gc_myname", state.myName); }catch(e){} }
-        msg.author = state.myName; msg.ts = new Date().toISOString();
+        msg.author = state.myName; msg.ts = new Date().toISOString(); if(!db) msg.id = uid();
         var cid = state.activeChat;
         if(!db){ state.chatMsgs[cid] = (state.chatMsgs[cid]||[]).concat([msg]); var ch=state.chats.find(function(x){return x.id===cid;}); if(ch) ch.updatedAt=msg.ts; if(done) done(); render(); return; }
         db.collection("chats").doc(cid).collection("messages").add(msg).then(function(){
@@ -4853,6 +4872,30 @@
         });
       });
     }
+    var chatEdit = document.getElementById("chat-edit");
+    if(chatEdit) chatEdit.addEventListener("click", function(){ var ch = state.chats.find(function(x){return x.id===state.activeChat;}); if(ch) openChatForm(ch); });
+    var msgRef = function(id){ return db.collection("chats").doc(state.activeChat).collection("messages").doc(id); };
+    var findMsg = function(id){ return (state.chatMsgs[state.activeChat]||[]).find(function(x){return x.id===id;}); };
+    c.querySelectorAll("[data-chat-medit]").forEach(function(el){ el.addEventListener("click", function(){
+      var id = el.getAttribute("data-chat-medit"), m = findMsg(id); if(!m) return;
+      openModal("メッセージの編集", '<textarea id="f-medit" style="min-height:110px;width:100%">'+esc(m.text||"")+'</textarea>', '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-msave">保存する</button>');
+      document.getElementById("f-msave").addEventListener("click", function(){
+        var t = document.getElementById("f-medit").value.trim();
+        if(!t && !m.attachment){ toast("メッセージを入力してください"); return; }
+        var patch = {text:t, edited:true, editedAt:new Date().toISOString()};
+        if(!db){ Object.assign(m, patch); closeModal(); render(); return; }
+        msgRef(id).update(patch).then(function(){ closeModal(); }).catch(function(){ toast("保存に失敗しました"); });
+      });
+    }); });
+    c.querySelectorAll("[data-chat-mdel]").forEach(function(el){ el.addEventListener("click", function(){
+      var id = el.getAttribute("data-chat-mdel"), m = findMsg(id); if(!m) return;
+      openModal("メッセージの削除", '<div style="font-size:13px;line-height:1.6">このメッセージを削除しますか？元に戻せません。</div><div style="margin-top:10px;padding:8px 10px;background:var(--surface-2);border-radius:8px;font-size:12px;color:var(--ink-soft);white-space:pre-wrap;max-height:120px;overflow:auto">'+esc(m.text||(m.attachment?"（添付: "+(m.attachment.filename||"ファイル")+"）":""))+'</div>',
+        '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" style="background:var(--danger);border-color:var(--danger)" id="f-mdel">削除する</button>');
+      document.getElementById("f-mdel").addEventListener("click", function(){
+        if(!db){ state.chatMsgs[state.activeChat] = state.chatMsgs[state.activeChat].filter(function(x){return x.id!==id;}); closeModal(); toast("メッセージを削除しました"); render(); return; }
+        msgRef(id).delete().then(function(){ closeModal(); toast("メッセージを削除しました"); }).catch(function(){ toast("削除に失敗しました"); });
+      });
+    }); });
     var chatDel = document.getElementById("chat-del");
     if(chatDel) chatDel.addEventListener("click", function(){
       var cid = state.activeChat, ch = state.chats.find(function(x){return x.id===cid;}); if(!ch) return;
