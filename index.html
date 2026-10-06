@@ -1476,7 +1476,7 @@
         '<button class="btn sm primary" data-pd-add="'+add+'" data-pid="'+esc(p.id)+'">'+iPlus()+' '+esc(addLabel)+'</button></div>'+
         (rows.length ? rows.slice(0,5).map(function(r){ return '<div style="font-size:12px;padding:4px 0;border-top:1px solid var(--border)">'+r+'</div>'; }).join("")+(rows.length>5?'<div style="font-size:11px;color:var(--ink-faint);padding-top:4px">ほか'+(rows.length-5)+'件</div>':'') : '<div style="font-size:12px;color:var(--ink-faint)">まだありません</div>')+'</div>';
     };
-    return '<h3 style="font-size:14px;margin:6px 0 8px">予定・工程</h3><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:22px">'+
+    return '<div class="form-section-title"><span>予定・工程</span></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:22px">'+
       col("カレンダー（予定）","event","予定を追加", evs.map(function(x){ return '<a href="#" data-pd-event="'+esc(x.id)+'">'+esc(fmtDate(x.date))+'　'+esc(x.title||"")+'</a>'; }))+
       col("工程表","step","工程を追加", sts.map(function(x){ return '<a href="#" data-pd-step="'+esc(x.id)+'">'+esc(x.name||"")+'　<span style="color:var(--ink-faint)">'+esc(fmtDate(x.startDate))+'〜'+esc(fmtDate(x.endDate))+'</span></a>'; }))+
     '</div>';
@@ -2233,7 +2233,6 @@
       html += '<div style="font-size:12px;color:var(--ink-faint);margin:10px 0 14px">写真はまだありません</div>';
     }
     html += '<div style="text-align:center;margin-bottom:22px"><button class="btn primary" style="border-radius:999px;padding:9px 26px" data-open-files="'+p.id+'">'+iUpload()+' ファイル</button></div>';
-    html += projectWorkSection(p);
     html += '<h3 style="font-size:14px;margin-bottom:6px">最近追加された資料</h3>';
     if(recentDocs.length){
       html += recentDocs.map(function(f){
@@ -2247,6 +2246,8 @@
       html += '<div style="font-size:12px;color:var(--ink-faint);padding:10px 0;border-top:1px solid var(--border)">資料はまだありません。「ファイル」ページからアップロードできます</div>';
     }
     html += '</div>';
+
+    html += projectWorkSection(p);
 
     var prReports = state.reports.filter(function(r){ return r.projectId===p.id && secretVisible(r); }).sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); });
     html += '<div class="form-section-title"><span>報告書</span><span><button class="btn sm primary" data-report-add="'+esc(p.id)+'">'+iPlus()+' 報告書を作成</button></span></div>';
