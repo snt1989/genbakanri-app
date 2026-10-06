@@ -30,36 +30,7 @@
     --shadow:0 1px 2px rgba(20,30,22,.05),0 6px 16px -10px rgba(20,30,22,.18);
     color-scheme:light;
   }
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]){
-      --bg:#12151B; --surface:#1A1F24; --surface-2:#20262C; --row-head:#232A31;
-      --ink:#E7E9E3; --ink-soft:#A2AAA0; --ink-faint:#707870;
-      --border:#2B333A; --sidebar:#0F3A29; --sidebar-active:#1F6B47;
-      --sidebar-ink:#D6E9DD; --sidebar-ink-dim:#7FA48E;
-      --accent:#37A263; --accent-hover:#2E8C54; --accent-ink:#08150E; --accent-soft:#173322;
-      --success:#3FA46A; --success-soft:#153726;
-      --warning:#D9A53B; --warning-soft:#3A2E12;
-      --danger:#E17A73; --danger-soft:#3A201E; --lock:#E17A73;
-      --info:#6AA5D6; --info-soft:#182D3C;
-      --black-badge:#E7E9E3;
-      --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px -10px rgba(0,0,0,.55);
-      color-scheme:dark;
-    }
-  }
-  :root[data-theme="dark"]{
-    --bg:#12151B; --surface:#1A1F24; --surface-2:#20262C; --row-head:#232A31;
-    --ink:#E7E9E3; --ink-soft:#A2AAA0; --ink-faint:#707870;
-    --border:#2B333A; --sidebar:#0F3A29; --sidebar-active:#1F6B47;
-    --sidebar-ink:#D6E9DD; --sidebar-ink-dim:#7FA48E;
-    --accent:#37A263; --accent-hover:#2E8C54; --accent-ink:#08150E; --accent-soft:#173322;
-    --success:#3FA46A; --success-soft:#153726;
-    --warning:#D9A53B; --warning-soft:#3A2E12;
-    --danger:#E17A73; --danger-soft:#3A201E; --lock:#E17A73;
-    --info:#6AA5D6; --info-soft:#182D3C;
-    --black-badge:#E7E9E3;
-    --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px -10px rgba(0,0,0,.55);
-    color-scheme:dark;
-  }
+  /* 端末の「ダークモード」設定には従わず、常に明るい配色で表示する */
 
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:"Noto Sans JP","Hiragino Kaku Gothic ProN",-apple-system,sans-serif;-webkit-font-smoothing:antialiased;font-size:13px;}
