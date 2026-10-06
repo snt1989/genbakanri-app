@@ -218,8 +218,8 @@
   .chat-search .sb{flex:1;display:flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:4px;background:var(--surface);padding:0 8px;}
   .chat-search input{border:none;outline:none;background:transparent;padding:8px 0;width:100%;font-size:13px;min-width:0;}
   .chat-search button{background:var(--accent);color:#fff;border:none;border-radius:4px;padding:8px 10px;font-size:12px;font-weight:700;cursor:pointer;opacity:.85;font-family:inherit;}
-  .chat-kinds{display:flex;gap:4px;padding:0 12px 10px;}
-  .chat-kinds button{flex:1;border:1px solid var(--border);background:var(--surface);color:var(--ink-soft);border-radius:999px;padding:5px 4px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;}
+  .chat-kinds{display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 10px;}
+  .chat-kinds button{flex:1 1 auto;padding-left:8px!important;padding-right:8px!important;border:1px solid var(--border);background:var(--surface);color:var(--ink-soft);border-radius:999px;padding:5px 4px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;}
   .chat-kinds button.on{background:var(--accent);border-color:var(--accent);color:#fff;}
   .chat-kinds button i{font-style:normal;font-weight:400;opacity:.75;margin-left:2px;}
   .chat-seclabel{font-size:11px;font-weight:700;color:var(--ink-faint);padding:8px 14px 4px;background:var(--surface-2);}
@@ -227,6 +227,7 @@
   .chat-pin{position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;color:var(--ink-faint);padding:4px;border-radius:6px;opacity:0;display:flex;}
   .chat-item:hover .chat-pin,.chat-pin.on{opacity:1;}
   .chat-pin.on{color:var(--accent);}
+  .chat-pin.chat-hide{right:32px;}
   .chat-pin:hover{background:var(--surface-2);}
   .chat-pin svg{width:15px;height:15px;}
   @media (hover:none){.chat-pin{opacity:1;}}
@@ -1222,6 +1223,7 @@
   function iUpload(){ return svgIcon('<path d="M12 15V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4.5 18.5h15"/>',14); }
   function iPin(on){ return svgIcon('<path d="M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6z"'+(on?' fill="currentColor"':'')+'/><path d="M12 14v7"/>',15); }
   function iReply(){ return svgIcon('<path d="M9 7 4 12l5 5"/><path d="M4 12h10a6 6 0 0 1 6 6v1"/>',15); }
+  function iEye(off){ return svgIcon('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'+(off?'<path d="M4 4l16 16"/>':''),15); }
   function iSend(){ return svgIcon('<path d="M4 12 20 4l-7 16-2.5-7L4 12z"/>',15); }
   function iMenu(){ return svgIcon('<path d="M4 6.5h16M4 12h16M4 17.5h16"/>'); }
   // 社外秘 (hidden from external members): a red padlock.
@@ -2879,13 +2881,15 @@
     var q = (state.chatQ||"").trim().toLowerCase();
     var isPinned = function(c){ return Array.isArray(c.pinnedBy) && c.pinnedBy.indexOf(state.myName)!==-1; };
     var kindTab = state.chatKind || "all";
-    var inKind = function(c){ return kindTab==="all" || (kindTab==="project"&&c.kind!=="group") || (kindTab==="group"&&c.kind==="group") || (kindTab==="pinned"&&isPinned(c)); };
+    var isHidden = function(c){ return Array.isArray(c.hiddenBy) && c.hiddenBy.indexOf(state.myName)!==-1; };
+    var inKind = function(c){ if(kindTab==="hidden") return isHidden(c); if(isHidden(c)) return false; return kindTab==="all" || (kindTab==="project"&&c.kind!=="group") || (kindTab==="group"&&c.kind==="group") || (kindTab==="pinned"&&isPinned(c)); };
     var listChats = visibleChats.filter(function(c){ return inKind(c) && (!q || (c.name||"").toLowerCase().indexOf(q)!==-1); });
-    if(!visibleChats.some(function(c){return c.id===state.activeChat;})) state.activeChat = visibleChats.length ? visibleChats[0].id : null;
+    var act = visibleChats.find(function(c){return c.id===state.activeChat;});
+    if(!act || !inKind(act)) state.activeChat = listChats.length ? listChats[0].id : null;
     var chat = visibleChats.find(function(c){return c.id===state.activeChat;});
     var html = '<div class="chat-page"><div class="chat-top"><h1>チャット</h1><button class="pill" data-open="chat-form">グループチャットを作成</button></div><div class="chat-shell">';
-    var cnt = function(f){ return visibleChats.filter(f).length; };
-    var kindBar = '<div class="chat-kinds">'+[["all","すべて",cnt(function(){return true;})],["pinned","ピン留め",cnt(isPinned)],["project","案件",cnt(function(c){return c.kind!=="group";})],["group","グループ",cnt(function(c){return c.kind==="group";})]].map(function(k){
+    var cnt = function(f){ return visibleChats.filter(function(c){ return !isHidden(c) && f(c); }).length; };
+    var kindBar = '<div class="chat-kinds">'+[["all","すべて",cnt(function(){return true;})],["pinned","ピン留め",cnt(isPinned)],["project","案件",cnt(function(c){return c.kind!=="group";})],["group","グループ",cnt(function(c){return c.kind==="group";})],["hidden","非表示",visibleChats.filter(isHidden).length]].map(function(k){
       return '<button data-chat-kind="'+k[0]+'" class="'+(kindTab===k[0]?"on":"")+'">'+k[1]+'<i>'+k[2]+'</i></button>'; }).join("")+'</div>';
     html += '<div class="chat-list"><div class="chat-search"><div class="sb"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8"/></svg><input type="text" id="chat-q" placeholder="チャット名" value="'+esc(state.chatQ||"")+'"></div><button id="chat-qbtn">検索</button></div>'+kindBar+'<div class="chat-list-body">';
     if(listChats.length===0){ html += '<div class="empty" style="padding:20px;font-size:12px;color:var(--ink-faint)">'+(q?"該当するチャットがありません":"チャットがありません")+'</div>'; }
@@ -2897,6 +2901,7 @@
         if(sec && sec!==lastSec){ lab = '<div class="chat-seclabel">'+sec+'</div>'; } lastSec = sec;
         return lab+'<div class="chat-item'+(c.id===state.activeChat?" active":"")+'" data-select-chat="'+esc(c.id)+'">'+
           '<button class="chat-pin'+(isPinned(c)?" on":"")+'" data-chat-pin="'+esc(c.id)+'" title="'+(isPinned(c)?"ピン留めを外す":"ピン留めする")+'">'+iPin(isPinned(c))+'</button>'+
+          '<button class="chat-pin chat-hide" data-chat-hide="'+esc(c.id)+'" title="'+(isHidden(c)?"再表示する":"非表示にする")+'">'+iEye(!isHidden(c))+'</button>'+
           '<div class="chat-ava">'+(c.kind==="group"?iUsers():iDoc())+'</div>'+
           '<div class="chat-item-main"><div class="chat-item-name">'+esc(c.name)+'</div><div class="chat-item-meta"><span>'+(c.kind==="group"?"グループ":"案件")+'</span><span>'+esc(fmtAgo(c.updatedAt))+'</span></div></div>'+
         '</div>';
@@ -2949,7 +2954,7 @@
         (mem.length ? mem.map(function(m){
           return '<div class="mi"><div class="cav" style="background:'+avaColor(m.name)+'">'+esc(initials(m.name))+'</div><div><div class="mn">'+esc(m.name)+'</div><div class="ms">'+esc(m.company||"")+(m.store?'<br>'+esc(m.store):'')+((m.roles||[]).length?'<br>'+esc(m.roles.join(",")):'')+'</div></div></div>';
         }).join("") : '<div style="padding:16px;font-size:12px;color:var(--ink-faint)">メンバーが登録されていません</div>')+
-        '</div><button class="chat-del" id="chat-del">'+iTrash()+' チャットを削除する</button></div>';
+        '</div><button class="chat-del" data-chat-hide="'+esc(chat.id)+'" style="margin-bottom:0">'+iEye(!isHidden(chat))+' '+(isHidden(chat)?'チャットを再表示する':'チャットを非表示にする')+'</button><button class="chat-del" id="chat-del">'+iTrash()+' チャットを削除する</button></div>';
     }
     html += '</div></div>';
     if(chat && !state.chatMsgs[chat.id]) loadChatMsgs(chat.id);
@@ -4850,6 +4855,15 @@
 
     c.querySelectorAll("[data-select-chat]").forEach(function(el){ el.addEventListener("click", function(){ state.activeChat = el.getAttribute("data-select-chat"); state.chatPop=""; render(); }); });
     c.querySelectorAll("[data-chat-kind]").forEach(function(el){ el.addEventListener("click", function(){ state.chatKind = el.getAttribute("data-chat-kind"); render(); }); });
+    c.querySelectorAll("[data-chat-hide]").forEach(function(el){ el.addEventListener("click", function(ev){
+      ev.stopPropagation();
+      var ch = state.chats.find(function(x){return x.id===el.getAttribute("data-chat-hide");}); if(!ch) return;
+      var me = state.myName || "自分", cur = Array.isArray(ch.hiddenBy) ? ch.hiddenBy.slice() : [], i = cur.indexOf(me);
+      if(i===-1) cur.push(me); else cur.splice(i,1);
+      var msg = i===-1 ? "非表示にしました（「非表示」タブからいつでも戻せます）" : "再表示しました";
+      if(!db){ ch.hiddenBy = cur; toast(msg); render(); return; }
+      db.collection("chats").doc(ch.id).update({hiddenBy:cur}).then(function(){ toast(msg); }).catch(function(){ toast("保存に失敗しました"); });
+    }); });
     c.querySelectorAll("[data-chat-pin]").forEach(function(el){ el.addEventListener("click", function(ev){
       ev.stopPropagation();
       var ch = state.chats.find(function(x){return x.id===el.getAttribute("data-chat-pin");}); if(!ch) return;
