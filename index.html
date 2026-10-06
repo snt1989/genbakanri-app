@@ -354,6 +354,12 @@
   .gt-as{font-size:10.5px;color:var(--ink-faint);white-space:nowrap}
   .gt-tg{border:none;background:none;cursor:pointer;color:var(--ink-soft);padding:0 2px;font-size:12px}
   .gt-add{padding:2px 6px;flex:none}
+  .wchips{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+  .wchip{display:inline-flex;align-items:center;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;border:1px solid transparent;font-family:inherit;white-space:nowrap;text-decoration:none}
+  .wchip.on{background:var(--success-soft);color:var(--success);cursor:pointer}
+  .wchip.off{background:var(--surface);color:var(--ink-faint);border:1px dashed #c3c9c6;cursor:pointer}
+  button.wchip.off:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  span.wchip.off{cursor:default}
   .gt-todaycol{position:absolute;top:0;bottom:0;background:rgba(255,214,90,.16);z-index:0;pointer-events:none}
   .gt-dot{position:absolute;top:50%;border-radius:50%;transform:translateY(-50%);cursor:pointer;z-index:2;box-shadow:0 0 0 2px rgba(255,255,255,.7)}
   .gt-dot.blue{background:#2f80d8}.gt-dot.green{background:#2f9e63}.gt-dot.red{background:#e0443c}.gt-dot.gray{background:#9aa3a0}
@@ -1941,6 +1947,22 @@
   }
 
   /* ============ PROJECT LIST ============ */
+  // 案件ごとの 工程・予定・報告書 の作成状況
+  function projectWorkCounts(p){
+    return {
+      steps: state.steps.filter(function(x){ return x.projectId===p.id && secretVisible(x); }).length,
+      events: state.events.filter(function(x){ return x.projectId===p.id && secretVisible(x); }).length,
+      reports: state.reports.filter(function(x){ return x.projectId===p.id && secretVisible(x); }).length
+    };
+  }
+  function workChips(p){
+    var c = projectWorkCounts(p), canAdd = state.canWrite && !isExternalViewer();
+    var chip = function(label, n, key){
+      if(n>0) return '<a href="#" class="wchip on" data-open-project="'+esc(p.id)+'" title="'+esc(label)+'は'+n+'件作成済み">'+esc(label)+' '+n+'</a>';
+      return canAdd ? '<button type="button" class="wchip off" data-pd-add="'+key+'" data-pid="'+esc(p.id)+'" title="'+esc(label)+'を作成する">'+esc(label)+' 未作成</button>' : '<span class="wchip off">'+esc(label)+' 未作成</span>';
+    };
+    return '<div class="wchips">'+chip("工程表",c.steps,"step")+chip("カレンダー",c.events,"event")+chip("報告書",c.reports,"report")+'</div>';
+  }
   function renderProjectList(mode){
     if(!state.loaded.projects || !state.loaded.members) return skeleton();
     var f = mode==="sales" ? state.salesFilter : state.constFilter;
@@ -1950,6 +1972,7 @@
       if(f.name && (p.name||"").indexOf(f.name)===-1 && propertyAddressOf(p).full.indexOf(f.name)===-1 && (p.address||"").indexOf(f.name)===-1) return false;
       if(f.status.length && p.status && f.status.indexOf(p.status)===-1) return false;
       if(f.type!=="all" && p.type!==f.type) return false;
+      if(f.noSched){ var wc = projectWorkCounts(p); if(wc.steps>0 && wc.events>0) return false; }
       if(f.assignees.length){
         var names = normalizeAssignees(p.assignees).map(function(a){return a.name;});
         if(!names.some(function(n){return f.assignees.indexOf(n)!==-1;})) return false;
@@ -1975,6 +1998,7 @@
     html += '<div class="filter-line">'+
       '<div class="fitem" style="min-width:220px"><span>案件名・住所で検索</span><input type="text" id="flt-name" value="'+esc(f.name)+'" placeholder="案件名または住所"></div>'+
       '<div class="fitem"><span>案件種類</span><select id="flt-type"><option value="all">すべて</option>'+PROJECT_TYPES.map(function(t){return '<option value="'+esc(t)+'"'+(f.type===t?" selected":"")+'>'+esc(t)+'</option>';}).join("")+'</select></div>'+
+      '<label class="checkopt" style="align-self:flex-end;padding-bottom:8px"><input type="checkbox" id="flt-nosched"'+(f.noSched?" checked":"")+'>工程表・カレンダー未作成のみ</label>'+
       '<button class="btn primary" id="flt-search">'+iSearch()+' 検索する</button>'+
     '</div>';
     html += '<div class="fitem"><span>案件の進捗</span><div class="checkgroup">'+STATUS_LIST.map(function(s){
@@ -1995,7 +2019,7 @@
     if(pageItems.length===0){
       html += emptyState(iBriefcase,"該当する案件がありません","条件を変更するか、新規案件を登録してください");
     }else{
-      html += '<div class="tablewrap"><table><thead><tr><th>案件名 / 物件住所</th><th>進捗</th><th>施工開始日</th><th>施工完了予定日</th><th>金額</th><th>作成日</th><th></th></tr></thead><tbody>';
+      html += '<div class="tablewrap"><table><thead><tr><th>案件名 / 物件住所</th><th>進捗</th><th>工程・予定・報告</th><th>施工開始日</th><th>施工完了予定日</th><th>金額</th><th>作成日</th><th></th></tr></thead><tbody>';
       html += pageItems.map(function(p){
         var names = normalizeAssignees(p.assignees).map(function(a){return a.name;});
         return '<tr class="rowhover" data-row-id="'+esc(p.id)+'"><td>'+
@@ -2004,6 +2028,7 @@
             '<div class="tagrow">'+names.map(function(a){return '<span class="tag">'+esc(a)+'</span>';}).join("")+'</div>'+
           '</td>'+
           '<td>'+(hiddenFor(p,"p_status")?"—":statusBadge(p))+'</td>'+
+          '<td>'+workChips(p)+'</td>'+
           '<td class="num">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.startDate))+'</td>'+
           '<td class="num">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.endDate))+'</td>'+
           '<td class="num">'+(hiddenFor(p,"p_amount")?"—":fmtYen(p.amount))+'</td>'+
@@ -4182,6 +4207,7 @@
       if(f.name && (p.name||"").indexOf(f.name)===-1 && propertyAddressOf(p).full.indexOf(f.name)===-1 && (p.address||"").indexOf(f.name)===-1) return false;
       if(f.status.length && p.status && f.status.indexOf(p.status)===-1) return false;
       if(f.type!=="all" && p.type!==f.type) return false;
+      if(f.noSched){ var wc = projectWorkCounts(p); if(wc.steps>0 && wc.events>0) return false; }
       if(f.assignees.length){
         var names = normalizeAssignees(p.assignees).map(function(a){return a.name;});
         if(!names.some(function(n){return f.assignees.indexOf(n)!==-1;})) return false;
@@ -4932,6 +4958,7 @@
       searchBtn.addEventListener("click", function(){
         f.name = document.getElementById("flt-name").value.trim();
         f.type = document.getElementById("flt-type").value;
+        f.noSched = document.getElementById("flt-nosched").checked;
         f.status = Array.prototype.slice.call(c.querySelectorAll(".flt-status:checked")).map(function(x){return x.value;});
         f.page = 1;
         render();
