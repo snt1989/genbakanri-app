@@ -1943,7 +1943,7 @@
     };
   }
 
-  // 顧客の登録・編集: 基本情報 / 住所 / 書類に使用する名称 / 担当者
+  // 顧客の登録・編集: 基本情報 / 住所 / 担当者
   var CUSTOMER_HONORIFICS = ["未選択","御中","様","殿"];
   function customerPostal(c){
     if(!c) return "";
@@ -1976,11 +1976,6 @@
         cf("都道府県", sel("f-cpref", ["未選択"].concat(PREFS), cu ? (cu.prefecture||"未選択") : "岩手県"), false, 1)+
         cf("市区町村・番地", '<input type="text" id="f-caddress" placeholder="例：盛岡市盛岡駅前通10-38" value="'+v("address")+'">', false, 2)+
         cf("建物名・部屋番号など", '<input type="text" id="f-cbuilding" value="'+v("building")+'">', false, 4)
-      )+
-      sec("書類に使用する名称",
-        cf("正式名称（帳票に表示される名称）", '<input type="text" id="f-cformal" value="'+v("formalName")+'">', false, 2)+
-        cf("正式名称（カナ）", '<input type="text" id="f-cformalkana" value="'+v("formalKana")+'">', false, 1)+
-        cf("敬称", sel("f-chonor", CUSTOMER_HONORIFICS, cu && cu.honorific ? cu.honorific : "未選択"), false, 1)
       )+
       sec("取引先担当者",
         cf("担当者名", '<input type="text" id="f-ccontact" placeholder="奥様/担当者" value="'+v("contactName")+'">', false, 2)+
@@ -2022,7 +2017,6 @@
         name:name, kana:val("f-ckana"),
         invoiceIssuer:pick("f-cinvoice"), invoiceNumber:invNo, entityType:pick("f-cetype"), corporateNumber:corp, notes:val("f-cnotes"),
         region:val("f-cregion"), postalCode:val("f-cpostal"), prefecture:pick("f-cpref"), address:val("f-caddress"), building:val("f-cbuilding"),
-        formalName:val("f-cformal"), formalKana:val("f-cformalkana"), honorific:pick("f-chonor"),
         contactName:val("f-ccontact"), contactHonorific:pick("f-ccontacthonor"), department:val("f-cdept"), email:val("f-cemail"), phone:val("f-cphone")
       };
       if(!cu){ data.registeredDate = todayISO(); writeDoc("customers", null, data, "顧客を登録しました"); return; }
@@ -2164,9 +2158,6 @@
         {key:"prefecture",label:"都道府県",options:PREFS,bulk:true},
         {key:"address",label:"市区町村・番地",bulk:true},
         {key:"building",label:"建物名・部屋番号など"},
-        {key:"formalName",label:"正式名称"},
-        {key:"formalKana",label:"正式名称（カナ）"},
-        {key:"honorific",label:"敬称",options:["御中","様","殿"],bulk:true},
         {key:"contactName",label:"担当者名"},
         {key:"contactHonorific",label:"担当者の敬称",options:["御中","様","殿"]},
         {key:"department",label:"部署"},
@@ -2175,7 +2166,7 @@
         {key:"notes",label:"社内メモ"},
         {key:"registeredDate",label:"登録日",type:"date",bulk:true}
       ],
-      sample:{name:"山田 太郎",kana:"やまだ たろう",entityType:"個人",region:"国内",postalCode:"020-0866",prefecture:"岩手県",address:"盛岡市本宮7丁目7番41号",honorific:"様",contactName:"山田 花子",contactHonorific:"様",email:"yamada@example.com",phone:"090-0000-0000",notes:"昼間は仕事のため連絡NG",registeredDate:"2026-10-06"},
+      sample:{name:"山田 太郎",kana:"やまだ たろう",entityType:"個人",region:"国内",postalCode:"020-0866",prefecture:"岩手県",address:"盛岡市本宮7丁目7番41号",contactName:"山田 花子",contactHonorific:"様",email:"yamada@example.com",phone:"090-0000-0000",notes:"昼間は仕事のため連絡NG",registeredDate:"2026-10-06"},
       all:function(){ return state.customers; },
       fileLabel:function(){ return "顧客一覧"; },
       finalize:function(patch, existing){
