@@ -2022,10 +2022,21 @@
     document.getElementById("modal-layer").classList.add("open");
   }
   function closeModal(){ document.getElementById("modal-layer").classList.remove("open"); var mb=document.getElementById("modal-box"); if(mb) mb.style.maxWidth=""; }
+  // Every delete asks for the logged-in user's own password first.
   function confirmDelete(msg,onYes){
-    openModal("削除の確認",'<div style="font-size:13px">'+esc(msg)+'</div>',
+    var me = myMember();
+    openModal("削除の確認",
+      '<div style="font-size:13px;line-height:1.6">'+esc(msg)+'</div>'+
+      '<label class="field">パスワードを入力してください（ログイン中のパスワード）<input type="password" id="f-del-pw" autocomplete="current-password" placeholder="パスワード"></label>',
       '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" style="background:var(--danger);border-color:var(--danger)" id="f-confirm">削除する</button>');
-    document.getElementById("f-confirm").onclick = function(){ closeModal(); onYes(); };
+    var pw = document.getElementById("f-del-pw");
+    var run = function(){
+      if(!me || !me.password || pw.value!==me.password){ toast("パスワードが正しくありません"); pw.value=""; pw.focus(); return; }
+      closeModal(); onYes();
+    };
+    document.getElementById("f-confirm").onclick = run;
+    pw.addEventListener("keydown", function(e){ if(e.key==="Enter") run(); });
+    pw.focus();
   }
 
   function openMemberInvite(){
@@ -3033,7 +3044,8 @@
     c.querySelectorAll("[data-del-file]").forEach(function(el){
       el.addEventListener("click", function(ev){
         ev.preventDefault(); ev.stopPropagation();
-        deleteDoc("files", el.getAttribute("data-del-file"), "削除しました");
+        var fid = el.getAttribute("data-del-file");
+        confirmDelete("このファイルを削除しますか？", function(){ deleteDoc("files", fid, "削除しました"); });
       });
     });
     if(state.tab==="files"){
