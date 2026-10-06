@@ -686,7 +686,7 @@
     salesFilter:{name:"",status:STATUS_LIST.slice(),type:"all",store:"all",assignees:[],page:1},
     constFilter:{name:"",status:["契約済","施工中"],type:"all",store:"all",assignees:[],page:1},
     filesFilter:{project:"all",kind:"all"},
-    masterTab:"project", calMonth:null, calFilter:{project:true,step:true,task:true,event:true}, ganttStart:null, ganttScale:"1m", ganttHideDone:true, ganttClosed:{}, filesView:"all", pfFolder:"", pfSort:"date_desc", pfView:"thumb", pfMine:false, pfSel:{}, filesProjectId:null, projectFilesKind:"all", filesBack:"detail",
+    masterTab:"project", calView:"grid", ganttView:"chart", calMonth:null, calFilter:{project:true,step:true,task:true,event:true}, ganttStart:null, ganttScale:"1m", ganttHideDone:true, ganttClosed:{}, filesView:"all", pfFolder:"", pfSort:"date_desc", pfView:"thumb", pfMine:false, pfSel:{}, filesProjectId:null, projectFilesKind:"all", filesBack:"detail",
     memberSeg:"all",
     bulk:{on:false,entity:null,selected:{},field:"",value:""},
     settingsSeg:"company",
@@ -1268,7 +1268,9 @@
     var MAXL = 4;
     var chips = [["project","案件・引渡し","k-project"],["step","工程","k-step"],["task","タスク","k-task"],["event","予定","k-event"]];
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">カレンダー</h1>'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn outline" id="gc-open">'+iCalendar()+' Googleカレンダー連携</button><button class="btn primary" data-cal-add="'+today+'">'+iPlus()+' 予定を追加</button></div></div><div style="height:12px"></div>';
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+csvToolbar("events")+'<button class="btn outline" id="gc-open">'+iCalendar()+' Googleカレンダー連携</button><button class="btn primary" data-cal-add="'+today+'">'+iPlus()+' 予定を追加</button></div></div><div style="height:12px"></div>'+
+      '<div class="segmented" style="margin-bottom:14px"><div class="segopt'+(state.calView==="grid"?' active':'')+'" data-cal-view="grid">カレンダー</div><div class="segopt'+(state.calView==="list"?' active':'')+'" data-cal-view="list">予定一覧</div></div>';
+    if(state.calView==="list") return html + renderEventList();
     html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
       '<button class="btn sm" data-cal-nav="-1">'+iBack()+'</button><b style="font-size:17px;min-width:110px;text-align:center">'+y+'年'+m+'月</b><button class="btn sm" data-cal-nav="1" style="transform:scaleX(-1)">'+iBack()+'</button>'+
       '<button class="btn sm" data-cal-nav="0">今月</button><span style="flex:1"></span>'+
@@ -1414,6 +1416,30 @@
       var r = new FileReader(); r.onload = function(){ importIcs(String(r.result||"")); }; r.readAsText(f);
     });
   }
+  function renderEventList(){
+    var rows = filterEvents().filter(secretVisible).filter(function(e){ return projectVisibleId(e.projectId); });
+    if(!rows.length) return emptyState(iCalendar,"予定がありません","「予定を追加」またはCSV入力で登録できます");
+    var h = '<div class="summary-line"><span><b>'+rows.length+'</b>件</span></div><div class="tablewrap"><table><thead><tr><th>タイトル</th><th>種類</th><th>開始日</th><th>終了日</th><th>案件</th><th>公開範囲</th><th></th></tr></thead><tbody>';
+    h += rows.map(function(e){
+      return '<tr class="rowhover" data-row-id="'+esc(e.id)+'"><td><div class="cell-name">'+esc(e.title||"")+'</div>'+(e.note?'<div class="cell-sub">'+esc(e.note)+'</div>':'')+'</td>'+
+        '<td>'+esc(e.category||"—")+'</td><td class="num">'+esc(fmtDate(e.date))+'</td><td class="num">'+(e.endDate?esc(fmtDate(e.endDate)):"—")+'</td>'+
+        '<td>'+esc(e.projectName||"—")+'</td><td>'+(e.secret?iLock()+' 社外秘':'共有')+'</td>'+
+        '<td style="white-space:nowrap"><button class="btn sm" data-cal-item="event:'+esc(e.id)+'">'+iEdit()+' 編集</button> <button class="iconbtn" data-del-event="'+esc(e.id)+'" title="削除">'+iTrash()+'</button></td></tr>';
+    }).join("");
+    return h+'</tbody></table></div>';
+  }
+  function renderStepList(){
+    var rows = filterSteps().filter(secretVisible).filter(function(x){ return projectVisibleId(x.projectId); });
+    if(!rows.length) return emptyState(iGantt,"工程がありません","「工程を追加」またはCSV入力で登録できます");
+    var h = '<div class="summary-line"><span><b>'+rows.length+'</b>件</span></div><div class="tablewrap"><table><thead><tr><th>案件</th><th>工程名</th><th>開始日</th><th>終了日</th><th>担当者</th><th>進捗</th><th>公開範囲</th><th></th></tr></thead><tbody>';
+    h += rows.map(function(x){
+      return '<tr class="rowhover" data-row-id="'+esc(x.id)+'"><td><div class="cell-name">'+esc(x.projectName||"—")+'</div></td><td>'+esc(x.name||"（未入力）")+'</td>'+
+        '<td class="num">'+esc(fmtDate(x.startDate))+'</td><td class="num">'+esc(fmtDate(x.endDate))+'</td><td>'+esc(x.assignee||"—")+'</td><td class="num">'+(+x.progress||0)+'%</td>'+
+        '<td>'+(x.secret?iLock()+' 社外秘':'共有')+'</td>'+
+        '<td style="white-space:nowrap"><button class="btn sm" data-cal-item="step:'+esc(x.id)+'">'+iEdit()+' 編集</button> <button class="iconbtn" data-del-step="'+esc(x.id)+'" title="削除">'+iTrash()+'</button></td></tr>';
+    }).join("");
+    return h+'</tbody></table></div>';
+  }
   function openDayList(day){
     var list = scheduleItems().filter(function(it){ return state.calFilter[it.group] && it.start<=day && it.end>=day; });
     openModal(fmtDate(day)+"（"+WEEKDAYS[parseISO(day).getDay()]+"）の予定",
@@ -1490,7 +1516,9 @@
     var startDow = parseISO(start).getDay();
     var grid = 'background-image:linear-gradient(to right,#f1eee7 0,#f1eee7 '+dw+'px,transparent '+dw+'px,transparent '+(6*dw)+'px,#f1eee7 '+(6*dw)+'px,#f1eee7 '+(7*dw)+'px),linear-gradient(to right,rgba(0,0,0,.06) 1px,transparent 1px);background-size:'+(7*dw)+'px 100%,'+dw+'px 100%;background-position:'+(-startDow*dw)+'px 0,0 0;';
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">工程表</h1>'+
-      '<button class="btn primary" data-step-add="">'+iPlus()+' 工程を追加</button></div><div style="height:12px"></div>';
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+csvToolbar("steps")+'<button class="btn primary" data-step-add="">'+iPlus()+' 工程を追加</button></div></div><div style="height:12px"></div>'+
+      '<div class="segmented" style="margin-bottom:14px"><div class="segopt'+(state.ganttView==="chart"?' active':'')+'" data-gantt-view="chart">工程表</div><div class="segopt'+(state.ganttView==="list"?' active':'')+'" data-gantt-view="list">工程一覧</div></div>';
+    if(state.ganttView==="list") return html + renderStepList();
     html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
       '<button class="btn sm" data-gantt-nav="-1">'+iBack()+'</button><button class="btn sm" data-gantt-nav="0">今日</button><button class="btn sm" data-gantt-nav="1" style="transform:scaleX(-1)">'+iBack()+'</button>'+
       '<b style="font-size:13px;margin:0 6px">'+fmtDate(start)+' 〜 '+fmtDate(end)+'</b><span style="flex:1"></span>'+
@@ -1545,6 +1573,10 @@
   }
   function bindScheduleEvents(c){
     var q = function(sel,fn){ c.querySelectorAll(sel).forEach(fn); };
+    q("[data-cal-view]", function(el){ el.addEventListener("click", function(){ bulkReset(); state.calView = el.getAttribute("data-cal-view"); render(); }); });
+    q("[data-gantt-view]", function(el){ el.addEventListener("click", function(){ bulkReset(); state.ganttView = el.getAttribute("data-gantt-view"); render(); }); });
+    q("[data-del-event]", function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-del-event"); confirmDelete("この予定を削除しますか？", function(){ deleteDoc("events", id, "予定を削除しました"); }); }); });
+    q("[data-del-step]", function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-del-step"); confirmDelete("この工程を削除しますか？", function(){ deleteDoc("steps", id, "工程を削除しました"); }); }); });
     q("[data-cal-nav]", function(el){ el.addEventListener("click", function(){
       var n = +el.getAttribute("data-cal-nav"); var base = state.calMonth||localToday().slice(0,7);
       if(n===0) state.calMonth = localToday().slice(0,7);
@@ -3292,6 +3324,67 @@
         return d;
       }
     },
+    events:{
+      label:"予定", col:"events", nameKey:"title", importable:true, requiredLabel:"タイトル",
+      columns:[
+        {key:"id",label:"ID",readonly:true},
+        {key:"title",label:"タイトル"},
+        {key:"category",label:"予定の種類",options:EVENT_TYPES,bulk:true},
+        {key:"date",label:"開始日",type:"date",bulk:true},
+        {key:"endDate",label:"終了日",type:"date",bulk:true},
+        {key:"projectName",label:"案件名"},
+        {key:"note",label:"メモ"},
+        {key:"secret",label:"社外秘",type:"bool",bulk:true},
+        {key:"createdBy",label:"登録者",readonly:true}
+      ],
+      sample:{title:"現地調査",category:"現地調査",date:"2026-10-15",endDate:"",projectName:"山田様邸 除草作業",note:"午前中",secret:"いいえ"},
+      all:function(){ return state.events; },
+      fileLabel:function(){ return "カレンダー予定一覧"; },
+      validate:function(patch, existing){
+        var date = patch.date || (existing&&existing.date), end = patch.endDate || (existing&&existing.endDate);
+        if(!date) return "「開始日」は必須です";
+        if(end && end<date) return "終了日は開始日以降にしてください";
+        if(patch.projectName && !state.projects.some(function(x){ return x.name===patch.projectName; })) return "案件名が登録されていません（"+patch.projectName+"）";
+        return "";
+      },
+      finalize:function(patch, existing){
+        var d = Object.assign({}, patch);
+        if(patch.projectName){ var pr = state.projects.find(function(x){ return x.name===patch.projectName; }); if(pr) d.projectId = pr.id; }
+        if(!existing){ if(d.secret==null) d.secret = false; if(!d.createdBy) d.createdBy = state.myName||""; }
+        return d;
+      }
+    },
+    steps:{
+      label:"工程", col:"steps", nameKey:"name", importable:true, requiredLabel:"工程名",
+      columns:[
+        {key:"id",label:"ID",readonly:true},
+        {key:"name",label:"工程名",options:STEP_NAMES,bulk:true},
+        {key:"projectName",label:"案件名"},
+        {key:"startDate",label:"開始日",type:"date",bulk:true},
+        {key:"endDate",label:"終了日",type:"date",bulk:true},
+        {key:"assignee",label:"担当者",bulk:true},
+        {key:"progress",label:"進捗(%)",type:"number",bulk:true},
+        {key:"secret",label:"社外秘",type:"bool",bulk:true}
+      ],
+      sample:{name:"下見",projectName:"山田様邸 除草作業",startDate:"2026-10-15",endDate:"2026-10-16",assignee:"阿部 晋太郎",progress:"0",secret:"いいえ"},
+      all:function(){ return state.steps; },
+      fileLabel:function(){ return "工程一覧"; },
+      validate:function(patch, existing){
+        var pn = patch.projectName || (existing&&existing.projectName);
+        if(!pn || !state.projects.some(function(x){ return x.name===pn; })) return "案件名が登録されていません（"+(pn||"空")+"）";
+        var st = patch.startDate || (existing&&existing.startDate), en = patch.endDate || (existing&&existing.endDate);
+        if(!st || !en) return "開始日と終了日は必須です";
+        if(en<st) return "終了日は開始日以降にしてください";
+        if(patch.progress!=null && (patch.progress<0 || patch.progress>100)) return "進捗は0〜100で入力してください";
+        return "";
+      },
+      finalize:function(patch, existing){
+        var d = Object.assign({}, patch);
+        if(patch.projectName){ var pr = state.projects.find(function(x){ return x.name===patch.projectName; }); if(pr) d.projectId = pr.id; }
+        if(!existing){ if(d.progress==null) d.progress = 0; if(d.secret==null) d.secret = false; }
+        return d;
+      }
+    },
     files:{
       label:"写真・ファイル", col:"files", nameKey:"filename", importable:false,
       columns:[
@@ -3349,8 +3442,12 @@
   function filterTasks(){
     return state.tasks.slice().sort(function(a,b){return (a.dueDate||"").localeCompare(b.dueDate||"");});
   }
+  function filterEvents(){ return state.events.slice().sort(function(a,b){ return (a.date||"").localeCompare(b.date||""); }); }
+  function filterSteps(){ return state.steps.slice().sort(function(a,b){ return (a.projectName||"").localeCompare(b.projectName||"") || (a.startDate||"").localeCompare(b.startDate||""); }); }
   function currentEntity(){
     switch(state.tab){
+      case "calendar": return state.calView==="list" ? "events" : null;
+      case "schedule": return state.ganttView==="list" ? "steps" : null;
       case "home": return "tasks";
       case "sales": case "construction": return "projects";
       case "customers": return "customers";
@@ -3366,6 +3463,8 @@
       case "members": return filterMembers();
       case "files": return filterFiles();
       case "tasks": return filterTasks();
+      case "events": return filterEvents();
+      case "steps": return filterSteps();
     }
     return [];
   }
@@ -3577,6 +3676,7 @@
         if(seenNames[csvSpaceless(patch.name)]) rowErrors.push("ファイル内で氏名が重複しています（"+patch.name+"）");
         seenNames[csvSpaceless(patch.name)] = true;
       }
+      if(!rowErrors.length && E.validate){ var ve = E.validate(patch, existing); if(ve) rowErrors.push(ve); }
       if(rowErrors.length){ plan.errors.push({line:line, msg:(label?label+"：":"")+rowErrors.join(" / ")}); continue; }
       var data = E.finalize(patch, existing);
       plan.ops.push({type: existing ? "update" : "create", id: existing ? existing.id : null, data:data, label:label});
@@ -3648,6 +3748,8 @@
     if(state.bulk.on && state.bulk.entity===entity){ bulkReset(); }
     else{
       if(!csvCanWrite(entity)) return;
+      if(entity==="events") state.calView = "list";
+      if(entity==="steps") state.ganttView = "list";
       state.bulk = {on:true, entity:entity, selected:{}, field:"", value:""};
     }
     render();
