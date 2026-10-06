@@ -584,6 +584,7 @@
     filesFilter:{project:"all",kind:"all"},
     memberSeg:"all",
     settingsSeg:"company",
+    editingMember:null,
     activeChat:null,
     chatMsgs:{},
     myName:null,
@@ -950,6 +951,14 @@
   function goProjectDetail(id){ state.viewingProjectId=id; state.tab="project-detail"; render(); }
   function goMemberForm(){
     if(!state.isAdmin){ toast("メンバーの追加は管理者のみ行えます"); return; }
+    state.editingMember=null;
+    state.tab="member-form"; render();
+  }
+  function editMember(id){
+    if(!state.isAdmin){ toast("メンバーの変更は管理者のみ行えます"); return; }
+    var m = state.members.find(function(x){ return x.id===id; });
+    if(!m) return;
+    state.editingMember = m;
     state.tab="member-form"; render();
   }
 
@@ -1368,29 +1377,35 @@
 
   /* ============ MEMBER FORM (full page, internal) ============ */
   function renderMemberForm(){
+    var m = state.editingMember;           // null = registering a new member
+    var v = function(k){ return esc(m && m[k]!=null ? m[k] : ""); };
+    var picked0 = (m && m.roles) || [];
     var html = crumb("メンバーに戻る", "members");
-    html += '<h1 class="pagetitle" style="margin-top:8px">自社メンバー登録</h1><div style="height:12px"></div>';
+    html += '<h1 class="pagetitle" style="margin-top:8px">'+(m?"メンバー編集":"自社メンバー登録")+'</h1><div style="height:12px"></div>';
     html += '<div class="form-shell"><div class="form-card">';
-    html += formRow("携帯番号 ※仕事用", true, false, '<input type="tel" id="f-mphone" placeholder="例：09012341234">');
-    html += formRow("氏名", true, false, '<input type="text" id="f-mname" placeholder="例：山田 武史">');
-    html += formRow("氏名(カナ)", false, false, '<input type="text" id="f-mkana" placeholder="例：ヤマダ タケシ">');
-    html += formRow("メールアドレス", false, false, '<input type="email" id="f-memail" placeholder="例：abcdeft@mail.com">');
-    html += formRow("所属会社", false, false, '<div style="font-size:12.5px;padding:8px 0">'+esc(state.orgSettings.companyName)+'</div>');
-    html += formRow("店舗", false, false, selectHtml("f-mstore", ["未選択"].concat(STORES), "未選択"));
-    html += formRow("職種", true, false, '<div class="assignee-pick" id="f-mroles">'+ROLES.map(function(r){return '<span class="chip-toggle" data-role-pick="'+esc(r)+'">'+esc(r)+'</span>';}).join("")+'</div>');
-    html += formRow("ログインパスワード", true, true, '<div class="pw-wrap" style="max-width:280px"><input type="password" id="f-mpassword" placeholder="アプリへのログインに使用します"><button type="button" class="pw-toggle" id="f-mpassword-toggle" tabindex="-1" title="パスワードを表示">'+iEye()+'</button></div>');
+    html += formRow("携帯番号 ※仕事用", true, false, '<input type="tel" id="f-mphone" placeholder="例：09012341234" value="'+v("phone")+'">');
+    html += formRow("氏名", true, false, '<input type="text" id="f-mname" placeholder="例：山田 武史" value="'+v("name")+'">');
+    html += formRow("氏名(カナ)", false, false, '<input type="text" id="f-mkana" placeholder="例：ヤマダ タケシ" value="'+v("kana")+'">');
+    html += formRow("メールアドレス", false, false, '<input type="email" id="f-memail" placeholder="例：abcdeft@mail.com" value="'+v("email")+'">');
+    if(m) html += formRow("所属会社", false, false, '<input type="text" id="f-mcompany" value="'+v("company")+'">');
+    else html += formRow("所属会社", false, false, '<div style="font-size:12.5px;padding:8px 0">'+esc(state.orgSettings.companyName)+'</div>');
+    html += formRow("店舗", false, false, selectHtml("f-mstore", ["未選択"].concat(STORES), (m && m.store) || "未選択"));
+    html += formRow("職種", true, false, '<div class="assignee-pick" id="f-mroles">'+ROLES.map(function(r){return '<span class="chip-toggle'+(picked0.indexOf(r)!==-1?" on":"")+'" data-role-pick="'+esc(r)+'">'+esc(r)+'</span>';}).join("")+'</div>');
+    html += formRow("ログインパスワード", true, true, '<div class="pw-wrap" style="max-width:280px"><input type="password" id="f-mpassword" placeholder="アプリへのログインに使用します" value="'+v("password")+'"><button type="button" class="pw-toggle" id="f-mpassword-toggle" tabindex="-1" title="パスワードを表示">'+iEye()+'</button></div>');
+    var curPerm = m ? memberPermission(m) : "general";
     html += formRow("権限", true, false, '<select id="f-mpermission">'+
-      PERMISSION_LEVELS.filter(function(p){return p[0]!=="external";}).map(function(p){
-        return '<option value="'+p[0]+'"'+(p[0]==="general"?" selected":"")+'>'+p[1]+'</option>';
+      PERMISSION_LEVELS.filter(function(p){return m || p[0]!=="external";}).map(function(p){
+        return '<option value="'+p[0]+'"'+(p[0]===curPerm?" selected":"")+'>'+p[1]+'</option>';
       }).join("")+'</select>');
     html += '</div>';
-    html += '<div class="formfoot"><button class="btn primary" id="f-submit" style="padding:11px 34px" disabled>登録する</button></div>';
+    html += '<div class="formfoot"><button class="btn primary" id="f-submit" style="padding:11px 34px"'+(m?"":" disabled")+'>'+(m?"保存する":"登録する")+'</button></div>';
     html += '</div>';
     return html;
   }
 
   function bindMemberFormEvents(){
-    var picked = [];
+    var editing = state.editingMember;
+    var picked = editing ? (editing.roles||[]).slice() : [];
     var c = document.getElementById("content");
     var submit = document.getElementById("f-submit");
     function refreshEnabled(){
@@ -1411,15 +1426,41 @@
       var name = document.getElementById("f-mname").value.trim();
       var phone = document.getElementById("f-mphone").value.trim();
       var password = document.getElementById("f-mpassword").value.trim();
-      if(!name||!phone||!password||picked.length===0) return;
+      if(!name||!phone||!password||picked.length===0){ toast("携帯番号・氏名・職種・パスワードは必須です"); return; }
       var store = document.getElementById("f-mstore").value;
+      var perm = document.getElementById("f-mpermission").value;
       var data = Object.assign({
         name:name, phone:phone, kana:document.getElementById("f-mkana").value.trim(),
         email:document.getElementById("f-memail").value.trim(),
-        company: state.orgSettings.companyName,
+        company: editing ? document.getElementById("f-mcompany").value.trim() : state.orgSettings.companyName,
         store: store==="未選択"?"":store, roles:picked, password:password
-      }, permissionFields(document.getElementById("f-mpermission").value));
-      writeDoc("members", null, data, "メンバーを登録しました", function(){ setTab("members"); });
+      }, permissionFields(perm));
+      if(!editing){
+        writeDoc("members", null, data, "メンバーを登録しました", function(){ setTab("members"); });
+        return;
+      }
+      // Never let the last remaining admin be demoted.
+      var adminCount = state.members.filter(function(x){ return memberPermission(x)==="admin"; }).length;
+      if(memberPermission(editing)==="admin" && perm!=="admin" && adminCount<=1){ toast("最後の管理者の権限は変更できません"); return; }
+      var oldName = editing.name, id = editing.id;
+      writeDoc("members", id, data, "メンバー情報を更新しました", function(){
+        if(oldName!==name){ renameInProjects(oldName, name); if(state.myName===oldName){ state.myName=name; try{ localStorage.setItem("gc_myname", name); if(localStorage.getItem("gc_login_name")!==null) localStorage.setItem("gc_login_name", name); }catch(e){} } }
+        if(state.myName===name) state.isAdmin = perm==="admin";
+        state.editingMember = null;
+        setTab("members");
+      });
+    });
+  }
+
+  // Projects reference assignees by name, so when a member is renamed the
+  // same name is updated in every project's assignee list.
+  function renameInProjects(oldName, newName){
+    state.projects.forEach(function(p){
+      var list = normalizeAssignees(p.assignees);
+      if(!list.some(function(a){ return a.name===oldName; })) return;
+      var updated = list.map(function(a){ return a.name===oldName ? Object.assign({}, a, {name:newName}) : a; });
+      if(db) db.collection("projects").doc(p.id).update({assignees:updated}).catch(function(){});
+      else p.assignees = updated;
     });
   }
 
@@ -1476,7 +1517,7 @@
           '<td><div class="tagrow">'+(m.roles||[]).map(function(r){return '<span class="tag muted">'+esc(r)+'</span>';}).join("")+'</div></td>'+
           '<td>'+permCell+'</td>'+
           (state.isAdmin ?
-            '<td style="white-space:nowrap"><button class="iconbtn" data-del-member="'+m.id+'">'+iTrash()+'</button></td>'
+            '<td style="white-space:nowrap"><div style="display:flex;gap:6px;align-items:center"><button class="btn sm" data-edit-member="'+m.id+'">編集</button><button class="iconbtn" data-del-member="'+m.id+'">'+iTrash()+'</button></div></td>'
             : ''
           )+'</tr>';
       }).join("");
@@ -1931,6 +1972,7 @@
     c.querySelectorAll("[data-del-customer]").forEach(function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-del-customer"); confirmDelete("この顧客を削除しますか？",function(){deleteDoc("customers",id,"顧客を削除しました");}); }); });
     c.querySelectorAll("[data-done-task]").forEach(function(el){ el.addEventListener("click", function(){ writeDoc("tasks", el.getAttribute("data-done-task"), {done:true}, "タスクを完了しました"); }); });
     c.querySelectorAll("[data-csv]").forEach(function(el){ el.addEventListener("click", function(){ exportCsv(el.getAttribute("data-csv")); }); });
+    c.querySelectorAll("[data-edit-member]").forEach(function(el){ el.addEventListener("click", function(){ editMember(el.getAttribute("data-edit-member")); }); });
     c.querySelectorAll("[data-goto-memberform]").forEach(function(el){ el.addEventListener("click", goMemberForm); });
     c.querySelectorAll("[data-copy-summary]").forEach(function(el){ el.addEventListener("click", function(){ copyProjectSummary(el.getAttribute("data-copy-summary")); }); });
     c.querySelectorAll("[data-toggle-assignee]").forEach(function(el){
