@@ -1664,7 +1664,7 @@
     }else{
       html += '<div style="font-size:12px;color:var(--ink-faint);margin:10px 0 14px">写真はまだありません</div>';
     }
-    html += '<div style="text-align:center;margin-bottom:22px"><button class="btn primary" style="border-radius:999px;padding:9px 26px" data-open-files="'+p.id+'">'+iUpload()+' 写真と動画</button></div>';
+    html += '<div style="text-align:center;margin-bottom:22px"><button class="btn primary" style="border-radius:999px;padding:9px 26px" data-open-files="'+p.id+'">'+iUpload()+' ファイル</button></div>';
     html += '<h3 style="font-size:14px;margin-bottom:6px">最近追加された資料</h3>';
     if(recentDocs.length){
       html += recentDocs.map(function(f){
@@ -1675,7 +1675,7 @@
           '<a class="ic" href="'+esc(fileUrl(f))+'" target="_blank" rel="noopener" title="ブラウザで開く">'+iGlobe()+'</a></div>';
       }).join("");
     }else{
-      html += '<div style="font-size:12px;color:var(--ink-faint);padding:10px 0;border-top:1px solid var(--border)">資料はまだありません。「写真と動画」ページからアップロードできます</div>';
+      html += '<div style="font-size:12px;color:var(--ink-faint);padding:10px 0;border-top:1px solid var(--border)">資料はまだありません。「ファイル」ページからアップロードできます</div>';
     }
     html += '</div>';
 
@@ -2027,10 +2027,10 @@
     var selIds = Object.keys(state.pfSel).filter(function(k){ return state.pfSel[k] && all.some(function(f){return f.id===k;}); });
 
     var html = back;
-    if(cur) html += '<div style="margin-top:6px;font-size:12px"><a href="#" class="crumb" data-pf-folder="" style="display:inline">写真と動画</a> ／ '+esc(cur.name)+'</div>';
-    html += '<h1 class="pagetitle" style="margin:10px 0 16px;font-size:24px;font-weight:500">'+esc(cur?cur.name:"写真と動画")+'</h1>';
+    if(cur) html += '<div style="margin-top:6px;font-size:12px"><a href="#" class="crumb" data-pf-folder="" style="display:inline">ファイル</a> ／ '+esc(cur.name)+'</div>';
+    html += '<h1 class="pagetitle" style="margin:10px 0 16px;font-size:24px;font-weight:500">'+esc(cur?cur.name:"ファイル")+'</h1>';
     html += '<div style="display:flex;gap:10px;flex-wrap:wrap">'+
-      '<label class="btn primary" style="cursor:pointer;border-radius:999px;padding:10px 22px">'+iUpload()+' 写真と動画をアップロード<input type="file" id="pf-input" multiple style="display:none"></label>'+
+      '<label class="btn primary" style="cursor:pointer;border-radius:999px;padding:10px 22px">'+iUpload()+' ファイルをアップロード<input type="file" id="pf-input" multiple style="display:none"></label>'+
       (cur ? '' : '<button class="btn outline" id="pf-newfolder" style="border-radius:999px;padding:10px 22px">新規フォルダ作成</button>')+
       (cur ? '<button class="btn outline" data-pf-edit-folder="'+esc(cur.id)+'" style="border-radius:999px;padding:10px 22px">'+iEdit()+' フォルダを編集</button>' : '')+
     '</div>';
@@ -2065,7 +2065,7 @@
         '<td style="white-space:nowrap"><button class="btn sm" data-pf-edit-file="'+esc(f.id)+'">'+iEdit()+' 編集</button></td></tr>';
     });
     if(!tiles){
-      html += emptyState(iImage, cur?"このフォルダは空です":"写真・ファイルがありません", "「写真と動画をアップロード」から追加できます");
+      html += emptyState(iImage, cur?"このフォルダは空です":"写真・ファイルがありません", "「ファイルをアップロード」から追加できます");
     }else if(state.pfView==="list"){
       var frows = cur ? "" : folders.map(function(g){ var n=all.filter(function(x){return x.folderId===g.id;}).length;
         return '<tr class="rowhover"><td></td><td><div style="display:flex;align-items:center;gap:10px">'+iFolderSm()+'<a href="#" class="pf-name" style="text-align:left;margin:0" data-pf-folder="'+esc(g.id)+'">'+esc(g.name)+'</a></div></td><td></td><td></td><td class="num">'+n+'件</td><td><button class="btn sm" data-pf-edit-folder="'+esc(g.id)+'">'+iEdit()+' 編集</button></td></tr>'; }).join("");
