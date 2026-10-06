@@ -611,6 +611,7 @@
     editingProject:null,
     formMode:"sales",
     viewingProjectId:null,
+    deletePassword:"0000",
     orgSettings:{companyName:"株式会社三桜",representative:"阿部 晋太郎",zip:"020-0866",address:"岩手県盛岡市本宮7丁目7番41号",phone:"019-631-2803",fax:"",email:"info@sanoh-ltd.jp",website:""}
   };
 
@@ -791,6 +792,19 @@
     }
     subscribeAll();
     db.doc("settings/org").get().then(function(snap){ if(snap.exists){ state.orgSettings = Object.assign({}, state.orgSettings, snap.data()); render(); } }).catch(function(){});
+    loadDeletePassword();
+  }
+
+  // 削除用パスワード: one shared password (set by an admin in 設定 > 管理画面)
+  // that every delete asks for. Defaults to "0000" until an admin changes it.
+  var DEFAULT_DELETE_PASSWORD = "0000";
+  function loadDeletePassword(cb){
+    if(!db){ if(cb) cb(state.deletePassword); return; }
+    db.doc("settings/security").get().then(function(snap){
+      var d = snap.exists ? snap.data() : null;
+      state.deletePassword = (d && d.deletePassword) ? d.deletePassword : DEFAULT_DELETE_PASSWORD;
+      if(cb) cb(state.deletePassword);
+    }).catch(function(){ if(cb) cb(state.deletePassword); });
   }
 
   function retrySync(){
@@ -1984,6 +1998,15 @@
     html += '</tbody></table></div>';
     html += '<div style="font-size:11.5px;color:var(--ink-faint);margin:8px 0 18px">メンバーの追加・削除は「メンバー」タブから行えます。パスワードの初期化は「1234」に戻します。</div>';
 
+    html += '<h2 style="font-size:13.5px;margin:4px 0 10px">削除用パスワード</h2>';
+    html += '<div class="card" style="padding:16px 18px;max-width:520px;display:flex;flex-direction:column;gap:12px;margin-bottom:18px">';
+    html += '<div style="font-size:11.5px;color:var(--ink-faint);line-height:1.6">案件・顧客・メンバー・写真/ファイルを削除するときに入力するパスワードです（全員共通）。初期値は「0000」です。'+(state.deletePassword===DEFAULT_DELETE_PASSWORD?'<br><b style="color:var(--danger)">現在は初期パスワードのままです。変更をおすすめします。</b>':'')+'</div>';
+    html += field("現在の削除用パスワード", '<input type="password" id="del-pw-old" autocomplete="off">');
+    html += field("新しい削除用パスワード（4文字以上）", '<input type="password" id="del-pw-new" autocomplete="new-password">');
+    html += field("新しい削除用パスワード（確認）", '<input type="password" id="del-pw-new2" autocomplete="new-password">');
+    html += '<div><button class="btn primary" id="del-pw-save">'+iLock()+'削除用パスワードを変更する</button></div>';
+    html += '</div>';
+
     html += '<h2 style="font-size:13.5px;margin:4px 0 10px">データの状態とバックアップ</h2>';
     html += '<div class="card" style="padding:16px 18px;max-width:520px;display:flex;flex-direction:column;gap:10px">';
     html += '<div class="side-stat" style="padding:0;border:none">接続モード<b style="font-size:12.5px">'+(state.offlineMode?'オフライン（デモ）':(window.claude?'claude.ai':'Firebase'))+'</b></div>';
@@ -2022,19 +2045,24 @@
     document.getElementById("modal-layer").classList.add("open");
   }
   function closeModal(){ document.getElementById("modal-layer").classList.remove("open"); var mb=document.getElementById("modal-box"); if(mb) mb.style.maxWidth=""; }
-  // Every delete asks for the logged-in user's own password first.
+  // Every delete asks for the 削除用パスワード (set by an admin; default 0000).
   function confirmDelete(msg,onYes){
-    var me = myMember();
     openModal("削除の確認",
       '<div style="font-size:13px;line-height:1.6">'+esc(msg)+'</div>'+
-      '<label class="field">パスワードを入力してください（ログイン中のパスワード）<input type="password" id="f-del-pw" autocomplete="current-password" placeholder="パスワード"></label>',
+      '<label class="field">削除用パスワードを入力してください<input type="password" id="f-del-pw" autocomplete="off" placeholder="削除用パスワード"></label>',
       '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" style="background:var(--danger);border-color:var(--danger)" id="f-confirm">削除する</button>');
-    var pw = document.getElementById("f-del-pw");
+    var pw = document.getElementById("f-del-pw"), btn = document.getElementById("f-confirm");
     var run = function(){
-      if(!me || !me.password || pw.value!==me.password){ toast("パスワードが正しくありません"); pw.value=""; pw.focus(); return; }
-      closeModal(); onYes();
+      var typed = pw.value;
+      btn.disabled = true;
+      // re-read so a password changed by another admin takes effect immediately
+      loadDeletePassword(function(current){
+        btn.disabled = false;
+        if(!typed || typed!==current){ toast("削除用パスワードが正しくありません"); pw.value=""; pw.focus(); return; }
+        closeModal(); onYes();
+      });
     };
-    document.getElementById("f-confirm").onclick = run;
+    btn.onclick = run;
     pw.addEventListener("keydown", function(e){ if(e.key==="Enter") run(); });
     pw.focus();
   }
@@ -3187,6 +3215,21 @@
         document.getElementById("f-reset-confirm").onclick = function(){
           writeDoc("members", id, {password:"1234"}, m.name+" さんのパスワードを初期化しました");
         };
+      });
+    });
+    var delPwSave = document.getElementById("del-pw-save");
+    if(delPwSave) delPwSave.addEventListener("click", function(){
+      if(!state.isAdmin){ toast("削除用パスワードの変更は管理者のみ行えます"); return; }
+      var oldPw = document.getElementById("del-pw-old").value;
+      var newPw = document.getElementById("del-pw-new").value;
+      var newPw2 = document.getElementById("del-pw-new2").value;
+      loadDeletePassword(function(current){
+        if(oldPw!==current){ toast("現在の削除用パスワードが正しくありません"); return; }
+        if(!newPw || newPw.length<4){ toast("新しい削除用パスワードは4文字以上で入力してください"); return; }
+        if(newPw!==newPw2){ toast("新しい削除用パスワード（確認）が一致しません"); return; }
+        var done = function(){ state.deletePassword = newPw; toast("削除用パスワードを変更しました"); render(); };
+        if(db) db.doc("settings/security").set({deletePassword:newPw, updatedAt:new Date().toISOString()}).then(done).catch(function(){ toast("保存に失敗しました"); });
+        else done();
       });
     });
     var backupBtn = document.getElementById("admin-backup");
