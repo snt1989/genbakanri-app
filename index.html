@@ -2847,7 +2847,7 @@
   function chatDay(iso){ var d=new Date(iso); return isNaN(d)?"":d.getFullYear()+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+String(d.getDate()).padStart(2,"0"); }
   function chatText(t){
     var h = esc(t||"");
-    state.members.map(function(m){return m.name;}).filter(Boolean).sort(function(a,b){return b.length-a.length;}).forEach(function(n){
+    state.members.map(function(m){return m.name;}).concat(["全員"]).filter(Boolean).sort(function(a,b){return b.length-a.length;}).forEach(function(n){
       h = h.split("@"+esc(n)).join('<b class="mention">@'+esc(n)+'</b>');
     });
     return h.replace(/\n/g,"<br>");
@@ -2922,7 +2922,7 @@
       var draft = (state.chatDraft||{})[chat.id] || "";
       html += '<div class="chat-input-wrap">';
       if(state.chatPop==="emoji") html += '<div class="chat-pop"><div class="emo">'+CHAT_EMOJI.map(function(e){ return '<button data-chat-emoji="'+e+'">'+e+'</button>'; }).join("")+'</div></div>';
-      if(state.chatPop==="mention") html += '<div class="chat-pop">'+chatMembers(chat).map(function(m){ return '<button class="mem" data-chat-mention="'+esc(m.name)+'">@'+esc(m.name)+'</button>'; }).join("")+'</div>';
+      if(state.chatPop==="mention") html += '<div class="chat-pop"><button class="mem" data-chat-mention="全員" style="font-weight:700">@全員<span style="font-weight:400;color:var(--ink-faint);font-size:11px;margin-left:6px">このチャットのメンバー全員宛て</span></button>'+chatMembers(chat).map(function(m){ return '<button class="mem" data-chat-mention="'+esc(m.name)+'">@'+esc(m.name)+'</button>'; }).join("")+'</div>';
       html += '<div class="chat-tools">'+
         '<button type="button" data-chat-tool="emoji" title="絵文字"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c1 1.3 2.2 2 3.5 2s2.5-.7 3.5-2"/><path d="M9 9.5h.01M15 9.5h.01"/></svg></button>'+
         '<button type="button" data-chat-tool="mention" title="メンションする">@</button>'+
