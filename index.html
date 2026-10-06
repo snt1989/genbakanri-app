@@ -252,7 +252,10 @@
   .detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin:6px 0 16px;}
   .detail-head h1{font-size:19px;}
   .detail-head .updated{font-size:11px;color:var(--ink-faint);}
-  .lock-ico{display:inline-flex;align-items:center;vertical-align:-2px;margin-right:3px;opacity:.85;}
+  .lock-ico{display:inline-flex;align-items:center;vertical-align:-2px;margin-right:3px;}
+  .secret-ico{color:var(--lock);}
+  .admin-ico{color:var(--accent);}
+  .btn.primary .admin-ico,.segopt.active .admin-ico{color:inherit;}
   .bulk-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;margin-bottom:14px;border-color:var(--accent);}
   .bulk-bar select,.bulk-bar input[type=text],.bulk-bar input:not([type=checkbox]){width:auto;flex:0 0 auto;}
   .bulk-bar select,.bulk-bar input[type=text],.bulk-bar input[type=date],.bulk-bar input[type=number]{padding:5px 8px;font-size:12px;}
@@ -945,10 +948,12 @@
   function iSearch(){ return svgIcon('<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',14); }
   function iDownload(){ return svgIcon('<path d="M12 4v11M7.5 11 12 15.5 16.5 11"/><path d="M4.5 18.5h15"/>',14); }
   function iUpload(){ return svgIcon('<path d="M12 15V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4.5 18.5h15"/>',14); }
-  function iLock(){ return '<span class="lock-ico" title="管理者のみ">'+svgIcon('<rect x="5" y="11" width="14" height="9.5" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',12)+'</span>'; }
   function iSend(){ return svgIcon('<path d="M4 12 20 4l-7 16-2.5-7L4 12z"/>',15); }
   function iMenu(){ return svgIcon('<path d="M4 6.5h16M4 12h16M4 17.5h16"/>'); }
-  function iLock(){ return svgIcon('<rect x="5" y="10.5" width="14" height="9" rx="1.8"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',10); }
+  // 社外秘 (hidden from external members): a red padlock.
+  function iLock(){ return '<span class="lock-ico secret-ico" title="社外には非表示">'+svgIcon('<rect x="5" y="10.5" width="14" height="9" rx="1.8"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',11)+'</span>'; }
+  // 管理者のみ (admin-only operation): a green shield with a key-hole check, clearly different from the padlock.
+  function iAdmin(){ return '<span class="lock-ico admin-ico" title="管理者のみ">'+svgIcon('<path d="M12 3 5 6v5.5c0 4.3 2.9 7.6 7 9.5 4.1-1.9 7-5.2 7-9.5V6z"/><path d="m9 12 2.2 2.2L15.5 10"/>',12)+'</span>'; }
   function iMap(){ return svgIcon('<path d="M9 4.5 4 6.5v13l5-2 6 2 5-2v-13l-5 2-6-2z"/><path d="M9 4.5v13M15 6.5v13"/>',14); }
   function iCamera(){ return svgIcon('<path d="M4 8.5h3l1.5-2h7l1.5 2h3v11H4z"/><circle cx="12" cy="14" r="3.3"/>',18); }
   function iBack(){ return svgIcon('<path d="M15 5 8 12l7 7"/>',12); }
@@ -1709,8 +1714,8 @@
       '<h1 class="pagetitle">メンバー管理</h1>'+
       (state.isAdmin ?
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-          '<button class="btn primary" data-goto-memberform="1">'+iLock()+iPlus()+' 自社メンバー登録</button>'+
-          '<button class="btn outline" data-open="member-invite">'+iLock()+iPlus()+' 社外メンバー招待</button>'+
+          '<button class="btn primary" data-goto-memberform="1">'+iAdmin()+iPlus()+' 自社メンバー登録</button>'+
+          '<button class="btn outline" data-open="member-invite">'+iAdmin()+iPlus()+' 社外メンバー招待</button>'+
           csvToolbar("members")+
         '</div>' : ''
       )+'</div><div style="height:14px"></div>';
@@ -1722,7 +1727,7 @@
     if(list.length===0){
       html += emptyState(iUsers,"メンバーが登録されていません","");
     }else{
-      html += '<div class="tablewrap"><table><thead><tr><th>氏名</th><th>所属会社</th><th>店舗</th><th>職種</th><th>'+(state.isAdmin?iLock():'')+'権限</th>'+(state.isAdmin?'<th></th>':'')+'</tr></thead><tbody>';
+      html += '<div class="tablewrap"><table><thead><tr><th>氏名</th><th>所属会社</th><th>店舗</th><th>職種</th><th>'+(state.isAdmin?iAdmin():'')+'権限</th>'+(state.isAdmin?'<th></th>':'')+'</tr></thead><tbody>';
       html += list.map(function(m){
         var perm = memberPermission(m);
         var permCell = state.isAdmin ?
@@ -1735,7 +1740,7 @@
           '<td><div class="tagrow">'+(m.roles||[]).map(function(r){return '<span class="tag muted">'+esc(r)+'</span>';}).join("")+'</div></td>'+
           '<td>'+permCell+'</td>'+
           (state.isAdmin ?
-            '<td style="white-space:nowrap"><div style="display:flex;gap:6px;align-items:center"><button class="btn sm" data-edit-member="'+m.id+'">'+iLock()+'編集</button><button class="iconbtn" data-del-member="'+m.id+'" title="削除（管理者のみ）">'+iTrash()+'</button></div></td>'
+            '<td style="white-space:nowrap"><div style="display:flex;gap:6px;align-items:center"><button class="btn sm" data-edit-member="'+m.id+'">'+iAdmin()+'編集</button><button class="iconbtn" data-del-member="'+m.id+'" title="削除（管理者のみ）">'+iTrash()+'</button></div></td>'
             : ''
           )+'</tr>';
       }).join("");
@@ -1910,7 +1915,7 @@
     if(!sections.some(function(x){return x[0]===state.settingsSeg;})) state.settingsSeg = "company";
     var html = '<h1 class="pagetitle">設定</h1><div style="height:14px"></div>';
     html += '<div class="segmented" style="margin-bottom:16px">'+sections.map(function(x){
-      return '<div class="segopt'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+(x[0]==="admin"?iLock():'')+x[1]+'</div>';
+      return '<div class="segopt'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+(x[0]==="admin"?iAdmin():'')+x[1]+'</div>';
     }).join("")+'</div>';
     if(state.settingsSeg==="personal") html += renderSettingsPersonal();
     else if(state.settingsSeg==="admin") html += renderSettingsAdmin();
@@ -1932,7 +1937,7 @@
     html += field("FAX番号", '<input type="text" id="set-fax" value="'+esc(s.fax||"")+'"'+ro+'>');
     html += field("代表メールアドレス", '<input type="email" id="set-email" value="'+esc(s.email||"")+'"'+ro+'>');
     html += field("ウェブサイト", '<input type="text" id="set-website" placeholder="https://" value="'+esc(s.website||"")+'"'+ro+'>');
-    if(state.isAdmin) html += '<div><button class="btn primary" id="set-save">'+iLock()+'保存する</button></div>';
+    if(state.isAdmin) html += '<div><button class="btn primary" id="set-save">'+iAdmin()+'保存する</button></div>';
     html += '</div>';
     return html;
   }
@@ -1993,7 +1998,7 @@
         '<td><select class="perm-select" data-perm-select="'+m.id+'">'+PERMISSION_LEVELS.map(function(p){
           return '<option value="'+p[0]+'"'+(p[0]===perm?" selected":"")+'>'+p[1]+'</option>';
         }).join("")+'</select></td>'+
-        '<td style="white-space:nowrap"><button class="btn sm" data-reset-pw="'+m.id+'">'+iLock()+'パスワードを初期化</button></td></tr>';
+        '<td style="white-space:nowrap"><button class="btn sm" data-reset-pw="'+m.id+'">'+iAdmin()+'パスワードを初期化</button></td></tr>';
     }).join("");
     html += '</tbody></table></div>';
     html += '<div style="font-size:11.5px;color:var(--ink-faint);margin:8px 0 18px">メンバーの追加・削除は「メンバー」タブから行えます。パスワードの初期化は「1234」に戻します。</div>';
@@ -2004,14 +2009,14 @@
     html += field("現在の削除用パスワード", '<input type="password" id="del-pw-old" autocomplete="off">');
     html += field("新しい削除用パスワード（4文字以上）", '<input type="password" id="del-pw-new" autocomplete="new-password">');
     html += field("新しい削除用パスワード（確認）", '<input type="password" id="del-pw-new2" autocomplete="new-password">');
-    html += '<div><button class="btn primary" id="del-pw-save">'+iLock()+'削除用パスワードを変更する</button></div>';
+    html += '<div><button class="btn primary" id="del-pw-save">'+iAdmin()+'削除用パスワードを変更する</button></div>';
     html += '</div>';
 
     html += '<h2 style="font-size:13.5px;margin:4px 0 10px">データの状態とバックアップ</h2>';
     html += '<div class="card" style="padding:16px 18px;max-width:520px;display:flex;flex-direction:column;gap:10px">';
     html += '<div class="side-stat" style="padding:0;border:none">接続モード<b style="font-size:12.5px">'+(state.offlineMode?'オフライン（デモ）':(window.claude?'claude.ai':'Firebase'))+'</b></div>';
     html += '<div class="side-stat" style="padding:0;border:none">ログイン中<b style="font-size:12.5px">'+esc(state.myName||"")+'</b></div>';
-    html += '<div><button class="btn outline" id="admin-backup">'+iLock()+'全データをバックアップ（JSON）</button></div>';
+    html += '<div><button class="btn outline" id="admin-backup">'+iAdmin()+'全データをバックアップ（JSON）</button></div>';
     html += '</div>';
     return html;
   }
@@ -2800,9 +2805,9 @@
     if(!state.isAdmin) return "";
     var sm = small ? " sm" : "";
     var on = state.bulk.on && state.bulk.entity===entity;
-    return (E.importable ? '<button class="btn outline'+sm+'" data-csv-import="'+entity+'">'+iLock()+iUpload()+' CSV入力</button>' : '')+
-      '<button class="btn outline'+sm+'" data-csv-export="'+entity+'">'+iLock()+iDownload()+' CSV出力</button>'+
-      '<button class="btn'+(on?' primary':' outline')+sm+'" data-bulk-toggle="'+entity+'">'+iLock()+'一括編集'+(on?'（終了）':'')+'</button>';
+    return (E.importable ? '<button class="btn outline'+sm+'" data-csv-import="'+entity+'">'+iAdmin()+iUpload()+' CSV入力</button>' : '')+
+      '<button class="btn outline'+sm+'" data-csv-export="'+entity+'">'+iAdmin()+iDownload()+' CSV出力</button>'+
+      '<button class="btn'+(on?' primary':' outline')+sm+'" data-bulk-toggle="'+entity+'">'+iAdmin()+'一括編集'+(on?'（終了）':'')+'</button>';
   }
   function bulkValueControl(c){
     if(!c) return "";
