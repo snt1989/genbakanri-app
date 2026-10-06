@@ -3004,11 +3004,32 @@
     return {format:"genba-backup", version:2, exportedAt:new Date().toISOString(), exportedBy:state.myName||"", includesPasswords:!!includePw,
       counts:counts, settings:{org:state.orgSettings, secret:{defaults:secretDefaults()}, master:master}, data:data};
   }
-  function backupAllData(includePw){
+  function blobToB64(blob){
+    return new Promise(function(res,rej){ var r=new FileReader(); r.onload=function(){ res(String(r.result).split(",")[1]||""); }; r.onerror=rej; r.readAsDataURL(blob); });
+  }
+  // 写真・ファイルの本体を取得してbase64で同梱する（1件ずつ処理してメモリを抑える）
+  function collectFileBlobs(payload){
+    var list = payload.data.files, blobs = {}, failed = [], i = 0;
+    var next = function(){
+      if(i>=list.length) return Promise.resolve();
+      var f = list[i++]; toast("写真・ファイルを取得中… "+i+" / "+list.length);
+      return fetch(fileUrl(f)).then(function(r){ if(!r.ok) throw 0; return r.blob(); })
+        .then(blobToB64).then(function(b64){ blobs[f.id] = {contentType:f.contentType||"", b64:b64}; })
+        .catch(function(){ failed.push(f.filename||f.id); }).then(next);
+    };
+    return next().then(function(){ payload.blobs = blobs; payload.includesFiles = true; return failed; });
+  }
+  function backupAllData(includePw, withFiles){
     var payload = buildBackup(includePw===true);
+    if(withFiles === true){
+      return collectFileBlobs(payload).then(function(failed){ saveBackupPayload(payload, failed); });
+    }
+    saveBackupPayload(payload, []);
+  }
+  function saveBackupPayload(payload, failed){
     var blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
-    var filename = "genba-backup-"+todayISO()+".json";
-    var done = function(){ markBackup(); toast("バックアップを保存しました（"+BACKUP_COLS.reduce(function(n,c){return n+payload.counts[c[0]];},0)+"件）"); render(); };
+    var filename = "genba-backup-"+(payload.includesFiles?"full-":"")+todayISO()+".json";
+    var done = function(){ markBackup(); toast("バックアップを保存しました（"+BACKUP_COLS.reduce(function(n,c){return n+payload.counts[c[0]];},0)+"件"+(payload.includesFiles?"・写真/ファイル"+Object.keys(payload.blobs).length+"点":"")+"）"+(failed.length?" 取得できなかったファイル: "+failed.length+"点":"")); render(); };
     if(downloadsCap){
       downloadsCap.save({filename:filename, data:blob}).then(done).catch(function(){ toast("ダウンロードがキャンセルされました"); });
     } else {
@@ -3031,7 +3052,7 @@
     });
     var st = j.format==="genba-backup" ? (j.settings||{}) : {org:j.orgSettings};
     if(!total && !st.org) return {error:"復元できるデータが見つかりませんでした"};
-    return {data:data, settings:st, exportedAt:j.exportedAt||"", exportedBy:j.exportedBy||"", total:total, hasPw:!!j.includesPasswords, legacy:j.format!=="genba-backup"};
+    return {data:data, settings:st, exportedAt:j.exportedAt||"", exportedBy:j.exportedBy||"", total:total, hasPw:!!j.includesPasswords, blobs:(j.blobs&&typeof j.blobs==="object")?j.blobs:{}, legacy:j.format!=="genba-backup"};
   }
   function restoreBackup(b){
     var ps = [];
@@ -3042,6 +3063,22 @@
         if(col==="members"){
           var ex = rawOf("members").find(function(x){return x.id===id;});
           if(!d.password) d.password = (ex && ex.password) || "1234";
+        }
+        var blobInfo = (col==="files" && assetsCap) ? b.blobs[id] : null;
+        if(blobInfo && blobInfo.b64){
+          ps.push(new Promise(function(res,rej){
+            try{
+              var bin = atob(blobInfo.b64), u8 = new Uint8Array(bin.length);
+              for(var k=0;k<bin.length;k++) u8[k]=bin.charCodeAt(k);
+              var file = new File([u8], d.filename||"ファイル", {type:d.contentType||blobInfo.contentType||""});
+              assetsCap.upload(file).then(function(r){
+                d.assetId = r.id; d.url = r.url||null;
+                if(!db){ var a2=rawOf("files"), j2=a2.findIndex(function(x){return x.id===id;}); if(j2>-1) a2[j2]=Object.assign({id:id},d); else a2.push(Object.assign({id:id},d)); res(); }
+                else db.collection("files").doc(id).set(d).then(res,rej);
+              }).catch(rej);
+            }catch(e){ rej(e); }
+          }));
+          return;
         }
         if(!db){
           var arr = rawOf(col), i = arr.findIndex(function(x){return x.id===id;});
@@ -3063,9 +3100,10 @@
     html += '<div class="card" style="padding:16px 18px;max-width:560px;display:flex;flex-direction:column;gap:12px">';
     html += '<div class="side-stat" style="padding:0;border:none">最後のバックアップ<b style="font-size:12.5px">'+(last?esc(last.slice(0,10)+" "+last.slice(11,16))+"（"+days+"日前）":"まだありません")+'</b></div>';
     if(days===null || days>=7) html += '<div class="badge" style="background:#fff4e5;color:#a55b00;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.5">'+(days===null?'バックアップがまだ取られていません。':'最後のバックアップから'+days+'日経っています。')+'定期的に保存しておくと安心です。</div>';
-    html += '<div style="font-size:12px;color:var(--ink-3);line-height:1.6">案件・顧客・メンバー・タスク・チャット・ファイル情報・フォルダ・予定・工程・ゴミ箱と、会社情報・社外秘の初期設定・マスタを1つのJSONに保存します。ファイル本体（画像など）は含まれません。</div>';
+    html += '<div style="font-size:12px;color:var(--ink-3);line-height:1.6">案件・顧客・メンバー・タスク・チャット・ファイル情報・フォルダ・予定・工程・ゴミ箱と、会社情報・社外秘の初期設定・マスタを1つのJSONに保存します。ファイル本体（写真・資料）は下の「写真・ファイルも含めて」を使ったときだけ含まれます。</div>';
     html += '<label style="font-size:12px;display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="bk-pw"> ログインパスワードも含める（取り扱い注意）</label>';
-    html += '<div><button class="btn primary" id="bk-run">'+iAdmin()+'今すぐバックアップ（JSON）</button></div>';
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="bk-run">'+iAdmin()+'今すぐバックアップ（JSON）</button><button class="btn outline" id="bk-run-files">'+iAdmin()+'写真・ファイルも含めてバックアップ</button></div>';
+    html += '<div style="font-size:11.5px;color:var(--ink-3);line-height:1.6">「写真・ファイルも含める」は、アップロード済みの写真・資料の本体も1つのJSONに入れます（ファイル数が多いと時間がかかり、容量も大きくなります）。</div>';
     html += '</div>';
     html += '<h2 style="font-size:13.5px;margin:22px 0 10px">バックアップから復元</h2>';
     html += '<div class="card" style="padding:16px 18px;max-width:560px;display:flex;flex-direction:column;gap:12px">';
@@ -3073,7 +3111,7 @@
     html += '<input type="file" id="bk-file" accept=".json,application/json">';
     var pv = state.backupPreview;
     if(pv){
-      html += '<div style="font-size:12.5px;font-weight:700">'+esc(pv.name)+(pv.exportedAt?'（'+esc(pv.exportedAt.slice(0,10))+' 作成）':'')+(pv.legacy?' ・旧形式':'')+'</div>';
+      html += '<div style="font-size:12.5px;font-weight:700">'+esc(pv.name)+(pv.exportedAt?'（'+esc(pv.exportedAt.slice(0,10))+' 作成）':'')+(pv.legacy?' ・旧形式':'')+(Object.keys(pv.blobs).length?' ・写真/ファイル本体 '+Object.keys(pv.blobs).length+'点を含む':'')+'</div>';
       html += '<table class="tbl" style="font-size:12px"><thead><tr><th>項目</th><th style="text-align:right">バックアップ</th><th style="text-align:right">現在</th></tr></thead><tbody>'+
         BACKUP_COLS.map(function(c){ return '<tr><td>'+esc(c[1])+'</td><td style="text-align:right">'+pv.data[c[0]].length+'</td><td style="text-align:right">'+rawOf(c[0]).length+'</td></tr>'; }).join("")+'</tbody></table>';
       html += '<div style="display:flex;gap:8px"><button class="btn primary" id="bk-restore" style="background:var(--danger);border-color:var(--danger)">この内容で復元する</button><button class="btn outline" id="bk-cancel">キャンセル</button></div>';
@@ -4484,6 +4522,8 @@
     if(backupBtn) backupBtn.addEventListener("click", function(){ if(!state.isAdmin) return; backupAllData(); });
     var bkRun = document.getElementById("bk-run");
     if(bkRun) bkRun.addEventListener("click", function(){ if(!state.isAdmin) return; backupAllData(document.getElementById("bk-pw").checked); });
+    var bkRunF = document.getElementById("bk-run-files");
+    if(bkRunF) bkRunF.addEventListener("click", function(){ if(!state.isAdmin) return; bkRunF.disabled = true; backupAllData(document.getElementById("bk-pw").checked, true); });
     var bkFile = document.getElementById("bk-file");
     if(bkFile) bkFile.addEventListener("change", function(){
       var f = bkFile.files && bkFile.files[0]; if(!f || !state.isAdmin) return;
