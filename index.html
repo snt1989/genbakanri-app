@@ -234,6 +234,8 @@
   @media (max-width:640px){.form-row{grid-template-columns:1fr;}}
   .form-row .flabel{font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px;}
   .flabel .req{color:var(--danger);font-size:10.5px;font-weight:700;}
+  .secret-chk{display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--lock);font-weight:600;margin-top:4px;cursor:pointer;white-space:nowrap}
+  .secret-chk input{width:auto;margin:0}
   .flabel .lock{color:var(--lock);font-size:11px;}
   .form-row .fcontrol{display:flex;flex-direction:column;gap:8px;min-width:0;}
   .inline2{display:flex;gap:10px;align-items:center;}
@@ -1083,7 +1085,7 @@
     if(!state.loaded.tasks || !state.loaded.projects) return skeleton();
     var todo = state.tasks.filter(function(t){return !t.done;}).sort(function(a,b){return (a.dueDate||"").localeCompare(b.dueDate||"");});
     var activeProjects = state.projects.filter(function(p){return p.status==="施工中";});
-    var thisMonthAmount = state.projects.filter(function(p){return (p.status==="契約済"||p.status==="施工中"||p.status==="施工完了");}).reduce(function(s,p){return s+(p.amount||0);},0);
+    var thisMonthAmount = state.projects.filter(function(p){return (p.status==="契約済"||p.status==="施工中"||p.status==="施工完了");}).reduce(function(s,p){return s+(hiddenFor(p,"p_amount")?0:(p.amount||0));},0);
 
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">ホーム</h1><div style="display:flex;gap:8px;flex-wrap:wrap">'+csvToolbar("tasks")+'</div></div><div style="height:16px"></div>';
     html += '<div class="home-grid">';
@@ -1161,7 +1163,7 @@
     var pageItems = filtered.slice((f.page-1)*perPage, f.page*perPage);
 
     var counts = {}; STATUS_LIST.forEach(function(s){counts[s]=state.projects.filter(function(p){return p.status===s;}).length;});
-    var totalAmount = filtered.reduce(function(s,p){return s+(p.amount||0);},0);
+    var totalAmount = filtered.reduce(function(s,p){return s+(hiddenFor(p,"p_amount")?0:(p.amount||0));},0);
 
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">'+
       '<h1 class="pagetitle">'+title+'</h1>'+
@@ -1200,13 +1202,13 @@
         var names = normalizeAssignees(p.assignees).map(function(a){return a.name;});
         return '<tr class="rowhover" data-row-id="'+esc(p.id)+'"><td>'+
             '<div class="cell-name"><a href="#" data-open-project="'+p.id+'">'+esc(p.name)+'</a></div>'+
-            '<div class="cell-sub">'+esc(propertyAddressOf(p).full)+'</div>'+
+            '<div class="cell-sub">'+(hiddenFor(p,"pr_addr")?"":esc(propertyAddressOf(p).full))+'</div>'+
             '<div class="tagrow">'+names.map(function(a){return '<span class="tag">'+esc(a)+'</span>';}).join("")+'</div>'+
           '</td>'+
-          '<td><span class="badge '+(STATUS_STYLE[p.status]||"line-gray")+'">'+esc(p.status)+'</span></td>'+
-          '<td class="num">'+fmtDate(p.startDate)+'</td>'+
-          '<td class="num">'+fmtDate(p.endDate)+'</td>'+
-          '<td class="num">'+fmtYen(p.amount)+'</td>'+
+          '<td>'+(hiddenFor(p,"p_status")?"—":'<span class="badge '+(STATUS_STYLE[p.status]||"line-gray")+'">'+esc(p.status)+'</span>')+'</td>'+
+          '<td class="num">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.startDate))+'</td>'+
+          '<td class="num">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.endDate))+'</td>'+
+          '<td class="num">'+(hiddenFor(p,"p_amount")?"—":fmtYen(p.amount))+'</td>'+
           '<td class="num">'+fmtDate((p.createdAt||"").slice(0,10))+'</td>'+
           '<td style="white-space:nowrap"><button class="btn sm" data-edit-project="'+p.id+'">編集</button> <button class="iconbtn" data-del-project="'+p.id+'">'+iTrash()+'</button></td>'+
         '</tr>';
@@ -1233,6 +1235,7 @@
     if(!state.loaded.members || !state.loaded.customers) return skeleton();
     var p = state.editingProject || {};
     var isEdit = !!state.editingProject;
+    secretCtx = secretSet(p);
     var assignees = normalizeAssignees(p.assignees);
     var internalPicked = assignees.filter(function(a){return a.kind==="internal";}).map(function(a){return a.name;});
     var externalPicked = assignees.filter(function(a){return a.kind==="external";}).map(function(a){return a.name;});
@@ -1243,11 +1246,11 @@
     html += '<h1 class="pagetitle" style="margin-top:8px">'+(isEdit?"案件の編集":"案件の登録")+'</h1><div style="height:12px"></div>';
     html += '<div class="form-shell">';
 
-    html += '<div class="form-section-title"><span>顧客情報</span><span class="lockhint">'+iLock()+' 社外には非表示の項目</span></div>';
+    html += '<div class="form-section-title"><span>顧客情報</span><span class="lockhint">'+iLock()+' 「社外秘」にチェックした項目は社外に表示されません</span></div>';
     html += '<div class="form-card">';
     html += '<div style="padding:12px 20px;font-size:12px;color:var(--ink-faint);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px">'+
       '<span>顧客情報を入力、または顧客一覧から選択してください</span><button class="btn outline sm" id="pick-customer-btn">顧客一覧から選ぶ</button></div>';
-    html += '<div style="padding:6px 20px 0">'+customerFormSectionsHtml(projectCustomerSrc(p), !isEdit)+'</div>';
+    html += '<div style="padding:6px 20px 0">'+customerFormSectionsHtml(projectCustomerSrc(p), !isEdit, true)+'</div>';
     html += '</div>';
 
     html += '<div class="form-section-title"><span>案件メンバー</span></div>';
@@ -1260,19 +1263,19 @@
     }).join("")+(externalMembers.length===0?'<span style="font-size:11.5px;color:var(--ink-faint)">社外メンバーが登録されていません</span>':'')+'</div></div>');
     html += '</div>';
 
-    html += '<div class="form-section-title"><span>案件情報</span><span class="lockhint">'+iLock()+' 社外には非表示の項目</span></div>';
+    html += '<div class="form-section-title"><span>案件情報</span><span class="lockhint">'+iLock()+' 「社外秘」にチェックした項目は社外に表示されません</span></div>';
     html += '<div class="form-card">';
     html += formRow("案件名", true, false, '<input type="text" id="f-name" value="'+esc(p.name||"")+'" placeholder="例：渋谷区佐藤様邸">');
-    html += formRow("案件種類", false, false, selectHtml("f-type", PROJECT_TYPES, p.type||PROJECT_TYPES[0]));
-    html += formRow("案件の進捗", false, false, selectHtml("f-status", STATUS_LIST, p.status||(state.formMode==="construction"?"契約済":"現地調査前")));
-    html += formRow("契約金額", false, true, '<div class="inline2" style="max-width:260px"><input type="number" id="f-amount" min="0" step="1000" value="'+(p.amount||0)+'"><span>円</span></div>');
-    html += formRow("施工予定", false, false, '<div class="inline2" style="max-width:340px"><input type="date" id="f-start" value="'+(p.startDate||"")+'"><span>〜</span><input type="date" id="f-end" value="'+(p.endDate||"")+'"></div>');
-    html += formRow("店舗", false, false, selectHtml("f-store", STORES, p.store||STORES[0]));
-    html += formRow("施工指示", false, false, '<textarea id="f-instruction" placeholder="例：なになにをやってください">'+esc(p.workInstruction||"")+'</textarea>');
-    html += formRow("引渡し日", false, false, '<input type="date" id="f-handover" value="'+(p.handoverDate||"")+'" style="max-width:200px">');
+    html += formRow("案件種類", false, false, selectHtml("f-type", PROJECT_TYPES, p.type||PROJECT_TYPES[0]), "p_type");
+    html += formRow("案件の進捗", false, false, selectHtml("f-status", STATUS_LIST, p.status||(state.formMode==="construction"?"契約済":"現地調査前")), "p_status");
+    html += formRow("契約金額", false, false, '<div class="inline2" style="max-width:260px"><input type="number" id="f-amount" min="0" step="1000" value="'+(p.amount||0)+'"><span>円</span></div>', "p_amount");
+    html += formRow("施工予定", false, false, '<div class="inline2" style="max-width:340px"><input type="date" id="f-start" value="'+(p.startDate||"")+'"><span>〜</span><input type="date" id="f-end" value="'+(p.endDate||"")+'"></div>', "p_period");
+    html += formRow("店舗", false, false, selectHtml("f-store", STORES, p.store||STORES[0]), "p_store");
+    html += formRow("施工指示", false, false, '<textarea id="f-instruction" placeholder="例：なになにをやってください">'+esc(p.workInstruction||"")+'</textarea>', "p_instruction");
+    html += formRow("引渡し日", false, false, '<input type="date" id="f-handover" value="'+(p.handoverDate||"")+'" style="max-width:200px">', "p_handover");
     html += '</div>';
 
-    html += '<div class="form-section-title"><span>物件情報</span><span class="lockhint" style="color:var(--ink-faint)">社外の案件メンバーに公開されます</span></div>';
+    html += '<div class="form-section-title"><span>物件情報</span><span class="lockhint" style="color:var(--ink-faint)">「社外秘」にチェックした項目は社外に表示されません</span></div>';
     html += '<div class="form-card">';
     html += propertyFormRowsHtml(p);
     html += '</div>';
@@ -1281,8 +1284,28 @@
     html += '</div>';
     return html;
   }
-  function formRow(label, required, locked, control){
-    return '<div class="form-row"><div class="flabel">'+esc(label)+(required?' <span class="req">必須</span>':'')+(locked?' <span class="lock">'+iLock()+'</span>':'')+'</div><div class="fcontrol">'+control+'</div></div>';
+  // ---- 項目ごとの社外秘 -------------------------------------------------
+  // p.secretFields = the list of keys marked 社外秘. External members never see
+  // those items. Untouched projects use DEFAULT_SECRET (案件情報 + 顧客情報).
+  var SECRET_HINT = {c_invoice:"適格請求書・事業所種別・法人番号", c_addr:"住所すべて", c_contact:"連絡先すべて"};
+  var DEFAULT_SECRET = ["p_type","p_status","p_amount","p_period","p_store","p_instruction","p_handover","c_name","c_invoice","c_contact","c_addr","c_notes"];
+  var secretCtx = DEFAULT_SECRET.slice();
+  function secretSet(p){ return (p && Array.isArray(p.secretFields)) ? p.secretFields : DEFAULT_SECRET.slice(); }
+  function isExternalViewer(){ var m = myMember(); return !!m && memberPermission(m)==="external"; }
+  function hiddenFor(p, key){ return isExternalViewer() && secretSet(p).indexOf(key)!==-1; }
+  function secretChk(key){
+    var h = SECRET_HINT[key];
+    return '<label class="secret-chk" title="チェックすると社外メンバーには表示されません"><input type="checkbox" data-secret="'+key+'"'+(secretCtx.indexOf(key)!==-1?" checked":"")+'>'+iLock()+' 社外秘'+(h?'（'+h+'）':'')+'</label>';
+  }
+  // Keys on screen are replaced by what is ticked; keys not on screen are kept.
+  function readSecrets(root, p){
+    var boxes = Array.prototype.slice.call(root.querySelectorAll("input[data-secret]"));
+    var onScreen = boxes.map(function(b){ return b.getAttribute("data-secret"); });
+    var keep = secretSet(p).filter(function(k){ return onScreen.indexOf(k)===-1; });
+    return keep.concat(boxes.filter(function(b){ return b.checked; }).map(function(b){ return b.getAttribute("data-secret"); }));
+  }
+  function formRow(label, required, locked, control, skey){
+    return '<div class="form-row"><div class="flabel">'+esc(label)+(required?' <span class="req">必須</span>':'')+(skey?secretChk(skey):'')+'</div><div class="fcontrol">'+control+'</div></div>';
   }
 
   /* ============ 郵便番号 → 住所 自動入力 ============ */
@@ -1354,11 +1377,11 @@
   // 物件情報 rows (also used by the 詳細画面's 物件情報 editor).
   function propertyFormRowsHtml(p){
     var html = "";
-    html += formRow("物件種類 / 構造", false, false, '<div class="inline2" style="max-width:360px">'+selectHtml("f-ptype", PROPERTY_TYPES, p.propertyType||PROPERTY_TYPES[0])+selectHtml("f-pstruct", PROPERTY_STRUCTURES, p.propertyStructure||PROPERTY_STRUCTURES[0])+'</div>');
+    html += formRow("物件種類 / 構造", false, false, '<div class="inline2" style="max-width:360px">'+selectHtml("f-ptype", PROPERTY_TYPES, p.propertyType||PROPERTY_TYPES[0])+selectHtml("f-pstruct", PROPERTY_STRUCTURES, p.propertyStructure||PROPERTY_STRUCTURES[0])+'</div>', "pr_type");
     html += formRow("物件住所区分", false, false, '<div class="radiogroup">'+
       '<label class="radioopt"><input type="radio" name="addrmode" value="same"'+(p.addressMode!=="new"?" checked":"")+'>顧客の住所と同じ場所</label>'+
       '<label class="radioopt"><input type="radio" name="addrmode" value="new"'+(p.addressMode==="new"?" checked":"")+'>新しい住所を入力</label>'+
-    '</div>');
+    '</div>', "pr_addr");
     var newAddr = p.addressMode==="new";
     var pv = function(k){ return esc(p[k]||""); };
     var pcf = function(label, inner, span){ return '<label class="cf-field" style="grid-column:span '+span+'"><span class="cf-label">'+esc(label)+'</span>'+inner+'</label>'; };
@@ -1368,7 +1391,7 @@
       pcf("市区町村・番地", '<input type="text" id="f-paddress" placeholder="例：盛岡市盛岡駅前通10-38" value="'+pv("propertyAddress")+'">', 2)+
       pcf("建物名・部屋番号など", '<input type="text" id="f-pbuilding" value="'+pv("propertyBuilding")+'">', 4)+
     '</div></div></div>';
-    html += formRow("備考", false, false, '<textarea id="f-propnotes" placeholder="例：前の道が狭いためトラックは入れません">'+esc(p.propertyNotes||"")+'</textarea>');
+    html += formRow("備考", false, false, '<textarea id="f-propnotes" placeholder="例：前の道が狭いためトラックは入れません">'+esc(p.propertyNotes||"")+'</textarea>', "pr_notes");
     return html;
   }
   function bindPropertyFormEvents(root){
@@ -1447,6 +1470,7 @@
       };
 
       Object.assign(data, projectCustomerData(cdata), readPropertyData());
+      data.secretFields = readSecrets(document.getElementById("content"), state.editingProject||{});
       ensureCustomer(cdata, function(customerId){
         data.customerId = customerId;
         var id = state.editingProject ? state.editingProject.id : null;
@@ -1498,18 +1522,20 @@
     var box = function(){ return document.getElementById("modal-box"); };
     var styleFoot = function(){ var f = box().querySelector(".modal-foot"); if(f){ f.style.background="var(--surface-2)"; f.style.borderRadius="0 0 16px 16px"; } };
 
+    secretCtx = secretSet(p);
     if(kind==="property"){
       openModal("物件情報の編集", '<div style="margin:-16px -18px">'+propertyFormRowsHtml(p)+'</div>', cancel+'<button class="btn primary" id="sec-save">保存する</button>');
       box().style.maxWidth = "760px"; styleFoot();
       bindPropertyFormEvents(box());
       document.getElementById("sec-save").onclick = function(){
-        writeDoc("projects", p.id, readPropertyData(), "物件情報を更新しました");
+        var pd = readPropertyData(); pd.secretFields = readSecrets(box(), p);
+        writeDoc("projects", p.id, pd, "物件情報を更新しました");
       };
     }
     else if(kind==="customer"){
       var pick = '<label class="cf-field" style="margin-bottom:6px"><span class="cf-label">顧客一覧から選ぶ</span><select id="sec-cust-pick"><option value="">選択してください</option>'+
         state.customers.map(function(c){ return '<option value="'+esc(c.id)+'">'+esc(c.name)+'</option>'; }).join("")+'</select></label>';
-      openModal("顧客情報の編集", pick+customerFormSectionsHtml(projectCustomerSrc(p), false), cancel+'<button class="btn primary" id="sec-save">保存する</button>');
+      openModal("顧客情報の編集", pick+customerFormSectionsHtml(projectCustomerSrc(p), false, true), cancel+'<button class="btn primary" id="sec-save">保存する</button>');
       box().style.maxWidth = "860px"; styleFoot();
       bindCustomerFormEvents();
       document.getElementById("sec-cust-pick").onchange = function(){
@@ -1519,7 +1545,7 @@
       document.getElementById("sec-save").onclick = function(){
         var cdata = readCustomerForm(); if(!cdata) return;
         ensureCustomer(cdata, function(customerId){
-          var data = projectCustomerData(cdata); data.customerId = customerId;
+          var data = projectCustomerData(cdata); data.customerId = customerId; data.secretFields = readSecrets(box(), p);
           writeDoc("projects", p.id, data, "顧客情報を更新しました");
         });
       };
@@ -1578,38 +1604,47 @@
     html += '<label class="upload-tile">'+iCamera()+'<span>写真・ファイルを追加</span><input type="file" id="photo-input" style="display:none"></label>';
     html += '</div></div>';
 
-    html += '<div class="form-section-title"><span>案件情報</span><span class="lockhint">'+iLock()+' 社外には非表示の項目</span></div>';
-    html += '<div class="form-card">';
-    html += '<div class="kv" style="display:flex;align-items:center;gap:14px"><span class="badge '+(STATUS_STYLE[p.status]||"line-gray")+'">'+esc(p.status)+'</span><span class="num" style="font-weight:700">'+fmtYen(p.amount)+'</span><button class="btn sm" style="margin-left:auto" data-edit-project="'+p.id+'">編集</button></div>';
-    html += kvRow("案件名", esc(p.name));
-    html += kvRow("案件種類", esc(p.type||"—"));
-    html += kvRow("施工予定", (p.startDate||p.endDate) ? (fmtDate(p.startDate)+" 〜 "+fmtDate(p.endDate)) : "-");
-    html += kvRow("施工指示", esc(p.workInstruction||"-"));
-    html += kvRow("引渡し日", fmtDate(p.handoverDate));
-    html += '</div>';
+    var ext = isExternalViewer();
+    var lockTag = function(key){ return (!ext && secretSet(p).indexOf(key)!==-1) ? ' '+iLock() : ''; };
+    var hint = ext ? '' : '<span class="lockhint">'+iLock()+' ＝ 社外秘（社外メンバーには非表示）</span>';
+    var section = function(title, rows, editKind){
+      if(ext && !rows) return "";
+      return '<div class="form-section-title"><span>'+title+'</span><span style="display:flex;align-items:center;gap:10px">'+hint+(editKind?'<button class="btn sm" data-edit-section="'+editKind+'">'+iEdit()+' 編集</button>':'')+'</span></div>'+
+        '<div class="form-card">'+(rows||'<div class="kv"><dd style="color:var(--ink-faint)">表示できる項目がありません</dd></div>')+'</div>';
+    };
 
-    html += '<div class="form-section-title"><span>物件情報</span><span style="display:flex;align-items:center;gap:10px"><span class="lockhint" style="color:var(--ink-faint)">社外の案件メンバーに公開されます</span><button class="btn sm" data-edit-section="property">'+iEdit()+' 編集</button></span></div>';
-    html += '<div class="form-card">';
-    html += '<div class="kv"><dt>物件種類</dt><dd>'+esc(p.propertyType||"—")+'　<b>構造</b> '+esc(p.propertyStructure||"—")+'</dd></div>';
+    var rows = '';
+    var badges = (hiddenFor(p,"p_status") ? '' : '<span class="badge '+(STATUS_STYLE[p.status]||"line-gray")+'">'+esc(p.status)+'</span>'+lockTag("p_status")) +
+      (hiddenFor(p,"p_amount") ? '' : '<span class="num" style="font-weight:700">'+fmtYen(p.amount)+'</span>'+lockTag("p_amount"));
+    rows += '<div class="kv" style="display:flex;align-items:center;gap:14px">'+badges+'<button class="btn sm" style="margin-left:auto" data-edit-project="'+p.id+'">編集</button></div>';
+    rows += kvRow("案件名", esc(p.name));
+    rows += kvRow("案件種類", esc(p.type||"—"), "p_type", p);
+    rows += kvRow("施工予定", (p.startDate||p.endDate) ? (fmtDate(p.startDate)+" 〜 "+fmtDate(p.endDate)) : "-", "p_period", p);
+    rows += kvRow("店舗", esc(p.store||"-"), "p_store", p);
+    rows += kvRow("施工指示", esc(p.workInstruction||"-"), "p_instruction", p);
+    rows += kvRow("引渡し日", fmtDate(p.handoverDate), "p_handover", p);
+    html += section("案件情報", rows, null);
+
+    var prows = '';
+    prows += kvRow("物件種類", esc(p.propertyType||"—")+'　<b>構造</b> '+esc(p.propertyStructure||"—"), "pr_type", p);
     var fullAddr = (p.prefecture||"")+(p.address||"");   // 顧客の住所
     var pa = propertyAddressOf(p);
     var propLine = (pa.postal?"〒"+pa.postal+" ":"")+pa.full;
-    html += '<div class="kv"><dt>住所</dt><dd>'+esc(propLine.trim()||"—")+(pa.full?' <a class="maplink" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(pa.text)+'">'+iMap()+' Googleマップで見る</a>':'')+(p.addressMode==="new"?'<div class="cell-sub">顧客の住所とは別の場所</div>':'')+'</dd></div>';
-    if(p.propertyNotes) html += kvRow("備考", esc(p.propertyNotes));
-    html += '</div>';
+    prows += kvRow("住所", esc(propLine.trim()||"—")+(pa.full?' <a class="maplink" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(pa.text)+'">'+iMap()+' Googleマップで見る</a>':'')+(p.addressMode==="new"?'<div class="cell-sub">顧客の住所とは別の場所</div>':''), "pr_addr", p);
+    if(p.propertyNotes) prows += kvRow("備考", esc(p.propertyNotes), "pr_notes", p);
+    html += section("物件情報", prows, "property");
 
-    html += '<div class="form-section-title"><span>顧客情報</span><span style="display:flex;align-items:center;gap:10px"><span class="lockhint">'+iLock()+' 社外には非表示の項目</span><button class="btn sm" data-edit-section="customer">'+iEdit()+' 編集</button></span></div>';
-    html += '<div class="form-card">';
     var cs = projectCustomerSrc(p);
-    html += '<div class="kv" style="display:flex;justify-content:space-between;align-items:center"><div><b style="font-size:13.5px">'+esc(cs.name||"—")+'</b>'+(cs.kana?'<div class="cell-sub">'+esc(cs.kana)+'</div>':'')+'</div></div>';
-    if(cs.entityType) html += kvRow("事業所種別", esc(cs.entityType)+(cs.corporateNumber?"　法人番号 "+esc(cs.corporateNumber):""));
-    if(cs.invoiceIssuer||cs.invoiceNumber) html += kvRow("適格請求書", esc([cs.invoiceIssuer,cs.invoiceNumber].filter(Boolean).join(" / ")));
+    var crows = '';
+    if(!hiddenFor(p,"c_name")) crows += '<div class="kv" style="display:flex;justify-content:space-between;align-items:center"><div><b style="font-size:13.5px">'+esc(cs.name||"—")+'</b>'+lockTag("c_name")+(cs.kana?'<div class="cell-sub">'+esc(cs.kana)+'</div>':'')+'</div></div>';
+    if(cs.entityType) crows += kvRow("事業所種別", esc(cs.entityType)+(cs.corporateNumber?"　法人番号 "+esc(cs.corporateNumber):""), "c_invoice", p);
+    if(cs.invoiceIssuer||cs.invoiceNumber) crows += kvRow("適格請求書", esc([cs.invoiceIssuer,cs.invoiceNumber].filter(Boolean).join(" / ")), "c_invoice", p);
     var contactLine = [ (cs.contactName?cs.contactName+(cs.contactHonorific?" "+cs.contactHonorific:""):""), cs.department, cs.phone, cs.email ].filter(Boolean).join(" / ");
-    if(contactLine) html += kvRow("連絡先", esc(contactLine));
+    if(contactLine) crows += kvRow("連絡先", esc(contactLine), "c_contact", p);
     var custAddr = (cs.postalCode?"〒"+cs.postalCode+" ":"")+fullAddr+(cs.building?" "+cs.building:"");
-    if(fullAddr||cs.postalCode) html += kvRow("住所", esc(custAddr));
-    if(cs.notes) html += kvRow("社内メモ", esc(cs.notes));
-    html += '</div>';
+    if(fullAddr||cs.postalCode) crows += kvRow("住所", esc(custAddr), "c_addr", p);
+    if(cs.notes) crows += kvRow("社内メモ", esc(cs.notes), "c_notes", p);
+    html += section("顧客情報", crows, "customer");
 
     html += '</div>'; // end left col
 
@@ -1637,7 +1672,11 @@
     html += '<div style="text-align:center;margin-top:26px"><button class="btn ghost" style="color:var(--danger)" data-del-project="'+p.id+'">'+iTrash()+' 案件情報を削除する</button></div>';
     return html;
   }
-  function kvRow(label, val){ return '<div class="kv"><dt>'+esc(label)+'</dt><dd>'+val+'</dd></div>'; }
+  function kvRow(label, val, key, p){
+    if(key && p && hiddenFor(p,key)) return "";
+    var lock = (key && p && secretSet(p).indexOf(key)!==-1) ? ' '+iLock() : '';
+    return '<div class="kv"><dt>'+esc(label)+lock+'</dt><dd>'+val+'</dd></div>';
+  }
 
   /* ============ MEMBER FORM (full page, internal) ============ */
   function renderMemberForm(){
@@ -2255,34 +2294,35 @@
   }
 
   // HTML for 基本情報 / 取引先住所 / 取引先担当者. src = {name, kana, ...}; isNew → 都道府県 defaults to 岩手県.
-  function customerFormSectionsHtml(src, isNew){
+  function customerFormSectionsHtml(src, isNew, withSecret){
     src = src || {};
     var v = function(k){ return esc(src[k]!=null ? src[k] : ""); };
-    var cf = function(label, inner, req, span){
-      return '<label class="cf-field" style="'+(span?'grid-column:span '+span:'')+'"><span class="cf-label">'+esc(label)+(req?' <span class="req">必須</span>':'')+'</span>'+inner+'</label>';
+    var cf = function(label, inner, req, span, skey){
+      var chk = (withSecret && skey) ? secretChk(skey) : "";
+      return '<label class="cf-field" style="'+(span?'grid-column:span '+span:'')+'"><span class="cf-label">'+esc(label)+(req?' <span class="req">必須</span>':'')+'</span>'+inner+chk+'</label>';
     };
     var sel = function(id, opts, val){ return selectHtml(id, opts, val||opts[0]); };
     var sec = function(title, inner){ return '<div class="cf-section"><h3>'+esc(title)+'</h3><div class="cf-grid">'+inner+'</div></div>'; };
     return '<div>'+
       sec("基本情報",
-        cf("名前", '<input type="text" id="f-cname" placeholder="例：山田花子 / 株式会社〇〇" value="'+v("name")+'">', true, 2)+
+        cf("名前", '<input type="text" id="f-cname" placeholder="例：山田花子 / 株式会社〇〇" value="'+v("name")+'">', true, 2, "c_name")+
         cf("名前（ふりがな）", '<input type="text" id="f-ckana" placeholder="例：やまだはなこ" value="'+v("kana")+'">', false, 2)+
-        cf("適格請求書発行事業者", sel("f-cinvoice", ["未選択","該当する","該当しない"], src.invoiceIssuer||"未選択"), false, 1)+
+        cf("適格請求書発行事業者", sel("f-cinvoice", ["未選択","該当する","該当しない"], src.invoiceIssuer||"未選択"), false, 1, "c_invoice")+
         cf("登録番号（13桁）", '<input type="text" id="f-cinvno" placeholder="例：T1234567890123" maxlength="14" value="'+v("invoiceNumber")+'">', false, 2)+
         cf("事業所種別", sel("f-cetype", ["未選択","法人","個人"], src.entityType||"未選択"), false, 1)+
         cf("法人番号", '<input type="text" id="f-ccorpno" placeholder="13桁" maxlength="13" value="'+v("corporateNumber")+'">', false, 2)+
-        cf("社内メモ", '<textarea id="f-cnotes" placeholder="例：昼間は仕事のため連絡NG" style="min-height:70px">'+v("notes")+'</textarea>', false, 4)
+        cf("社内メモ", '<textarea id="f-cnotes" placeholder="例：昼間は仕事のため連絡NG" style="min-height:70px">'+v("notes")+'</textarea>', false, 4, "c_notes")
       )+
       sec("取引先住所",
         cf("地域", sel("f-cregion", ["国内","海外"], src.region||"国内"), false, 1)+
         '<span class="cf-spacer" style="grid-column:span 3"></span>'+
-        cf("郵便番号", '<input type="text" id="f-cpostal" placeholder="例：020-0033" maxlength="8" value="'+v("postalCode")+'">', false, 1)+
+        cf("郵便番号", '<input type="text" id="f-cpostal" placeholder="例：020-0033" maxlength="8" value="'+v("postalCode")+'">', false, 1, "c_addr")+
         cf("都道府県", sel("f-cpref", ["未選択"].concat(PREFS), src.prefecture || (isNew ? "岩手県" : "未選択")), false, 1)+
         cf("市区町村・番地", '<input type="text" id="f-caddress" placeholder="例：盛岡市盛岡駅前通10-38" value="'+v("address")+'">', false, 2)+
         cf("建物名・部屋番号など", '<input type="text" id="f-cbuilding" value="'+v("building")+'">', false, 4)
       )+
       sec("取引先担当者",
-        cf("担当者名", '<input type="text" id="f-ccontact" placeholder="奥様/担当者" value="'+v("contactName")+'">', false, 2)+
+        cf("担当者名", '<input type="text" id="f-ccontact" placeholder="奥様/担当者" value="'+v("contactName")+'">', false, 2, "c_contact")+
         cf("敬称", sel("f-ccontacthonor", CUSTOMER_HONORIFICS, src.contactHonorific||"未選択"), false, 1)+
         cf("部署", '<input type="text" id="f-cdept" value="'+v("department")+'">', false, 1)+
         cf("メールアドレス", '<input type="email" id="f-cemail" value="'+v("email")+'">', false, 2)+
