@@ -2666,7 +2666,7 @@
     });
     return out;
   }
-  function saveMaster(key, list, msg){
+  function saveMaster(key, list, msg, confirmed){
     var m = MASTERS.find(function(x){return x.key===key;});
     if(!state.isAdmin){ toast("マスタの変更は管理者のみ行えます"); return; }
     var removed = m.arr.filter(function(n){ return list.indexOf(n)===-1; });
@@ -2683,7 +2683,7 @@
       var saveDoc = db ? db.doc("settings/master").set(payload) : Promise.resolve();
       Promise.all(writes.concat([saveDoc])).then(finish).catch(function(){ toast("保存に失敗しました"); });
     };
-    if(affected.length){
+    if(affected.length && !confirmed){
       confirmDelete("「"+removed.filter(function(n){ return masterAffected(key,[n]).length; }).join("」「")+"」を削除します。使用中の登録済みデータ "+affected.length+"件 は「未入力」に変わります。", run);
     }else run();
   }
@@ -2775,11 +2775,12 @@
   }
   function closeModal(){ document.getElementById("modal-layer").classList.remove("open"); var mb=document.getElementById("modal-box"); if(mb) mb.style.maxWidth=""; }
   // Every delete asks for the 削除用パスワード (set by an admin; default 0000).
-  function confirmDelete(msg,onYes){
-    openModal("削除の確認",
+  function confirmDelete(msg,onYes,opts){
+    opts = opts || {};
+    openModal(opts.title||"削除の確認",
       '<div style="font-size:13px;line-height:1.6">'+esc(msg)+'</div>'+
       '<label class="field">削除用パスワードを入力してください<input type="password" id="f-del-pw" autocomplete="off" placeholder="削除用パスワード"></label>',
-      '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" style="background:var(--danger);border-color:var(--danger)" id="f-confirm">削除する</button>');
+      '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" style="background:var(--danger);border-color:var(--danger)" id="f-confirm">'+(opts.button||"削除する")+'</button>');
     var pw = document.getElementById("f-del-pw"), btn = document.getElementById("f-confirm");
     var run = function(){
       var typed = pw.value;
@@ -4014,7 +4015,10 @@
       saveMaster(key, list, "マスタを保存しました");
     }); });
     c.querySelectorAll("[data-master-reset]").forEach(function(btn){ btn.addEventListener("click", function(){
-      var key = btn.getAttribute("data-master-reset"); saveMaster(key, MASTER_DEFAULTS[key].slice(), "標準の項目に戻しました");
+      var key = btn.getAttribute("data-master-reset"), m = MASTERS.find(function(x){return x.key===key;});
+      confirmDelete("「"+m.label+"」を標準の項目に戻します。標準にない項目を使っている登録済みデータは「未入力」に変わります。", function(){
+        saveMaster(key, MASTER_DEFAULTS[key].slice(), "標準の項目に戻しました", true);
+      }, {title:"標準に戻す確認", button:"標準に戻す"});
     }); });
     var sdSave = document.getElementById("secret-def-save");
     if(sdSave) sdSave.addEventListener("click", function(){
@@ -4022,7 +4026,9 @@
       saveSecretDefaults(list, "社外秘の初期設定を保存しました");
     });
     var sdReset = document.getElementById("secret-def-reset");
-    if(sdReset) sdReset.addEventListener("click", function(){ saveSecretDefaults(DEFAULT_SECRET.slice(), "標準の設定に戻しました"); });
+    if(sdReset) sdReset.addEventListener("click", function(){
+      confirmDelete("社外秘の初期設定を標準の設定に戻します。", function(){ saveSecretDefaults(DEFAULT_SECRET.slice(), "標準の設定に戻しました"); }, {title:"標準に戻す確認", button:"標準に戻す"});
+    });
     var backupBtn = document.getElementById("admin-backup");
     if(backupBtn) backupBtn.addEventListener("click", function(){ if(!state.isAdmin) return; backupAllData(); });
   }
