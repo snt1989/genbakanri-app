@@ -229,15 +229,15 @@
   .form-section-title{font-size:12.5px;font-weight:800;padding:18px 4px 8px;display:flex;justify-content:space-between;align-items:center;}
   .form-section-title .lockhint{font-size:10px;color:var(--ink-faint);font-weight:600;display:flex;align-items:center;gap:3px;}
   .form-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
-  .form-row{display:grid;grid-template-columns:170px 1fr;gap:16px;padding:16px 20px;border-bottom:1px solid var(--border);align-items:center;}
+  .form-row{display:grid;grid-template-columns:170px minmax(0,1fr);gap:16px;padding:16px 20px;border-bottom:1px solid var(--border);align-items:center;}
   .form-row:last-child{border-bottom:none;}
   @media (max-width:640px){.form-row{grid-template-columns:1fr;}}
   .form-row .flabel{font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px;}
   .flabel .req{color:var(--danger);font-size:10.5px;font-weight:700;}
   .flabel .lock{color:var(--lock);font-size:11px;}
-  .form-row .fcontrol{display:flex;flex-direction:column;gap:8px;}
+  .form-row .fcontrol{display:flex;flex-direction:column;gap:8px;min-width:0;}
   .inline2{display:flex;gap:10px;align-items:center;}
-  .inline2 input,.inline2 select{width:auto;flex:1;}
+  .inline2 input,.inline2 select{width:auto;flex:1;min-width:0;}
   .radiogroup{display:flex;gap:18px;flex-wrap:wrap;}
   .radioopt{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-soft);cursor:pointer;}
   .radioopt input{width:auto;}
@@ -1829,7 +1829,7 @@
       '<div class="modal-body">'+bodyHtml+'</div><div class="modal-foot">'+footHtml+'</div>';
     document.getElementById("modal-layer").classList.add("open");
   }
-  function closeModal(){ document.getElementById("modal-layer").classList.remove("open"); }
+  function closeModal(){ document.getElementById("modal-layer").classList.remove("open"); var mb=document.getElementById("modal-box"); if(mb) mb.style.maxWidth=""; }
   function confirmDelete(msg,onYes){
     openModal("削除の確認",'<div style="font-size:13px">'+esc(msg)+'</div>',
       '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" style="background:var(--danger);border-color:var(--danger)" id="f-confirm">削除する</button>');
@@ -1869,18 +1869,34 @@
   function openCustomerForm(editId){
     var cu = editId ? state.customers.find(function(x){ return x.id===editId; }) : null;
     if(editId && !cu) return;
-    var body = field("顧客名 *", '<input type="text" id="f-cname" value="'+esc(cu?cu.name:"")+'">') +
-      field("住所", '<input type="text" id="f-caddress" value="'+esc(cu?cu.address||"":"")+'">') +
-      field("電話番号", '<input type="tel" id="f-cphone" placeholder="090-0000-0000" value="'+esc(cu?cu.phone||"":"")+'">') +
-      (cu ? field("登録日", '<input type="date" id="f-cdate" value="'+esc(cu.registeredDate||"")+'">') : "");
-    openModal(cu?"顧客の編集":"顧客登録", body, '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-submit">'+(cu?"保存する":"登録する")+'</button>');
-    document.getElementById("f-submit").onclick = function(){
-      var name = document.getElementById("f-cname").value.trim();
+    var v = function(k){ return esc(cu && cu[k]!=null ? cu[k] : ""); };
+    var body = '<div style="margin:-16px -18px">'+
+      formRow("顧客名", true, false, '<input type="text" id="f-cname" placeholder="例：山田花子" value="'+v("name")+'">')+
+      formRow("連絡先", false, false, '<div class="inline2"><input type="text" id="f-ccontact" placeholder="奥様/担当者" value="'+v("contactName")+'"><input type="tel" id="f-cphone" placeholder="電話番号" value="'+v("phone")+'"><input type="email" id="f-cemail" placeholder="メールアドレス" value="'+v("email")+'"></div>')+
+      formRow("郵便番号", false, false, '<div class="inline2" style="max-width:260px"><input type="text" id="f-cpostal1" placeholder="例：123" maxlength="3" value="'+v("postalCode1")+'"><span>-</span><input type="text" id="f-cpostal2" placeholder="例：4567" maxlength="4" value="'+v("postalCode2")+'"></div>')+
+      formRow("都道府県", false, false, '<div style="max-width:180px">'+selectHtml("f-cpref", ["未選択"].concat(PREFS), cu ? (cu.prefecture||"未選択") : "岩手県")+'</div>')+
+      formRow("住所", false, false, '<input type="text" id="f-caddress" placeholder="例：渋谷区恵比寿南2-16-13" value="'+v("address")+'">')+
+      formRow("備考/お客様情報", false, false, '<textarea id="f-cnotes" placeholder="例：昼間は仕事のため連絡NG" style="min-height:130px">'+v("notes")+'</textarea>')+
+    '</div>';
+    openModal(cu?"顧客情報の編集":"顧客情報の登録", body, '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-submit" disabled>'+(cu?"保存する":"追加する")+'</button>');
+    var box = document.getElementById("modal-box");
+    box.style.maxWidth = "820px";
+    var foot = box.querySelector(".modal-foot");
+    if(foot){ foot.style.background = "var(--surface-2)"; foot.style.borderRadius = "0 0 16px 16px"; }
+    var nameEl = document.getElementById("f-cname"), submit = document.getElementById("f-submit");
+    var refresh = function(){ submit.disabled = !nameEl.value.trim(); };
+    nameEl.addEventListener("input", refresh); refresh();
+    submit.onclick = function(){
+      var name = nameEl.value.trim();
       if(!name){ toast("顧客名を入力してください"); return; }
-      var data = { name:name, address:document.getElementById("f-caddress").value.trim(), phone:document.getElementById("f-cphone").value.trim() };
+      var val = function(id){ return document.getElementById(id).value.trim(); };
+      var pref = document.getElementById("f-cpref").value;
+      var data = {
+        name:name, contactName:val("f-ccontact"), phone:val("f-cphone"), email:val("f-cemail"),
+        postalCode1:val("f-cpostal1"), postalCode2:val("f-cpostal2"),
+        prefecture: pref==="未選択" ? "" : pref, address:val("f-caddress"), notes:val("f-cnotes")
+      };
       if(!cu){ data.registeredDate = todayISO(); writeDoc("customers", null, data, "顧客を登録しました"); return; }
-      var dt = document.getElementById("f-cdate").value;
-      if(dt) data.registeredDate = dt;
       writeDoc("customers", cu.id, data, "顧客情報を更新しました", function(){
         // Projects keep a copy of the customer name; keep them in step.
         if(cu.name!==name){
@@ -2009,11 +2025,15 @@
       columns:[
         {key:"id",label:"ID",readonly:true},
         {key:"name",label:"顧客名"},
+        {key:"contactName",label:"奥様/担当者"},
         {key:"phone",label:"電話番号",bulk:true},
+        {key:"email",label:"メールアドレス"},
+        {key:"prefecture",label:"都道府県",options:PREFS,bulk:true},
         {key:"address",label:"住所",bulk:true},
+        {key:"notes",label:"備考/お客様情報"},
         {key:"registeredDate",label:"登録日",type:"date",bulk:true}
       ],
-      sample:{name:"山田 太郎",phone:"090-0000-0000",address:"岩手県盛岡市本宮7丁目7番41号",registeredDate:"2026-10-06"},
+      sample:{name:"山田 太郎",contactName:"山田 花子",phone:"090-0000-0000",email:"yamada@example.com",prefecture:"岩手県",address:"盛岡市本宮7丁目7番41号",notes:"昼間は仕事のため連絡NG",registeredDate:"2026-10-06"},
       all:function(){ return state.customers; },
       fileLabel:function(){ return "顧客一覧"; },
       finalize:function(patch, existing){
