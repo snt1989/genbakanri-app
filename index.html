@@ -648,6 +648,7 @@
     {id:"construction", label:"施工案件一覧", icon:iDoc},
     {id:"calendar", label:"カレンダー", icon:iCalendar},
     {id:"schedule", label:"工程表", icon:iGantt},
+    {id:"reports", label:"報告書", icon:iDoc},
     {id:"chat", label:"チャット", icon:iChat},
     {id:"members", label:"メンバー管理", icon:iUsers},
     {id:"customers", label:"顧客管理", icon:iBriefcase2},
@@ -680,8 +681,8 @@
 
   var state = {
     tab:"home", returnTab:"sales",
-    projects:[], customers:[], members:[], tasks:[], chats:[], files:[], folders:[], events:[], steps:[], trash:[],
-    loaded:{projects:false,customers:false,members:false,tasks:false,chats:false,files:false,folders:false,events:false,steps:false,trash:false},
+    projects:[], customers:[], members:[], tasks:[], chats:[], files:[], folders:[], events:[], steps:[], trash:[], reports:[],
+    loaded:{projects:false,customers:false,members:false,tasks:false,chats:false,files:false,folders:false,events:false,steps:false,trash:false,reports:false},
     canWrite:true,
     sidebarOpen:false,
     salesFilter:{name:"",status:STATUS_LIST.slice(),type:"all",store:"all",assignees:[],page:1},
@@ -956,6 +957,9 @@
     db.collection("trash").onSnapshot(function(snap){
       state.trash = snap.docs.map(toObj); state.loaded.trash=true; render();
     }, function(e){ state.loaded.trash=true; state.trash=[]; render(); });
+    db.collection("reports").onSnapshot(function(snap){
+      state.reports = snap.docs.map(toObj); state.loaded.reports=true; render();
+    }, function(e){ state.loaded.reports=true; state.reports=[]; render(); });
     db.collection("events").onSnapshot(function(snap){
       state.events = snap.docs.map(toObj); state.loaded.events=true; render();
     }, function(e){ state.loaded.events=true; state.events=[]; render(); });
@@ -1206,6 +1210,7 @@
     else if(state.tab==="tasks") c.innerHTML = banner+renderTasks();
     else if(state.tab==="calendar") c.innerHTML = banner+renderCalendar();
     else if(state.tab==="schedule") c.innerHTML = banner+renderSchedule();
+    else if(state.tab==="reports") c.innerHTML = banner+renderReports();
     else if(state.tab==="chat") c.innerHTML = renderChat();
     else if(state.tab==="members") c.innerHTML = banner+renderMembers();
     else if(state.tab==="customers") c.innerHTML = banner+renderCustomers();
@@ -3048,8 +3053,171 @@
     return html;
   }
 
+/* ============ 報告書 ============ */
+  var REPORT_TYPES = ["作業報告書","日報","進捗報告書","完了報告書","是正・指摘事項報告書"];
+  var REPORT_WEATHER = ["晴れ","曇り","雨","雪","その他"];
+  function reportFilter(){ return state.reportFilter = state.reportFilter || {project:"all", type:"all", status:"all", q:""}; }
+  function visibleReports(){
+    var f = reportFilter(), q = (f.q||"").trim().toLowerCase();
+    return state.reports.filter(function(r){
+      if(!secretVisible(r) || (r.projectId && !projectVisibleId(r.projectId))) return false;
+      if(f.project!=="all" && r.projectId!==f.project) return false;
+      if(f.type!=="all" && r.type!==f.type) return false;
+      if(f.status!=="all" && (r.status||"下書き")!==f.status) return false;
+      if(q && [r.title,r.projectName,r.author,r.content,r.issues].join(" ").toLowerCase().indexOf(q)===-1) return false;
+      return true;
+    }).sort(function(a,b){ return (b.date||"").localeCompare(a.date||"") || (b.createdAt||"").localeCompare(a.createdAt||""); });
+  }
+  function renderReports(){
+    if(!state.loaded.reports || !state.loaded.projects) return skeleton();
+    var f = reportFilter(), list = visibleReports();
+    var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">報告書</h1>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-report-add="">'+iPlus()+' 報告書を作成</button></div></div><div style="height:14px"></div>';
+    html += '<div class="card filter-card"><div class="filter-line">'+
+      '<div class="fitem"><span>案件</span><select id="rp-project"><option value="all">すべて</option>'+state.projects.slice().sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");}).map(function(p){ return '<option value="'+esc(p.id)+'"'+(f.project===p.id?" selected":"")+'>'+esc(p.name)+'</option>'; }).join("")+'</select></div>'+
+      '<div class="fitem"><span>種類</span><select id="rp-type"><option value="all">すべて</option>'+REPORT_TYPES.map(function(t){ return '<option'+(f.type===t?" selected":"")+'>'+esc(t)+'</option>'; }).join("")+'</select></div>'+
+      '<div class="fitem"><span>状態</span><select id="rp-status"><option value="all">すべて</option><option'+(f.status==="下書き"?" selected":"")+'>下書き</option><option'+(f.status==="提出済"?" selected":"")+'>提出済</option></select></div>'+
+      '<div class="fitem"><span>検索</span><input type="text" id="rp-q" value="'+esc(f.q||"")+'" placeholder="タイトル・内容など" style="min-width:160px"></div>'+
+    '</div></div>';
+    html += '<div class="summary-line"><span><b>'+list.length+'</b>件 / 全'+state.reports.length+'件</span></div>';
+    if(!list.length) return html + emptyState(iDoc,"報告書がありません","「報告書を作成」から、案件ごとの作業報告書・日報などを作れます");
+    html += '<div class="tablewrap"><table><thead><tr><th>日付</th><th>種類</th><th>タイトル</th><th>案件</th><th>作成者</th><th>写真</th><th>状態</th><th></th></tr></thead><tbody>'+
+      list.map(function(r){
+        return '<tr class="rowhover"><td class="num">'+esc(fmtDate(r.date))+'</td><td>'+esc(r.type||"")+'</td>'+
+          '<td><div class="cell-name"><a href="#" data-report-view="'+esc(r.id)+'">'+(r.secret?iLock()+' ':'')+esc(r.title||"（無題）")+'</a></div></td>'+
+          '<td>'+esc(r.projectName||"—")+'</td><td>'+uploaderHtml(r.author)+'</td><td class="num">'+((r.photos||[]).length||"—")+'</td>'+
+          '<td><span class="badge '+((r.status||"下書き")==="提出済"?"line-green":"line-gray")+'">'+esc(r.status||"下書き")+'</span></td>'+
+          '<td style="white-space:nowrap"><button class="btn sm" data-report-view="'+esc(r.id)+'">表示・出力</button> <button class="btn sm" data-report-edit="'+esc(r.id)+'">'+iEdit()+' 編集</button></td></tr>';
+      }).join("")+'</tbody></table></div>';
+    return html;
+  }
+  function bindReportEvents(c){
+    var f = reportFilter();
+    [["rp-project","project"],["rp-type","type"],["rp-status","status"]].forEach(function(x){
+      var el = document.getElementById(x[0]); if(el) el.addEventListener("change", function(){ f[x[1]] = el.value; render(); });
+    });
+    var q = document.getElementById("rp-q");
+    if(q) q.addEventListener("change", function(){ f.q = q.value; render(); });
+    c.querySelectorAll("[data-report-add]").forEach(function(el){ el.addEventListener("click", function(){ openReportModal(null); }); });
+    c.querySelectorAll("[data-report-edit]").forEach(function(el){ el.addEventListener("click", function(){ var r=state.reports.find(function(x){return x.id===el.getAttribute("data-report-edit");}); if(r) openReportModal(r); }); });
+    c.querySelectorAll("[data-report-view]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var r=state.reports.find(function(x){return x.id===el.getAttribute("data-report-view");}); if(r) openReportView(r); }); });
+  }
+  // 選んだ案件・日付の工程とタスクから、作業内容のたたき台を作る
+  function reportDraftText(pid, date){
+    var lines = [];
+    state.steps.filter(function(x){ return x.projectId===pid && secretVisible(x) && x.startDate<=date && (x.endDate||x.startDate)>=date; }).forEach(function(x){
+      lines.push("・"+x.name+(x.progress!=null&&x.progress!==""?"（進捗 "+x.progress+"%）":""));
+    });
+    state.tasks.filter(function(x){ return x.projectId===pid && x.dueDate===date; }).forEach(function(x){ lines.push("・"+(x.done?"［完了］":"［未完了］")+x.title); });
+    return lines.join("\n");
+  }
+  function openReportModal(rep, projectId){
+    var r = rep || {date:localToday(), type:REPORT_TYPES[0], status:"下書き", author:state.myName||"", projectId:projectId||"", photos:[]};
+    var sel = {}; (r.photos||[]).forEach(function(x){ sel[x.fileId] = x.caption||""; });
+    openModal(rep?"報告書の編集":"報告書の作成",
+      '<div class="field-row">'+field("種類",selectHtml("f-rtype", REPORT_TYPES, selVal(r.type, REPORT_TYPES[0])))+field("日付",'<input type="date" id="f-rdate" value="'+esc(r.date||"")+'">')+'</div>'+
+      field("案件",'<select id="f-rproj">'+projectOptions(r.projectId)+'</select>')+
+      field("タイトル",'<input type="text" id="f-rtitle" maxlength="80" placeholder="空欄なら「案件名 種類」になります" value="'+esc(r.title||"")+'">')+
+      '<div class="field-row">'+field("作成者",'<input type="text" id="f-rauthor" value="'+esc(r.author||"")+'">')+field("天候",selectHtml("f-rweather", REPORT_WEATHER, selVal(r.weather, "")))+'</div>'+
+      field("作業人員・時間（任意）",'<input type="text" id="f-rworkers" placeholder="例）3名 8:00〜17:00" value="'+esc(r.workers||"")+'">')+
+      '<div class="field"><div style="display:flex;justify-content:space-between;align-items:center">作業内容<button class="btn sm" type="button" id="f-rdraft">工程・タスクから入力</button></div><textarea id="f-rcontent" style="min-height:90px">'+esc(r.content||"")+'</textarea></div>'+
+      field("成果・進捗",'<textarea id="f-rresult" style="min-height:60px">'+esc(r.result||"")+'</textarea>')+
+      field("問題点・特記事項",'<textarea id="f-rissues" style="min-height:60px">'+esc(r.issues||"")+'</textarea>')+
+      field("次回の予定",'<textarea id="f-rnext" style="min-height:60px">'+esc(r.nextPlan||"")+'</textarea>')+
+      '<div class="field">写真（案件の「写真・ファイル」から選択）<div id="f-rphotos" style="margin-top:6px"></div></div>'+
+      '<div class="field-row">'+field("状態",selectHtml("f-rstatus", ["下書き","提出済"], r.status||"下書き"))+'<div></div></div>'+secretRadio(r.secret),
+      (rep?'<button class="btn" id="f-rdel" style="color:var(--danger);margin-right:auto">'+iTrash()+' 削除</button>':'')+'<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-rsave">保存する</button>');
+    var photosEl = document.getElementById("f-rphotos");
+    var drawPhotos = function(){
+      var pid = document.getElementById("f-rproj").value;
+      var imgs = pid ? filesForProject(pid).filter(isImageFile) : [];
+      if(!pid){ photosEl.innerHTML = '<div style="font-size:12px;color:var(--ink-faint)">案件を選ぶと、その案件の写真から選べます</div>'; return; }
+      if(!imgs.length){ photosEl.innerHTML = '<div style="font-size:12px;color:var(--ink-faint)">この案件には写真がありません</div>'; return; }
+      photosEl.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px">'+imgs.map(function(x){
+        var on = sel.hasOwnProperty(x.id);
+        return '<div style="border:1px solid var(--border);border-radius:8px;padding:6px;'+(on?'outline:2px solid var(--primary)':'')+'"><label style="display:block;margin:0;cursor:pointer"><input type="checkbox" data-rp-photo="'+esc(x.id)+'"'+(on?' checked':'')+'> <span style="font-size:11px">選択</span>'+
+          '<img src="'+esc(fileUrl(x))+'" style="display:block;width:100%;height:80px;object-fit:cover;border-radius:4px;margin-top:4px"></label>'+
+          (on?'<input type="text" data-rp-cap="'+esc(x.id)+'" placeholder="説明（任意）" value="'+esc(sel[x.id])+'" style="margin-top:4px;font-size:11px;padding:4px 6px">':'')+'</div>';
+      }).join("")+'</div>';
+      photosEl.querySelectorAll("[data-rp-photo]").forEach(function(el){ el.addEventListener("change", function(){
+        keepCaps(); var id = el.getAttribute("data-rp-photo"); if(el.checked) sel[id] = sel[id]||""; else delete sel[id]; drawPhotos();
+      }); });
+    };
+    var keepCaps = function(){ photosEl.querySelectorAll("[data-rp-cap]").forEach(function(el){ sel[el.getAttribute("data-rp-cap")] = el.value; }); };
+    drawPhotos();
+    document.getElementById("f-rproj").addEventListener("change", function(){ sel = {}; drawPhotos(); });
+    document.getElementById("f-rdraft").addEventListener("click", function(){
+      var pid = document.getElementById("f-rproj").value, date = document.getElementById("f-rdate").value;
+      if(!pid || !date){ toast("案件と日付を選んでください"); return; }
+      var t = reportDraftText(pid, date); if(!t){ toast("この日の工程・タスクはありません"); return; }
+      var ta = document.getElementById("f-rcontent"); ta.value = ta.value ? ta.value+"\n"+t : t;
+    });
+    if(rep) document.getElementById("f-rdel").addEventListener("click", function(){ confirmDelete("この報告書を削除しますか？", function(){ deleteDoc("reports", rep.id, "報告書を削除しました"); }); });
+    document.getElementById("f-rsave").addEventListener("click", function(){
+      keepCaps();
+      var date = document.getElementById("f-rdate").value; if(!date){ toast("日付を入力してください"); return; }
+      var pid = document.getElementById("f-rproj").value, pr = state.projects.find(function(x){return x.id===pid;});
+      var type = document.getElementById("f-rtype").value;
+      var title = document.getElementById("f-rtitle").value.trim() || ((pr?pr.name+" ":"")+type);
+      var photos = Object.keys(sel).map(function(id){ return {fileId:id, caption:(sel[id]||"").trim()}; })
+        .sort(function(a,b){ var fa=state.files.find(function(x){return x.id===a.fileId;})||{}, fb=state.files.find(function(x){return x.id===b.fileId;})||{}; return (fa.uploadedAt||"").localeCompare(fb.uploadedAt||""); });
+      var secretEl = document.querySelector('input[name="f-sscope"]:checked');
+      writeDoc("reports", rep?rep.id:null, {type:type, date:date, projectId:pid||"", projectName:pr?pr.name:"", title:title,
+        author:document.getElementById("f-rauthor").value.trim(), weather:document.getElementById("f-rweather").value, workers:document.getElementById("f-rworkers").value.trim(),
+        content:document.getElementById("f-rcontent").value.trim(), result:document.getElementById("f-rresult").value.trim(), issues:document.getElementById("f-rissues").value.trim(),
+        nextPlan:document.getElementById("f-rnext").value.trim(), photos:photos, status:document.getElementById("f-rstatus").value, secret:!!(secretEl && secretEl.value==="secret")},
+        rep?"報告書を更新しました":"報告書を作成しました", function(id){
+          var saved = state.reports.find(function(x){return x.id===id;}); if(saved && !rep) openReportView(saved);
+        });
+    });
+  }
+  // 報告書のHTML（A4・印刷向け）。imgOf(file) で写真のsrcを決める
+  function reportHtml(r, imgOf){
+    var org = state.orgSettings||{}, pr = state.projects.find(function(x){return x.id===r.projectId;});
+    var nl = function(t){ return esc(t||"").replace(/\n/g,"<br>"); };
+    var sec = function(label, t){ return t ? '<h2>'+esc(label)+'</h2><div class="box">'+nl(t)+'</div>' : ''; };
+    var photos = (r.photos||[]).map(function(x){ var f = state.files.find(function(y){return y.id===x.fileId;}); return f ? {f:f, caption:x.caption} : null; }).filter(Boolean);
+    var info = [["日付", fmtDate(r.date)],["種類", r.type||""],["案件", r.projectName||""],["現場住所", pr?[pr.prefecture,pr.address].filter(Boolean).join(""):""],["作成者", r.author||""],["天候", r.weather||""],["作業人員・時間", r.workers||""]]
+      .filter(function(x){ return x[1]; });
+    return '<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>'+esc(r.title||"報告書")+'</title><style>'+
+      '@page{size:A4;margin:14mm}*{box-sizing:border-box}body{font-family:"Hiragino Sans","Yu Gothic","Noto Sans JP",sans-serif;color:#222;font-size:12px;line-height:1.7;margin:0;padding:18px}'+
+      'h1{font-size:20px;text-align:center;margin:0 0 4px;letter-spacing:.2em}.sub{text-align:center;font-size:13px;margin-bottom:14px}.org{text-align:right;font-size:11px;color:#555;margin-bottom:8px}'+
+      'table.info{width:100%;border-collapse:collapse;margin-bottom:12px}table.info th{width:24%;background:#f1f1ee;text-align:left;font-weight:600}table.info th,table.info td{border:1px solid #bbb;padding:5px 8px}'+
+      'h2{font-size:13px;margin:14px 0 4px;padding-left:8px;border-left:4px solid #1f7a4d}.box{border:1px solid #bbb;padding:8px 10px;min-height:44px}'+
+      '.ph{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}.ph figure{margin:0;border:1px solid #bbb;padding:6px;break-inside:avoid}.ph img{width:100%;max-height:230px;object-fit:contain;display:block;background:#fafafa}.ph figcaption{font-size:11px;margin-top:4px;min-height:16px}'+
+      '</style></head><body>'+
+      '<div class="org">'+esc(org.companyName||"")+'</div><h1>'+esc(r.type||"報告書")+'</h1><div class="sub">'+esc(r.title||"")+'</div>'+
+      '<table class="info">'+info.map(function(x){ return '<tr><th>'+esc(x[0])+'</th><td>'+esc(x[1])+'</td></tr>'; }).join("")+'</table>'+
+      sec("作業内容", r.content)+sec("成果・進捗", r.result)+sec("問題点・特記事項", r.issues)+sec("次回の予定", r.nextPlan)+
+      (photos.length?'<h2>写真</h2><div class="ph">'+photos.map(function(x,i){ return '<figure><img src="'+esc(imgOf(x.f))+'"><figcaption>写真'+(i+1)+(x.caption?'：'+esc(x.caption):'')+'</figcaption></figure>'; }).join("")+'</div>':'')+
+      '</body></html>';
+  }
+  function openReportView(r){
+    openModal(r.title||"報告書",
+      '<iframe id="rp-frame" style="width:100%;height:62vh;border:1px solid var(--border);border-radius:8px;background:#fff"></iframe>',
+      '<button class="btn" data-report-edit-modal style="margin-right:auto">'+iEdit()+' 編集</button><button class="btn" id="rp-html">'+iDownload()+' HTMLで保存</button><button class="btn primary" id="rp-print">印刷 / PDFで保存</button>');
+    document.getElementById("modal-box").style.maxWidth = "880px";
+    var fr = document.getElementById("rp-frame");
+    fr.srcdoc = reportHtml(r, function(f){ return fileUrl(f); });
+    document.getElementById("rp-print").addEventListener("click", function(){ try{ fr.contentWindow.focus(); fr.contentWindow.print(); }catch(e){ toast("印刷できませんでした。「HTMLで保存」を使ってください"); } });
+    document.querySelector("[data-report-edit-modal]").addEventListener("click", function(){ openReportModal(r); });
+    document.getElementById("rp-html").addEventListener("click", function(){
+      var photos = (r.photos||[]).map(function(x){ return state.files.find(function(y){return y.id===x.fileId;}); }).filter(Boolean), map = {}, i = 0;
+      var next = function(){
+        if(i>=photos.length) return Promise.resolve();
+        var f = photos[i++]; toast("写真を取り込み中… "+i+" / "+photos.length);
+        return fetch(fileUrl(f)).then(function(res){ return res.blob(); }).then(function(b){ return new Promise(function(ok,ng){ var fr2=new FileReader(); fr2.onload=function(){ ok(fr2.result); }; fr2.onerror=ng; fr2.readAsDataURL(b); }); })
+          .then(function(d){ map[f.id] = d; }).catch(function(){}).then(next);
+      };
+      next().then(function(){
+        downloadBlob(safeName(r.title||"報告書")+"-"+(r.date||todayISO())+".html", new Blob([reportHtml(r, function(f){ return map[f.id]||fileUrl(f); })], {type:"text/html;charset=utf-8"}));
+        toast("保存しました（ブラウザの印刷でPDFにもできます）");
+      });
+    });
+  }
+
   /* ============ バックアップ / 復元 ============ */
-  var BACKUP_COLS = [["projects","案件"],["customers","顧客"],["members","メンバー"],["tasks","タスク"],["chats","チャット"],["files","ファイル"],["folders","フォルダ"],["events","予定"],["steps","工程"],["trash","ゴミ箱"]];
+  var BACKUP_COLS = [["projects","案件"],["customers","顧客"],["members","メンバー"],["tasks","タスク"],["chats","チャット"],["files","ファイル"],["folders","フォルダ"],["events","予定"],["steps","工程"],["reports","報告書"],["trash","ゴミ箱"]];
   function lastBackupAt(){ try{ return localStorage.getItem("genba_last_backup")||state.lastBackup||""; }catch(e){ return state.lastBackup||""; } }
   function markBackup(){ var t=new Date().toISOString(); state.lastBackup=t; try{ localStorage.setItem("genba_last_backup", t); }catch(e){} }
   function buildBackup(includePw){
@@ -3423,8 +3591,8 @@
     p.then(function(ref){ closeModal(); toast(msg); if(after) after(id||(ref&&ref.id)); }).catch(function(e){ toast("保存に失敗しました"); });
   }
   // ---- ゴミ箱: 削除したデータは trash コレクションに控えを残し、管理画面から復元できる ----
-  var TRASH_TYPES = {projects:"案件",customers:"顧客",members:"メンバー",tasks:"タスク",files:"ファイル",events:"予定",steps:"工程",folders:"フォルダ"};
-  var TRASH_NAME = {projects:"name",customers:"name",members:"name",tasks:"title",files:"filename",events:"title",steps:"name",folders:"name"};
+  var TRASH_TYPES = {reports:"報告書",projects:"案件",customers:"顧客",members:"メンバー",tasks:"タスク",files:"ファイル",events:"予定",steps:"工程",folders:"フォルダ"};
+  var TRASH_NAME = {reports:"title",projects:"name",customers:"name",members:"name",tasks:"title",files:"filename",events:"title",steps:"name",folders:"name"};
   function trashPut(col, id){
     var rec = TRASH_TYPES[col] ? rawOf(col).find(function(x){ return x.id===id; }) : null;
     if(!rec) return Promise.resolve();
@@ -4287,6 +4455,7 @@
       pfInput.value = "";
     });
     if(state.tab==="calendar"||state.tab==="schedule") bindScheduleEvents(c);
+    if(state.tab==="reports") bindReportEvents(c);
     if(state.tab==="tasks"){
       var tf = state.taskFilter;
       c.querySelectorAll("[data-task-status]").forEach(function(el){ el.addEventListener("click", function(){ tf.status = el.getAttribute("data-task-status"); render(); }); });
