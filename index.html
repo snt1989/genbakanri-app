@@ -3118,7 +3118,7 @@
       '<div class="field-row">'+field("種類",selectHtml("f-rtype", REPORT_TYPES, selVal(r.type, REPORT_TYPES[0])))+field("日付",'<input type="date" id="f-rdate" value="'+esc(r.date||"")+'">')+'</div>'+
       field("案件",'<select id="f-rproj">'+projectOptions(r.projectId)+'</select>')+
       field("タイトル",'<input type="text" id="f-rtitle" maxlength="80" placeholder="空欄なら「案件名 種類」になります" value="'+esc(r.title||"")+'">')+
-      '<div class="field-row">'+field("作成者",'<input type="text" id="f-rauthor" value="'+esc(r.author||"")+'">')+field("天候",selectHtml("f-rweather", REPORT_WEATHER, selVal(r.weather, "")))+'</div>'+
+      '<div class="field-row">'+field("作成者",'<select id="f-rauthor"><option value="">（未設定）</option>'+state.members.map(function(m){return m.name;}).concat(r.author && !state.members.some(function(m){return m.name===r.author;}) ? [r.author] : []).map(function(n){ return '<option value="'+esc(n)+'"'+(n===r.author?" selected":"")+'>'+esc(n)+'</option>'; }).join("")+'</select>')+field("天候",selectHtml("f-rweather", REPORT_WEATHER, selVal(r.weather, "")))+'</div>'+
       field("作業人員・時間（任意）",'<input type="text" id="f-rworkers" placeholder="例）3名 8:00〜17:00" value="'+esc(r.workers||"")+'">')+
       '<div class="field"><div style="display:flex;justify-content:space-between;align-items:center">作業内容<button class="btn sm" type="button" id="f-rdraft">工程・タスクから入力</button></div><textarea id="f-rcontent" style="min-height:90px">'+esc(r.content||"")+'</textarea></div>'+
       field("成果・進捗",'<textarea id="f-rresult" style="min-height:60px">'+esc(r.result||"")+'</textarea>')+
