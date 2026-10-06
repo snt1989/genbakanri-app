@@ -1268,7 +1268,7 @@
     var MAXL = 4;
     var chips = [["project","案件・引渡し","k-project"],["step","工程","k-step"],["task","タスク","k-task"],["event","予定","k-event"]];
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">カレンダー</h1>'+
-      '<button class="btn primary" data-cal-add="'+today+'">'+iPlus()+' 予定を追加</button></div><div style="height:12px"></div>';
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn outline" id="gc-open">'+iCalendar()+' Googleカレンダー連携</button><button class="btn primary" data-cal-add="'+today+'">'+iPlus()+' 予定を追加</button></div></div><div style="height:12px"></div>';
     html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
       '<button class="btn sm" data-cal-nav="-1">'+iBack()+'</button><b style="font-size:17px;min-width:110px;text-align:center">'+y+'年'+m+'月</b><button class="btn sm" data-cal-nav="1" style="transform:scaleX(-1)">'+iBack()+'</button>'+
       '<button class="btn sm" data-cal-nav="0">今月</button><span style="flex:1"></span>'+
@@ -1304,6 +1304,116 @@
     html += '<div style="font-size:11.5px;color:var(--ink-faint);margin-top:10px">日付のマスを押すとその日の予定を追加できます。帯を押すと案件・工程・予定を開きます。</div>';
     return html;
   }
+  /* ---- Googleカレンダー連携 ----
+     * 個別追加: Googleカレンダーの「予定の作成」画面を開く（ログイン済みのGoogleアカウントに追加）
+     * 書き出し: 表示中の予定を .ics に出力 → Googleカレンダー「設定 ＞ インポート」で取り込み
+     * 取り込み: Googleカレンダーから書き出した .ics を読み込み、カレンダーの「予定」に追加 */
+  function gcalDate(iso){ return iso.replace(/-/g,""); }
+  function gcalUrl(title, start, end, details){
+    var e = (end && end>=start) ? end : start;
+    return "https://calendar.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(title||"予定")+
+      "&dates="+gcalDate(start)+"/"+gcalDate(addDays(e,1))+(details?"&details="+encodeURIComponent(details):"");
+  }
+  function openGcal(title,start,end,details){
+    if(!start){ toast("開始日を入力してください"); return; }
+    window.open(gcalUrl(title,start,end,details), "_blank", "noopener");
+  }
+  function icsEscape(t){ return String(t==null?"":t).replace(/\\/g,"\\\\").replace(/;/g,"\;").replace(/,/g,"\\,").replace(/\r?\n/g,"\\n"); }
+  function icsFold(line){
+    var out = [], cur = "", n = 0;
+    for(var i=0;i<line.length;i++){
+      var ch = line[i], b = unescape(encodeURIComponent(ch)).length;
+      if(n+b>73){ out.push(cur); cur=" "; n=1; }
+      cur += ch; n += b;
+    }
+    out.push(cur); return out.join("\r\n");
+  }
+  function buildIcs(items){
+    var stamp = new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d+/,"");
+    var L = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//genbakanri-app//JA","CALSCALE:GREGORIAN","X-WR-CALNAME:現場管理アプリ","X-WR-TIMEZONE:Asia/Tokyo"];
+    var kindLabel = {project:"施工期間",handover:"引渡し",step:"工程",task:"タスク期限",event:"予定"};
+    items.forEach(function(it){
+      L.push("BEGIN:VEVENT");
+      L.push("UID:"+it.kind+"-"+it.id+"@genbakanri-app");
+      L.push("DTSTAMP:"+stamp);
+      L.push("DTSTART;VALUE=DATE:"+gcalDate(it.start));
+      L.push("DTEND;VALUE=DATE:"+gcalDate(addDays(it.end,1)));
+      L.push("SUMMARY:"+icsEscape(it.title));
+      L.push("DESCRIPTION:"+icsEscape("現場管理アプリ（"+(kindLabel[it.kind]||"")+"）"));
+      L.push("END:VEVENT");
+    });
+    L.push("END:VCALENDAR");
+    return L.map(icsFold).join("\r\n")+"\r\n";
+  }
+  function saveTextFile(filename, text, type){
+    var blob = new Blob([text], {type:type});
+    if(downloadsCap){ downloadsCap.save({filename:filename, data:blob}).catch(function(){ toast("ダウンロードがキャンセルされました"); }); return; }
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  }
+  function exportCalendarIcs(){
+    var items = scheduleItems().filter(function(it){ return state.calFilter[it.group]; });
+    if(!items.length){ toast("書き出せる予定がありません"); return; }
+    saveTextFile("genba-calendar-"+todayISO()+".ics", buildIcs(items), "text/calendar;charset=utf-8");
+    toast(items.length+"件を書き出しました");
+  }
+  function parseIcs(text){
+    var lines = text.replace(/\r\n[ \t]/g,"").replace(/\n[ \t]/g,"").split(/\r?\n/);
+    var evs = [], cur = null;
+    var unesc = function(v){ return v.replace(/\\n/gi,"\n").replace(/\\([,;\\])/g,"$1"); };
+    var toDate = function(prop, val){
+      var m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?/.exec(val); if(!m) return "";
+      if(m[7]){ var d = new Date(Date.UTC(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+m[6])); return isoOf(d); }
+      return m[1]+"-"+m[2]+"-"+m[3];
+    };
+    lines.forEach(function(ln){
+      if(ln==="BEGIN:VEVENT"){ cur = {}; return; }
+      if(ln==="END:VEVENT"){ if(cur && cur.start) evs.push(cur); cur=null; return; }
+      if(!cur) return;
+      var i = ln.indexOf(":"); if(i<0) return;
+      var head = ln.slice(0,i), val = ln.slice(i+1), name = head.split(";")[0].toUpperCase();
+      if(name==="SUMMARY") cur.title = unesc(val);
+      else if(name==="DESCRIPTION") cur.note = unesc(val);
+      else if(name==="UID") cur.uid = val;
+      else if(name==="DTSTART"){ cur.start = toDate(head,val); cur.allDay = /VALUE=DATE(?!-)/.test(head) && val.length===8; }
+      else if(name==="DTEND"){ cur.end = toDate(head,val); cur.endAllDay = val.length===8; }
+    });
+    evs.forEach(function(e){
+      if(e.end && e.endAllDay) e.end = addDays(e.end,-1);
+      if(!e.end || e.end<e.start) e.end = e.start;
+    });
+    return evs;
+  }
+  function importIcs(text){
+    var evs = parseIcs(text);
+    if(!evs.length){ toast("取り込める予定が見つかりませんでした"); return; }
+    var have = {}; state.events.forEach(function(x){ if(x.uid) have[x.uid]=true; });
+    var fresh = evs.filter(function(e){ return !(e.uid && have[e.uid]); });
+    if(!fresh.length){ toast("すべて取り込み済みです"); return; }
+    Promise.all(fresh.map(function(e){
+      return saveRaw("events", null, {title:e.title||"（無題）", date:e.start, endDate:e.end>e.start?e.end:"", note:e.note||"", category:"", projectId:"", projectName:"", secret:false, uid:e.uid||"", source:"google", createdBy:state.myName||""});
+    })).then(function(){ closeModal(); toast(fresh.length+"件の予定を取り込みました"+(evs.length>fresh.length?"（"+(evs.length-fresh.length)+"件は取り込み済みのためスキップ）":"")); render(); })
+      .catch(function(){ toast("取り込みに失敗しました"); });
+  }
+  function openGcalModal(){
+    openModal("Googleカレンダー連携",
+      '<div style="display:flex;flex-direction:column;gap:18px;font-size:12.5px;line-height:1.7">'+
+      '<div><div style="font-weight:700;margin-bottom:4px">① アプリ → Googleカレンダー</div>'+
+        '<div style="color:var(--ink-soft)">いま画面に表示している予定（案件期間・工程・タスク・予定）を .ics ファイルに書き出します。Googleカレンダーの「設定 ＞ インポート／エクスポート」から取り込んでください。個別の予定・工程は、編集画面の「Googleカレンダーに追加」から1件ずつ追加することもできます。</div>'+
+        '<button class="btn primary" id="gc-export" style="margin-top:8px">'+iDownload()+' .ics に書き出す</button></div>'+
+      '<div><div style="font-weight:700;margin-bottom:4px">② Googleカレンダー → アプリ</div>'+
+        '<div style="color:var(--ink-soft)">Googleカレンダーの「設定 ＞ インポート／エクスポート ＞ エクスポート」で得た .ics（ZIPの場合は展開したもの）を選ぶと、「予定」として取り込みます。同じ予定を二重に取り込むことはありません。繰り返し予定は最初の1回分だけ取り込みます。</div>'+
+        '<label class="btn outline" style="margin-top:8px;cursor:pointer">'+iUpload()+' .ics を取り込む<input type="file" id="gc-import" accept=".ics,text/calendar" style="display:none"></label></div>'+
+      '<div style="font-size:11.5px;color:var(--ink-faint)">※ 自動での常時同期（リアルタイム連携）には、Google Cloud側でのOAuth設定が別途必要です。</div></div>',
+      '<button class="btn" data-close-modal>閉じる</button>');
+    document.getElementById("gc-export").addEventListener("click", exportCalendarIcs);
+    document.getElementById("gc-import").addEventListener("change", function(ev){
+      var f = ev.target.files && ev.target.files[0]; if(!f) return;
+      var r = new FileReader(); r.onload = function(){ importIcs(String(r.result||"")); }; r.readAsText(f);
+    });
+  }
   function openDayList(day){
     var list = scheduleItems().filter(function(it){ return state.calFilter[it.group] && it.start<=day && it.end>=day; });
     openModal(fmtDate(day)+"（"+WEEKDAYS[parseISO(day).getDay()]+"）の予定",
@@ -1326,8 +1436,12 @@
       '<div class="field-row">'+field("開始日",'<input type="date" id="f-edate" value="'+esc(e.date||"")+'">')+field("終了日（任意）",'<input type="date" id="f-eend" value="'+esc(e.endDate||"")+'">')+'</div>'+
       field("案件（任意）",'<select id="f-eproj">'+projectOptions(e.projectId)+'</select>')+
       field("メモ",'<textarea id="f-enote" style="min-height:60px">'+esc(e.note||"")+'</textarea>')+secretRadio(e.secret),
-      (ev?'<button class="btn" id="f-edel" style="color:var(--danger);margin-right:auto">'+iTrash()+' 削除</button>':'')+'<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-esave">'+(ev?"保存する":"追加する")+'</button>');
+      (ev?'<button class="btn" id="f-edel" style="color:var(--danger)">'+iTrash()+' 削除</button>':'')+'<button class="btn" id="f-egcal" style="margin-right:auto">'+iCalendar()+' Googleカレンダーに追加</button><button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-esave">'+(ev?"保存する":"追加する")+'</button>');
     if(ev) document.getElementById("f-edel").addEventListener("click", function(){ confirmDelete("この予定を削除しますか？", function(){ deleteDoc("events", ev.id, "予定を削除しました"); }); });
+    document.getElementById("f-egcal").addEventListener("click", function(){
+      var cat = document.getElementById("f-ecat").value, t = document.getElementById("f-etitle").value.trim();
+      openGcal((cat?"["+cat+"] ":"")+(t||"予定"), document.getElementById("f-edate").value, document.getElementById("f-eend").value, document.getElementById("f-enote").value.trim());
+    });
     document.getElementById("f-esave").addEventListener("click", function(){
       var title = document.getElementById("f-etitle").value.trim(), date = document.getElementById("f-edate").value, end = document.getElementById("f-eend").value;
       if(!title){ toast("タイトルを入力してください"); return; }
@@ -1347,8 +1461,12 @@
       '<div class="field-row">'+field("開始日",'<input type="date" id="f-sstart" value="'+esc(s.startDate||(st?"":today))+'">')+field("終了日",'<input type="date" id="f-send" value="'+esc(s.endDate||(st?"":today))+'">')+'</div>'+
       '<div class="field-row">'+field("担当者",'<select id="f-sassg"><option value="">（未設定）</option>'+members.map(function(n){ return '<option value="'+esc(n)+'"'+(n===s.assignee?" selected":"")+'>'+esc(n)+'</option>'; }).join("")+'</select>')+
       field("進捗（%）",'<input type="number" id="f-sprog" min="0" max="100" step="5" value="'+(+s.progress||0)+'">')+'</div>'+secretRadio(s.secret),
-      (st?'<button class="btn" id="f-sdel" style="color:var(--danger);margin-right:auto">'+iTrash()+' 削除</button>':'')+'<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-ssave">'+(st?"保存する":"追加する")+'</button>');
+      (st?'<button class="btn" id="f-sdel" style="color:var(--danger)">'+iTrash()+' 削除</button>':'')+'<button class="btn" id="f-sgcal" style="margin-right:auto">'+iCalendar()+' Googleカレンダーに追加</button><button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-ssave">'+(st?"保存する":"追加する")+'</button>');
     if(st) document.getElementById("f-sdel").addEventListener("click", function(){ confirmDelete("この工程を削除しますか？", function(){ deleteDoc("steps", st.id, "工程を削除しました"); }); });
+    document.getElementById("f-sgcal").addEventListener("click", function(){
+      var pr = state.projects.find(function(x){return x.id===document.getElementById("f-sproj").value;});
+      openGcal((pr?pr.name+"：":"")+document.getElementById("f-sname").value, document.getElementById("f-sstart").value, document.getElementById("f-send").value, "現場管理アプリ（工程）");
+    });
     document.getElementById("f-ssave").addEventListener("click", function(){
       var pid = document.getElementById("f-sproj").value, name = document.getElementById("f-sname").value.trim();
       var start = document.getElementById("f-sstart").value, end = document.getElementById("f-send").value;
@@ -1433,6 +1551,7 @@
       else { var d = new Date(+base.slice(0,4), +base.slice(5,7)-1+n, 1); state.calMonth = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
       render(); }); });
     q("[data-cal-filter]", function(el){ el.addEventListener("click", function(){ var g=el.getAttribute("data-cal-filter"); state.calFilter[g]=!state.calFilter[g]; render(); }); });
+    var gco = document.getElementById("gc-open"); if(gco) gco.addEventListener("click", openGcalModal);
     q("[data-cal-add]", function(el){ el.addEventListener("click", function(){ openEventModal(null, el.getAttribute("data-cal-add")); }); });
     q("[data-cal-day]", function(el){ el.addEventListener("click", function(ev){ ev.stopPropagation(); openDayList(el.getAttribute("data-cal-day")); }); });
     q("[data-step-add]", function(el){ el.addEventListener("click", function(){ openStepModal(null, el.getAttribute("data-step-add")); }); });
