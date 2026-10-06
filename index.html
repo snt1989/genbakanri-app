@@ -252,6 +252,12 @@
   .detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin:6px 0 16px;}
   .detail-head h1{font-size:19px;}
   .detail-head .updated{font-size:11px;color:var(--ink-faint);}
+  .bulk-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;margin-bottom:14px;border-color:var(--accent);}
+  .bulk-bar select,.bulk-bar input[type=text],.bulk-bar input:not([type=checkbox]){width:auto;flex:0 0 auto;}
+  .bulk-bar select,.bulk-bar input[type=text],.bulk-bar input[type=date],.bulk-bar input[type=number]{padding:5px 8px;font-size:12px;}
+  .bulk-cell{width:34px;text-align:center;}
+  .bulk-float{position:absolute;left:6px;top:6px;z-index:3;width:18px;height:18px;cursor:pointer;}
+  .row-selected{background:var(--surface-2);outline:2px solid var(--accent);outline-offset:-2px;}
   .photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;}
   .photo-thumb{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--surface-2);border:1px solid var(--border);}
   .photo-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
@@ -583,6 +589,7 @@
     constFilter:{name:"",status:["契約済","施工中"],type:"all",store:"all",assignees:[],page:1},
     filesFilter:{project:"all",kind:"all"},
     memberSeg:"all",
+    bulk:{on:false,entity:null,selected:{},field:"",value:""},
     settingsSeg:"company",
     editingMember:null,
     activeChat:null,
@@ -884,7 +891,7 @@
       '<img src="'+esc(fileUrl(f))+'" loading="lazy">' :
       '<div class="filekind" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px">'+iFile()+'<span class="fname">'+esc(f.filename||"ファイル")+'</span></div>';
     var cls = "photo-thumb"+(isImageFile(f)?"":" filekind");
-    return '<a href="'+esc(fileUrl(f))+'" target="_blank" rel="noopener" class="'+cls+'" style="display:block">'+inner+
+    return '<a href="'+esc(fileUrl(f))+'" target="_blank" rel="noopener" class="'+cls+'" data-row-id="'+esc(f.id)+'" style="display:block">'+inner+
       (showProject && f.projectName ? '<span class="thumb-proj">'+esc(f.projectName)+'</span>':'')+
       (withDelete ? '<button class="thumb-del" data-del-file="'+esc(f.id)+'" title="削除">'+iX()+'</button>':'')+
     '</a>';
@@ -912,6 +919,7 @@
   function iBell(){ return svgIcon('<path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 19a2 2 0 0 0 4 0"/>'); }
   function iSearch(){ return svgIcon('<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',14); }
   function iDownload(){ return svgIcon('<path d="M12 4v11M7.5 11 12 15.5 16.5 11"/><path d="M4.5 18.5h15"/>',14); }
+  function iUpload(){ return svgIcon('<path d="M12 15V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4.5 18.5h15"/>',14); }
   function iSend(){ return svgIcon('<path d="M4 12 20 4l-7 16-2.5-7L4 12z"/>',15); }
   function iMenu(){ return svgIcon('<path d="M4 6.5h16M4 12h16M4 17.5h16"/>'); }
   function iLock(){ return svgIcon('<rect x="5" y="10.5" width="14" height="9" rx="1.8"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',10); }
@@ -945,7 +953,7 @@
   function overdueOrToday(t){ return !t.done && t.dueDate<=todayISO(); }
 
   function setTab(id){
-    state.tab=id; state.sidebarOpen=false; if(!SUBPAGES[id]) state.returnTab=id; render();
+    bulkReset(); state.tab=id; state.sidebarOpen=false; if(!SUBPAGES[id]) state.returnTab=id; render();
   }
   function goProjectForm(mode, project){ state.formMode=mode||state.returnTab; state.editingProject=project||null; state.tab="project-form"; render(); }
   function goProjectDetail(id){ state.viewingProjectId=id; state.tab="project-detail"; render(); }
@@ -987,6 +995,7 @@
     else if(state.tab==="project-detail") c.innerHTML = banner+renderProjectDetail();
     else if(state.tab==="member-form") c.innerHTML = banner+renderMemberForm();
     bindEvents();
+    applyBulkUi();
     if(state.tab==="chat") scrollChatToBottom();
   }
 
@@ -1003,7 +1012,7 @@
     var activeProjects = state.projects.filter(function(p){return p.status==="施工中";});
     var thisMonthAmount = state.projects.filter(function(p){return (p.status==="契約済"||p.status==="施工中"||p.status==="施工完了");}).reduce(function(s,p){return s+(p.amount||0);},0);
 
-    var html = '<h1 class="pagetitle">ホーム</h1><div style="height:16px"></div>';
+    var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">ホーム</h1><div style="display:flex;gap:8px;flex-wrap:wrap">'+csvToolbar("tasks")+'</div></div><div style="height:16px"></div>';
     html += '<div class="home-grid">';
     html += '<div>';
     html += '<div class="card" style="padding:6px 18px 2px"><h2 style="font-size:14px;padding:12px 0">担当案件のTODO</h2>';
@@ -1013,7 +1022,7 @@
       html += todo.slice(0,8).map(function(t){
         var d = daysUntil(t.dueDate);
         var rel = d<0 ? '<span style="color:var(--danger);font-weight:700">'+Math.abs(d)+'日超過</span>' : (d===0?'<span style="color:var(--danger);font-weight:700">あと0日</span>':'<span style="color:var(--ink-faint)">あと'+d+'日</span>');
-        return '<div class="todo-row">'+
+        return '<div class="todo-row" data-row-id="'+esc(t.id)+'">'+
           '<div class="todo-due"><div style="color:'+(d<=0?'var(--danger)':'var(--ink)')+'">'+fmtDate(t.dueDate)+'</div><div class="rel">'+rel+'</div></div>'+
           '<div><div class="todo-title">'+esc(t.title)+'</div>'+(t.projectName?'<a href="#" data-open-project="'+esc(t.projectId||"")+'">'+esc(t.projectName)+'</a>':'')+
           ' <button class="iconbtn" data-done-task="'+t.id+'" title="完了にする" style="float:right">'+iCheckIcon()+'</button></div>'+
@@ -1071,9 +1080,9 @@
 
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">'+
       '<h1 class="pagetitle">'+title+'</h1>'+
-      '<div style="display:flex;gap:8px">'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
         '<button class="btn primary" data-newproject="'+mode+'">'+iPlus()+' 案件登録</button>'+
-        '<button class="btn outline" data-csv="'+mode+'">'+iDownload()+' CSVをダウンロード</button>'+
+        csvToolbar("projects")+
       '</div></div><div style="height:14px"></div>';
 
     html += '<div class="card filter-card" data-filter-mode="'+mode+'">';
@@ -1104,7 +1113,7 @@
       html += '<div class="tablewrap"><table><thead><tr><th>案件名 / 物件住所</th><th>進捗</th><th>施工開始日</th><th>施工完了予定日</th><th>金額</th><th>作成日</th><th></th></tr></thead><tbody>';
       html += pageItems.map(function(p){
         var names = normalizeAssignees(p.assignees).map(function(a){return a.name;});
-        return '<tr class="rowhover"><td>'+
+        return '<tr class="rowhover" data-row-id="'+esc(p.id)+'"><td>'+
             '<div class="cell-name"><a href="#" data-open-project="'+p.id+'">'+esc(p.name)+'</a></div>'+
             '<div class="cell-sub">'+esc(p.address||"")+'</div>'+
             '<div class="tagrow">'+names.map(function(a){return '<span class="tag">'+esc(a)+'</span>';}).join("")+'</div>'+
@@ -1491,9 +1500,10 @@
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">'+
       '<h1 class="pagetitle">メンバー</h1>'+
       (state.isAdmin ?
-        '<div style="display:flex;gap:8px">'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
           '<button class="btn primary" data-goto-memberform="1">'+iPlus()+' 自社メンバー登録</button>'+
           '<button class="btn outline" data-open="member-invite">'+iPlus()+' 社外メンバー招待</button>'+
+          csvToolbar("members")+
         '</div>' : ''
       )+'</div><div style="height:14px"></div>';
     html += '<div class="segmented" style="margin-bottom:16px">'+
@@ -1512,7 +1522,7 @@
             return '<option value="'+p[0]+'"'+(p[0]===perm?" selected":"")+'>'+p[1]+'</option>';
           }).join("")+'</select>' :
           '<span class="tag'+(perm==="admin"?"":" muted")+'" style="'+(perm==="admin"?'background:var(--sidebar-active);color:#fff':'')+'">'+esc(permissionLabel(perm))+'</span>';
-        return '<tr class="rowhover"><td><div class="member-name"><span class="mini-avatar" style="background:'+avaColor(m.name)+'">'+esc(initials(m.name))+'</span>'+esc(m.name)+'</div></td>'+
+        return '<tr class="rowhover" data-row-id="'+esc(m.id)+'"><td><div class="member-name"><span class="mini-avatar" style="background:'+avaColor(m.name)+'">'+esc(initials(m.name))+'</span>'+esc(m.name)+'</div></td>'+
           '<td>'+esc(m.company||"—")+'</td><td>'+esc(m.store||"—")+'</td>'+
           '<td><div class="tagrow">'+(m.roles||[]).map(function(r){return '<span class="tag muted">'+esc(r)+'</span>';}).join("")+'</div></td>'+
           '<td>'+permCell+'</td>'+
@@ -1537,7 +1547,7 @@
     });
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">'+
       '<h1 class="pagetitle">顧客管理</h1>'+
-      '<button class="btn primary" data-open="customer-form">'+iPlus()+' 顧客登録</button>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-open="customer-form">'+iPlus()+' 顧客登録</button>'+csvToolbar("customers")+'</div>'+
       '</div><div style="height:14px"></div>';
     html += '<div class="card filter-card"><div class="filter-line">'+
       '<div class="fitem" style="min-width:260px"><span>顧客名、住所、電話番号</span><input type="text" id="cust-search" value="'+esc(q)+'"></div>'+
@@ -1549,7 +1559,7 @@
     }else{
       html += '<div class="tablewrap"><table><thead><tr><th>顧客名</th><th>住所</th><th>電話番号</th><th>登録日</th><th></th></tr></thead><tbody>';
       html += list.map(function(c){
-        return '<tr class="rowhover"><td class="cell-name">'+esc(c.name)+'</td><td>'+esc(c.address||"—")+'</td>'+
+        return '<tr class="rowhover" data-row-id="'+esc(c.id)+'"><td class="cell-name">'+esc(c.name)+'</td><td>'+esc(c.address||"—")+'</td>'+
           '<td class="num">'+esc(c.phone||"—")+'</td><td class="num">'+fmtDate(c.registeredDate)+'</td>'+
           '<td style="white-space:nowrap"><button class="iconbtn" data-del-customer="'+c.id+'">'+iTrash()+'</button></td></tr>';
       }).join("");
@@ -1571,7 +1581,7 @@
 
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">'+
       '<h1 class="pagetitle">写真・ファイル</h1>'+
-      '<button class="btn primary" id="files-upload-btn">'+iPlus()+' 写真・ファイルを追加</button>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="files-upload-btn">'+iPlus()+' 写真・ファイルを追加</button>'+csvToolbar("files")+'</div>'+
       '</div><div style="height:14px"></div>';
 
     html += '<div class="card filter-card"><div class="filter-line">'+
@@ -1904,25 +1914,701 @@
     db.collection(col).doc(id).delete().then(function(){toast(msg); if(after) after();}).catch(function(){toast("削除に失敗しました");});
   }
 
-  function exportCsv(mode){
-    var f = mode==="sales"?state.salesFilter:state.constFilter;
-    var filtered = state.projects.filter(function(p){
+  /* ============ CSV 入力・出力 / 一括編集 (all list screens) ============ */
+  // One generic mechanism shared by every list screen: 営業/施工案件, 顧客,
+  // メンバー, ホーム(タスク) and 写真・ファイル. Each entity below declares its
+  // CSV columns; export, import (upsert by ID) and bulk edit/delete are all
+  // driven from that declaration.
+  var CSV_LIST_SEP = /[、,，;；]+/;
+
+  function csvNormDate(s){
+    var m = /^(\d{4})[-\/.年](\d{1,2})[-\/.月](\d{1,2})日?$/.exec(String(s).trim());
+    if(!m) return null;
+    var y=+m[1], mo=+m[2], d=+m[3], dt=new Date(y,mo-1,d);
+    if(dt.getFullYear()!==y || dt.getMonth()!==mo-1 || dt.getDate()!==d) return null;
+    return y+"-"+String(mo).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+  }
+  function csvSpaceless(s){ return String(s||"").replace(/[\s　]+/g,""); }
+  function csvResolveMemberName(raw){
+    var key = csvSpaceless(raw);
+    var m = state.members.find(function(x){ return csvSpaceless(x.name)===key; });
+    return m ? m.name : null;
+  }
+  // Keep each assignee's existing 確認 status; new ones start 未確認.
+  function csvBuildAssignees(names, existing){
+    var old = normalizeAssignees(existing||[]);
+    return names.map(function(n){
+      var o = old.find(function(a){ return a.name===n; });
+      if(o) return o;
+      var m = memberByName(n);
+      return {name:n, kind:m?m.kind:"internal", status:"未確認"};
+    });
+  }
+
+  var CSV_ENTITIES = {
+    projects:{
+      label:"案件", col:"projects", nameKey:"name", importable:true, requiredLabel:"案件名",
+      columns:[
+        {key:"id",label:"ID",readonly:true},
+        {key:"name",label:"案件名"},
+        {key:"type",label:"案件種類",options:PROJECT_TYPES,bulk:true},
+        {key:"status",label:"進捗",options:STATUS_LIST,bulk:true},
+        {key:"store",label:"店舗",options:STORES,bulk:true},
+        {key:"customerName",label:"顧客名"},
+        {key:"prefecture",label:"都道府県",options:PREFS},
+        {key:"address",label:"物件住所"},
+        {key:"propertyType",label:"物件種類",options:PROPERTY_TYPES},
+        {key:"propertyStructure",label:"構造",options:PROPERTY_STRUCTURES},
+        {key:"amount",label:"金額",type:"number",bulk:true},
+        {key:"startDate",label:"施工開始日",type:"date",bulk:true},
+        {key:"endDate",label:"施工完了予定日",type:"date",bulk:true},
+        {key:"assignees",label:"担当者",type:"names",bulk:true},
+        {key:"createdAt",label:"作成日",type:"datetime",readonly:true}
+      ],
+      sample:{name:"山田様邸 除草作業",type:"除草・草刈作業",status:"現地調査前",store:"盛岡店",customerName:"山田 太郎",prefecture:"岩手県",address:"盛岡市本宮7丁目7番41号",amount:"150000",startDate:"2026-10-20",endDate:"2026-10-21",assignees:"阿部 晋太郎、佐藤 裕之"},
+      all:function(){ return state.projects; },
+      fileLabel:function(){ return state.tab==="construction" ? "施工案件一覧" : "営業案件一覧"; },
+      finalize:function(patch, existing){
+        var d = Object.assign({}, patch);
+        if(patch.assignees) d.assignees = csvBuildAssignees(patch.assignees, existing?existing.assignees:[]);
+        if(patch.customerName){
+          var cu = state.customers.find(function(c){ return c.name===patch.customerName; });
+          if(cu) d.customerId = cu.id;
+        }
+        if(!existing){
+          if(!d.status) d.status = "現地調査前";
+          if(!d.type) d.type = "その他";
+          if(d.amount==null) d.amount = 0;
+          if(!d.assignees) d.assignees = [];
+        }
+        return d;
+      }
+    },
+    customers:{
+      label:"顧客", col:"customers", nameKey:"name", importable:true, requiredLabel:"顧客名",
+      columns:[
+        {key:"id",label:"ID",readonly:true},
+        {key:"name",label:"顧客名"},
+        {key:"phone",label:"電話番号",bulk:true},
+        {key:"address",label:"住所",bulk:true},
+        {key:"registeredDate",label:"登録日",type:"date",bulk:true}
+      ],
+      sample:{name:"山田 太郎",phone:"090-0000-0000",address:"岩手県盛岡市本宮7丁目7番41号",registeredDate:"2026-10-06"},
+      all:function(){ return state.customers; },
+      fileLabel:function(){ return "顧客一覧"; },
+      finalize:function(patch, existing){
+        var d = Object.assign({}, patch);
+        if(!existing && !d.registeredDate) d.registeredDate = todayISO();
+        return d;
+      }
+    },
+    members:{
+      label:"メンバー", col:"members", nameKey:"name", importable:true, requiredLabel:"氏名", adminOnly:true,
+      columns:[
+        {key:"id",label:"ID",readonly:true},
+        {key:"name",label:"氏名"},
+        {key:"kana",label:"カナ"},
+        {key:"phone",label:"携帯番号"},
+        {key:"email",label:"メールアドレス"},
+        {key:"company",label:"所属会社",bulk:true},
+        {key:"store",label:"店舗",options:STORES,bulk:true},
+        {key:"roles",label:"職種",type:"list",options:ROLES,bulk:true},
+        {key:"permission",label:"権限",type:"perm",bulk:true},
+        {key:"password",label:"パスワード",importOnly:true}
+      ],
+      sample:{name:"山田 武史",kana:"ヤマダ タケシ",phone:"09012341234",email:"yamada@example.com",company:"株式会社三桜",store:"盛岡店",roles:"営業",permission:"一般",password:"1234"},
+      all:function(){ return state.members; },
+      fileLabel:function(){ return "メンバー一覧"; },
+      finalize:function(patch, existing){
+        var d = Object.assign({}, patch);
+        if(patch.permission) Object.assign(d, permissionFields(patch.permission));
+        if(!existing){
+          if(!d.permission) Object.assign(d, permissionFields("general"));
+          if(!d.password) d.password = "1234";
+          if(!d.company) d.company = state.orgSettings.companyName;
+          if(!d.roles) d.roles = [];
+        }
+        return d;
+      }
+    },
+    tasks:{
+      label:"タスク", col:"tasks", nameKey:"title", importable:true, requiredLabel:"タイトル",
+      columns:[
+        {key:"id",label:"ID",readonly:true},
+        {key:"title",label:"タイトル"},
+        {key:"projectName",label:"案件名"},
+        {key:"dueDate",label:"期限",type:"date",bulk:true},
+        {key:"done",label:"完了",type:"bool",bulk:true}
+      ],
+      sample:{title:"見積書送付",projectName:"山田様邸 除草作業",dueDate:"2026-10-15",done:"いいえ"},
+      all:function(){ return state.tasks; },
+      fileLabel:function(){ return "タスク一覧"; },
+      finalize:function(patch, existing){
+        var d = Object.assign({}, patch);
+        if(patch.projectName){
+          var p = state.projects.find(function(x){ return x.name===patch.projectName; });
+          if(p) d.projectId = p.id;
+        }
+        if(!existing){
+          // tasks are listed with orderBy("dueDate"), so a task without a
+          // dueDate would never show up -- default it to today.
+          if(!d.dueDate) d.dueDate = todayISO();
+          if(d.done==null) d.done = false;
+        }
+        return d;
+      }
+    },
+    files:{
+      label:"写真・ファイル", col:"files", nameKey:"filename", importable:false,
+      columns:[
+        {key:"id",label:"ID",readonly:true},
+        {key:"filename",label:"ファイル名",readonly:true},
+        {key:"projectName",label:"案件名",readonly:true},
+        {key:"contentType",label:"種類",readonly:true},
+        {key:"size",label:"サイズ(byte)",type:"number",readonly:true},
+        {key:"uploadedAt",label:"アップロード日時",type:"datetime",readonly:true},
+        {key:"uploadedBy",label:"アップロード者",readonly:true},
+        {key:"url",label:"URL",readonly:true}
+      ],
+      all:function(){ return state.files; },
+      fileLabel:function(){ return "写真・ファイル一覧"; },
+      finalize:function(patch){ return patch; }
+    }
+  };
+
+  /* ---- what each screen currently shows (export / "select all" use these) ---- */
+  function filterProjects(mode){
+    var f = mode==="sales" ? state.salesFilter : state.constFilter;
+    return state.projects.filter(function(p){
       if(f.name && (p.name||"").indexOf(f.name)===-1 && (p.address||"").indexOf(f.name)===-1) return false;
       if(f.status.length && f.status.indexOf(p.status)===-1) return false;
       if(f.type!=="all" && p.type!==f.type) return false;
       if(f.store!=="all" && p.store!==f.store) return false;
+      if(f.assignees.length){
+        var names = normalizeAssignees(p.assignees).map(function(a){return a.name;});
+        if(!names.some(function(n){return f.assignees.indexOf(n)!==-1;})) return false;
+      }
       return true;
+    }).sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");});
+  }
+  function filterCustomers(){
+    var q = state.custQuery||"";
+    return state.customers.filter(function(c){
+      if(!q) return true;
+      return (c.name||"").indexOf(q)!==-1 || (c.address||"").indexOf(q)!==-1 || (c.phone||"").indexOf(q)!==-1;
     });
-    var rows = [["案件名","物件住所","進捗","施工開始日","施工完了予定日","金額","担当者"]];
-    filtered.forEach(function(p){ rows.push([p.name,p.address||"",p.status,p.startDate||"",p.endDate||"",p.amount||0,normalizeAssignees(p.assignees).map(function(a){return a.name;}).join(" ")]); });
-    var csv = rows.map(function(r){ return r.map(function(v){ v=String(v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }).join(","); }).join("\r\n");
-    var blob = new Blob(["﻿"+csv], {type:"text/csv"});
-    if(downloadsCap){
-      downloadsCap.save({filename:(mode==="sales"?"営業案件一覧":"施工案件一覧")+".csv", data:blob}).catch(function(){ toast("ダウンロードがキャンセルされました"); });
-    } else {
-      toast("この環境ではダウンロードを利用できません");
+  }
+  function filterMembers(){
+    return state.members.filter(function(m){
+      if(state.memberSeg==="all") return true;
+      return m.kind===(state.memberSeg==="internal"?"internal":"external");
+    });
+  }
+  function filterFiles(){
+    var f = state.filesFilter;
+    return state.files.filter(function(x){
+      if(f.project!=="all" && x.projectId!==f.project) return false;
+      if(f.kind==="image" && !isImageFile(x)) return false;
+      if(f.kind==="other" && isImageFile(x)) return false;
+      return true;
+    }).sort(function(a,b){return (b.uploadedAt||"").localeCompare(a.uploadedAt||"");});
+  }
+  function filterTasks(){
+    return state.tasks.slice().sort(function(a,b){return (a.dueDate||"").localeCompare(b.dueDate||"");});
+  }
+  function currentEntity(){
+    switch(state.tab){
+      case "home": return "tasks";
+      case "sales": case "construction": return "projects";
+      case "customers": return "customers";
+      case "members": return "members";
+      case "files": return "files";
+    }
+    return null;
+  }
+  function filteredList(entity){
+    switch(entity){
+      case "projects": return filterProjects(state.tab==="construction"?"construction":"sales");
+      case "customers": return filterCustomers();
+      case "members": return filterMembers();
+      case "files": return filterFiles();
+      case "tasks": return filterTasks();
+    }
+    return [];
+  }
+
+  /* ---- CSV text <-> rows ---- */
+  function parseCsv(text){
+    if(text.charCodeAt(0)===0xFEFF) text = text.slice(1);
+    var rows=[], row=[], cur="", inQ=false;
+    for(var i=0;i<text.length;i++){
+      var ch = text.charAt(i);
+      if(inQ){
+        if(ch==='"'){ if(text.charAt(i+1)==='"'){ cur+='"'; i++; } else inQ=false; }
+        else cur+=ch;
+      }else{
+        if(ch==='"') inQ=true;
+        else if(ch===','){ row.push(cur); cur=""; }
+        else if(ch==="\r"){ /* ignore: \r\n and lone \r both end up handled by \n / end */ if(text.charAt(i+1)!=="\n"){ row.push(cur); rows.push(row); row=[]; cur=""; } }
+        else if(ch==="\n"){ row.push(cur); rows.push(row); row=[]; cur=""; }
+        else cur+=ch;
+      }
+    }
+    if(cur!=="" || row.length){ row.push(cur); rows.push(row); }
+    return rows;
+  }
+  function csvEscape(v){
+    v = v==null ? "" : String(v);
+    return /[",\r\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v;
+  }
+  function csvDecode(buf){
+    try{ return new TextDecoder("utf-8",{fatal:true}).decode(buf); }
+    catch(e){
+      try{ return new TextDecoder("shift_jis").decode(buf); }
+      catch(e2){ return new TextDecoder("utf-8").decode(buf); }
     }
   }
+  function cellOut(c, r){
+    var v = r[c.key];
+    switch(c.type){
+      case "number": return (v==null||v==="") ? "" : v;
+      case "names": return normalizeAssignees(v).map(function(a){return a.name;}).join("、");
+      case "list": return (v||[]).join("、");
+      case "bool": return v ? "はい" : "いいえ";
+      case "perm": return permissionLabel(memberPermission(r));
+      default:
+        var s = v==null ? "" : String(v);
+        // Stop spreadsheet apps from treating text as a formula.
+        if(!c.type && /^[=+\-@]/.test(s)) s = "'"+s;
+        return s;
+    }
+  }
+  function buildCsv(entity, rows){
+    var cols = CSV_ENTITIES[entity].columns.filter(function(c){ return !c.importOnly; });
+    var out = [cols.map(function(c){return c.label;})];
+    rows.forEach(function(r){ out.push(cols.map(function(c){ return cellOut(c, r); })); });
+    return "﻿"+out.map(function(r){ return r.map(csvEscape).join(","); }).join("\r\n");
+  }
+  function downloadBlob(filename, blob){
+    if(downloadsCap){
+      downloadsCap.save({filename:filename, data:blob}).catch(function(){ toast("ダウンロードがキャンセルされました"); });
+    }else{
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = filename;
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    }
+  }
+
+  /* ---- guards shared by import / bulk ---- */
+  function csvCanWrite(entity){
+    if(!state.canWrite){ toast("この操作を行う権限がありません"); return false; }
+    if(CSV_ENTITIES[entity].adminOnly && !state.isAdmin){ toast("メンバーの変更は管理者のみ行えます"); return false; }
+    return true;
+  }
+
+  /* ---- export ---- */
+  function csvExport(entity){
+    var E = CSV_ENTITIES[entity];
+    if(E.adminOnly && !state.isAdmin){ toast("メンバー情報のCSV出力は管理者のみ行えます"); return; }
+    var rows = filteredList(entity);
+    if(!rows.length){ toast("出力するデータがありません"); return; }
+    downloadBlob(E.fileLabel()+"_"+todayISO()+".csv", new Blob([buildCsv(entity, rows)], {type:"text/csv"}));
+    toast(rows.length+"件をCSV出力しました");
+  }
+
+  /* ---- cell parsing (shared by import and bulk edit) ---- */
+  // Returns {empty:true} | {value:...} | {error:"..."}.
+  function parseCell(c, raw, existing){
+    var s = String(raw==null ? "" : raw).trim();
+    if(s==="") return {empty:true};
+    switch(c.type){
+      case "number":
+        var n = parseFloat(s.replace(/[,，¥￥円\s　]/g,""));
+        if(isNaN(n)) return {error:"「"+c.label+"」が数値ではありません（"+s+"）"};
+        return {value:n};
+      case "date":
+        var d = csvNormDate(s);
+        if(!d) return {error:"「"+c.label+"」は 2026-10-06 の形式で入力してください（"+s+"）"};
+        return {value:d};
+      case "bool":
+        if(/^(はい|true|1|yes|完了|済|○|〇)$/i.test(s)) return {value:true};
+        if(/^(いいえ|false|0|no|未完了|未|×)$/i.test(s)) return {value:false};
+        return {error:"「"+c.label+"」は はい／いいえ で入力してください（"+s+"）"};
+      case "perm":
+        var p = PERMISSION_LEVELS.find(function(x){ return x[0]===s.toLowerCase() || x[1]===s; });
+        if(!p) return {error:"「"+c.label+"」は 管理者／一般／外部 のいずれかです（"+s+"）"};
+        return {value:p[0]};
+      case "names":
+        var names = [];
+        var bad = [];
+        s.split(CSV_LIST_SEP).forEach(function(part){
+          part = part.trim(); if(!part) return;
+          var nm = csvResolveMemberName(part);
+          if(!nm) bad.push(part); else if(names.indexOf(nm)===-1) names.push(nm);
+        });
+        if(bad.length) return {error:"「"+c.label+"」に未登録のメンバーがいます（"+bad.join("、")+"）"};
+        return {value:names};
+      case "list":
+        var items = [], badItems = [];
+        s.split(/[、,，;；\s　]+/).forEach(function(part){
+          if(!part) return;
+          if(c.options && c.options.indexOf(part)===-1) badItems.push(part);
+          else if(items.indexOf(part)===-1) items.push(part);
+        });
+        if(badItems.length) return {error:"「"+c.label+"」に選択肢にない値があります（"+badItems.join("、")+"）"};
+        return {value:items};
+      default:
+        if(c.options){
+          // Accept a value the record already has even if it is not in the list.
+          if(c.options.indexOf(s)===-1 && !(existing && existing[c.key]===s))
+            return {error:"「"+c.label+"」は次のいずれかです："+c.options.join("／")+"（"+s+"）"};
+          return {value:s};
+        }
+        if(/^'[=+\-@]/.test(s)) s = s.slice(1);
+        return {value:s};
+    }
+  }
+
+  /* ---- raw writes (no per-row toast; callers report totals) ---- */
+  function saveRaw(col, id, data){
+    var now = new Date().toISOString();
+    data = Object.assign({}, data, {updatedAt:now});
+    if(!db){
+      var arr = state[col];
+      if(id){ var i = arr.findIndex(function(x){return x.id===id;}); if(i>-1) arr[i] = Object.assign({}, arr[i], data); }
+      else arr.unshift(Object.assign({id:uid(), createdAt:now}, data));
+      return Promise.resolve();
+    }
+    return id ? db.collection(col).doc(id).update(data) : db.collection(col).add(Object.assign({createdAt:now}, data));
+  }
+  function deleteRaw(col, id){
+    if(!db){ state[col] = state[col].filter(function(x){return x.id!==id;}); return Promise.resolve(); }
+    return db.collection(col).doc(id).delete();
+  }
+  function runBatch(promises, doneLabel){
+    var ok = 0, fail = 0;
+    return Promise.all(promises.map(function(p){ return p.then(function(){ ok++; }, function(){ fail++; }); })).then(function(){
+      closeModal();
+      toast(fail ? (ok+"件を"+doneLabel+"、"+fail+"件は失敗しました") : (ok+"件を"+doneLabel+"しました"));
+      render();
+    });
+  }
+
+  /* ---- import ---- */
+  function csvTemplate(entity){
+    var E = CSV_ENTITIES[entity];
+    var cols = E.columns.filter(function(c){ return !c.readonly || c.key==="id"; });
+    var rows = [cols.map(function(c){return c.label;}), cols.map(function(c){ return c.key==="id" ? "" : (E.sample[c.key]||""); })];
+    var text = "﻿"+rows.map(function(r){ return r.map(csvEscape).join(","); }).join("\r\n");
+    downloadBlob(E.label+"_取込テンプレート.csv", new Blob([text], {type:"text/csv"}));
+  }
+
+  function planImport(entity, rows){
+    var E = CSV_ENTITIES[entity];
+    var plan = {ops:[], errors:[], unknown:[], total:0};
+    if(!rows.length){ plan.errors.push({line:0, msg:"ファイルが空です"}); return plan; }
+    var header = rows[0].map(function(h){ return String(h==null?"":h).replace(/^﻿/,"").trim(); });
+    var colIdx = {};
+    header.forEach(function(h, i){
+      var c = E.columns.find(function(x){ return x.label===h || x.key.toLowerCase()===h.toLowerCase(); });
+      if(c && colIdx[c.key]==null) colIdx[c.key] = i; else if(h && !c) plan.unknown.push(h);
+    });
+    if(Object.keys(colIdx).length===0){ plan.errors.push({line:1, msg:"見出し行が認識できません。「CSV出力」したファイルかテンプレートの形式にしてください"}); return plan; }
+
+    var existingList = E.all();
+    var seenNames = {};
+    var adminAfter = null;
+    if(entity==="members"){
+      adminAfter = {};
+      state.members.forEach(function(m){ adminAfter[m.id] = memberPermission(m)==="admin"; });
+    }
+    for(var i=1;i<rows.length;i++){
+      var row = rows[i];
+      if(!row.some(function(v){ return String(v||"").trim()!==""; })) continue;
+      plan.total++;
+      var line = i+1;
+      var idRaw = colIdx.id!=null ? String(row[colIdx.id]||"").trim() : "";
+      var existing = idRaw ? existingList.find(function(x){ return x.id===idRaw; }) : null;
+      var patch = {}, rowErrors = [];
+      E.columns.forEach(function(c){
+        if(c.readonly || colIdx[c.key]==null) return;
+        var res = parseCell(c, row[colIdx[c.key]], existing);
+        if(res.error) rowErrors.push(res.error); else if(!res.empty) patch[c.key] = res.value;
+      });
+      var label = patch[E.nameKey] || (existing && existing[E.nameKey]) || "";
+      if(!existing && !patch[E.nameKey]) rowErrors.push("必須項目「"+E.requiredLabel+"」が空です");
+      if(entity==="members" && patch.name){
+        var dup = state.members.find(function(m){ return csvSpaceless(m.name)===csvSpaceless(patch.name) && (!existing || m.id!==existing.id); });
+        if(dup) rowErrors.push("同じ氏名のメンバーが既に登録されています（"+patch.name+"）");
+        if(seenNames[csvSpaceless(patch.name)]) rowErrors.push("ファイル内で氏名が重複しています（"+patch.name+"）");
+        seenNames[csvSpaceless(patch.name)] = true;
+      }
+      if(rowErrors.length){ plan.errors.push({line:line, msg:(label?label+"：":"")+rowErrors.join(" / ")}); continue; }
+      var data = E.finalize(patch, existing);
+      plan.ops.push({type: existing ? "update" : "create", id: existing ? existing.id : null, data:data, label:label});
+      if(adminAfter && existing && data.permission) adminAfter[existing.id] = data.permission==="admin";
+      else if(adminAfter && !existing) adminAfter["new"+i] = data.permission==="admin";
+    }
+    if(adminAfter && plan.ops.length && !Object.keys(adminAfter).some(function(k){ return adminAfter[k]; })){
+      plan.ops = []; plan.errors.push({line:0, msg:"管理者が1人もいなくなるため取り込めません"});
+    }
+    return plan;
+  }
+
+  function openCsvImport(entity){
+    var E = CSV_ENTITIES[entity];
+    if(!E.importable || !csvCanWrite(entity)) return;
+    var body = '<div style="font-size:12.5px;line-height:1.7">'+
+      '<div>CSVファイルから「'+esc(E.label)+'」を追加・更新します。</div>'+
+      '<ul style="margin:8px 0 10px 18px;padding:0;color:var(--ink-soft)">'+
+        '<li>1行目は見出し行です（「CSV出力」したファイルと同じ形式）。</li>'+
+        '<li>「ID」が一致する行は更新、IDが空・未登録の行は新規登録です。</li>'+
+        '<li>空欄のセルは変更されません。</li>'+
+        '<li>文字コードはUTF-8・Shift_JIS（Excel保存）に対応しています。</li>'+
+      '</ul><button class="btn sm" id="csv-template">テンプレートをダウンロード</button></div>'+
+      '<div style="margin-top:14px"><input type="file" id="csv-file" accept=".csv,text/csv"></div>'+
+      '<div id="csv-preview" style="margin-top:14px;font-size:12.5px"></div>';
+    openModal(E.label+"のCSV入力", body, '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="csv-run" disabled>取り込む</button>');
+    var currentPlan = null;
+    document.getElementById("csv-template").onclick = function(){ csvTemplate(entity); };
+    document.getElementById("csv-file").addEventListener("change", function(ev){
+      var file = ev.target.files && ev.target.files[0];
+      var box = document.getElementById("csv-preview");
+      var run = document.getElementById("csv-run");
+      run.disabled = true; currentPlan = null;
+      if(!file) return;
+      var fr = new FileReader();
+      fr.onerror = function(){ box.textContent = "ファイルを読み込めませんでした"; };
+      fr.onload = function(){
+        var plan;
+        try{ plan = planImport(entity, parseCsv(csvDecode(fr.result))); }
+        catch(e){ box.textContent = "CSVの解析に失敗しました"; return; }
+        currentPlan = plan;
+        var created = plan.ops.filter(function(o){return o.type==="create";}).length;
+        var updated = plan.ops.length - created;
+        var h = '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px"><span>新規 <b>'+created+'</b>件</span><span>更新 <b>'+updated+'</b>件</span>'+
+          '<span style="color:'+(plan.errors.length?'var(--danger)':'inherit')+'">エラー <b>'+plan.errors.length+'</b>件（取り込まれません）</span></div>';
+        if(plan.unknown.length) h += '<div style="color:var(--ink-faint);margin-bottom:6px">無視した列：'+esc(plan.unknown.join("、"))+'</div>';
+        if(plan.errors.length){
+          h += '<div style="max-height:150px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--danger)">'+
+            plan.errors.slice(0,30).map(function(er){ return '<div>'+(er.line?er.line+'行目：':'')+esc(er.msg)+'</div>'; }).join("")+
+            (plan.errors.length>30?'<div>…ほか'+(plan.errors.length-30)+'件</div>':'')+'</div>';
+        }
+        box.innerHTML = h;
+        run.disabled = plan.ops.length===0;
+      };
+      fr.readAsArrayBuffer(file);
+    });
+    document.getElementById("csv-run").onclick = function(){
+      if(!currentPlan || !currentPlan.ops.length) return;
+      if(!csvCanWrite(entity)) return;
+      document.getElementById("csv-run").disabled = true;
+      runBatch(currentPlan.ops.map(function(op){ return saveRaw(E.col, op.id, op.data); }), "取り込み");
+    };
+  }
+
+  /* ---- bulk edit (selection mode) ---- */
+  function bulkReset(){ state.bulk = {on:false, entity:null, selected:{}, field:"", value:""}; }
+  function bulkSelectedIds(){ return Object.keys(state.bulk.selected).filter(function(k){ return state.bulk.selected[k]; }); }
+  function bulkToggle(entity){
+    if(state.bulk.on && state.bulk.entity===entity){ bulkReset(); }
+    else{
+      if(!csvCanWrite(entity)) return;
+      state.bulk = {on:true, entity:entity, selected:{}, field:"", value:""};
+    }
+    render();
+  }
+  function csvToolbar(entity, small){
+    var E = CSV_ENTITIES[entity];
+    if(E.adminOnly && !state.isAdmin) return "";
+    var sm = small ? " sm" : "";
+    var on = state.bulk.on && state.bulk.entity===entity;
+    return (E.importable ? '<button class="btn outline'+sm+'" data-csv-import="'+entity+'">'+iUpload()+' CSV入力</button>' : '')+
+      '<button class="btn outline'+sm+'" data-csv-export="'+entity+'">'+iDownload()+' CSV出力</button>'+
+      '<button class="btn'+(on?' primary':' outline')+sm+'" data-bulk-toggle="'+entity+'">一括編集'+(on?'（終了）':'')+'</button>';
+  }
+  function bulkValueControl(c){
+    if(!c) return "";
+    var opts = null;
+    if(c.options && c.type!=="list") opts = c.options.map(function(o){ return [o,o]; });
+    else if(c.type==="perm") opts = PERMISSION_LEVELS.map(function(p){ return [p[1],p[1]]; });
+    else if(c.type==="bool") opts = [["はい","はい"],["いいえ","いいえ"]];
+    if(opts) return '<select id="bulk-value">'+opts.map(function(o){ return '<option value="'+esc(o[0])+'"'+(state.bulk.value===o[0]?" selected":"")+'>'+esc(o[1])+'</option>'; }).join("")+'</select>';
+    var type = c.type==="date" ? "date" : (c.type==="number" ? "number" : "text");
+    var ph = c.type==="names" ? "例：阿部 晋太郎、佐藤 裕之（空欄で担当者なし）" : (c.type==="list" ? "例：営業、現場監督" : "");
+    return '<input type="'+type+'" id="bulk-value" placeholder="'+esc(ph)+'" value="'+esc(state.bulk.value||"")+'" style="min-width:150px">';
+  }
+  function bulkBarHtml(){
+    var E = CSV_ENTITIES[state.bulk.entity];
+    var cols = E.columns.filter(function(c){ return c.bulk; });
+    if(cols.length && !cols.some(function(c){ return c.key===state.bulk.field; })) state.bulk.field = cols[0].key;
+    var html = '<div class="card bulk-bar" id="bulk-bar"><b style="font-size:12.5px">一括編集：'+esc(E.label)+'</b><span id="bulk-count" style="font-size:12px"></span>'+
+      '<button class="btn sm" id="bulk-sel-visible">表示中を選択</button>'+
+      '<button class="btn sm" id="bulk-sel-all">絞り込み結果すべて選択</button>'+
+      '<button class="btn sm" id="bulk-sel-none">選択解除</button>';
+    if(cols.length){
+      html += '<span style="flex:1"></span><span style="font-size:12px">項目</span><select id="bulk-field">'+cols.map(function(c){ return '<option value="'+c.key+'"'+(c.key===state.bulk.field?" selected":"")+'>'+esc(c.label)+'</option>'; }).join("")+'</select>'+
+        '<span style="font-size:12px">→</span><span id="bulk-value-wrap">'+bulkValueControl(cols.find(function(c){return c.key===state.bulk.field;}))+'</span>'+
+        '<button class="btn primary sm" id="bulk-apply">選択行に適用</button>';
+    }else{
+      html += '<span style="flex:1"></span>';
+    }
+    html += '<button class="btn sm" id="bulk-delete" style="color:var(--danger)">選択を削除</button><button class="btn sm" id="bulk-exit">終了</button></div>';
+    return html;
+  }
+  function bulkRefreshCount(){
+    var n = bulkSelectedIds().length;
+    var el = document.getElementById("bulk-count"); if(el) el.textContent = n+"件選択中";
+    var c = document.getElementById("content");
+    if(c) c.querySelectorAll("[data-row-id]").forEach(function(row){
+      var on = !!state.bulk.selected[row.getAttribute("data-row-id")];
+      row.classList.toggle("row-selected", on);
+      var chk = row.querySelector("input[data-bulk-chk]"); if(chk) chk.checked = on;
+    });
+    var all = c && c.querySelector("input[data-bulk-all]");
+    if(all){
+      var rows = c.querySelectorAll("tbody [data-row-id]");
+      all.checked = rows.length>0 && Array.prototype.every.call(rows, function(r){ return state.bulk.selected[r.getAttribute("data-row-id")]; });
+    }
+  }
+  function bulkSetSelected(ids, on){ ids.forEach(function(id){ state.bulk.selected[id] = on; }); bulkRefreshCount(); }
+
+  function applyBulkUi(){
+    if(!state.bulk.on) return;
+    var entity = currentEntity();
+    if(state.bulk.entity!==entity){ bulkReset(); return; }
+    var c = document.getElementById("content");
+    var wrap = document.createElement("div");
+    wrap.innerHTML = bulkBarHtml();
+    c.insertBefore(wrap.firstChild, c.firstChild);
+
+    // checkboxes: table rows get a leading column, card-like rows get a floating box
+    c.querySelectorAll("table").forEach(function(tbl){
+      var rows = tbl.querySelectorAll("tbody tr[data-row-id]");
+      if(!rows.length) return;
+      var hr = tbl.querySelector("thead tr");
+      if(hr){ var th = document.createElement("th"); th.className = "bulk-cell"; th.innerHTML = '<input type="checkbox" data-bulk-all title="表示中をすべて選択">'; hr.insertBefore(th, hr.firstChild); }
+      rows.forEach(function(tr){
+        var td = document.createElement("td"); td.className = "bulk-cell";
+        td.innerHTML = '<input type="checkbox" data-bulk-chk>';
+        tr.insertBefore(td, tr.firstChild);
+      });
+    });
+    c.querySelectorAll(".photo-grid [data-row-id], .todo-row[data-row-id]").forEach(function(el){
+      el.style.position = "relative";
+      if(el.classList.contains("todo-row")) el.style.paddingLeft = "30px";
+      var box = document.createElement("input"); box.type = "checkbox"; box.className = "bulk-float"; box.setAttribute("data-bulk-chk","");
+      el.insertBefore(box, el.firstChild);
+    });
+
+    c.querySelectorAll("input[data-bulk-chk]").forEach(function(chk){
+      chk.addEventListener("click", function(ev){ ev.stopPropagation(); });
+      chk.addEventListener("change", function(){
+        var row = chk.closest("[data-row-id]");
+        if(row) state.bulk.selected[row.getAttribute("data-row-id")] = chk.checked;
+        bulkRefreshCount();
+      });
+    });
+    // file thumbnails are links: in selection mode a click selects instead of opening
+    c.querySelectorAll(".photo-grid [data-row-id]").forEach(function(a){
+      a.addEventListener("click", function(ev){
+        if(ev.target.closest("[data-del-file]")) return;
+        ev.preventDefault();
+        var id = a.getAttribute("data-row-id");
+        state.bulk.selected[id] = !state.bulk.selected[id];
+        bulkRefreshCount();
+      });
+    });
+    var all = c.querySelector("input[data-bulk-all]");
+    if(all) all.addEventListener("change", function(){
+      var ids = Array.prototype.map.call(c.querySelectorAll("tbody [data-row-id]"), function(r){ return r.getAttribute("data-row-id"); });
+      bulkSetSelected(ids, all.checked);
+    });
+
+    var E = CSV_ENTITIES[entity];
+    document.getElementById("bulk-sel-visible").onclick = function(){
+      bulkSetSelected(Array.prototype.map.call(c.querySelectorAll("[data-row-id]"), function(r){ return r.getAttribute("data-row-id"); }), true);
+    };
+    document.getElementById("bulk-sel-all").onclick = function(){ bulkSetSelected(filteredList(entity).map(function(x){return x.id;}), true); };
+    document.getElementById("bulk-sel-none").onclick = function(){ state.bulk.selected = {}; bulkRefreshCount(); };
+    document.getElementById("bulk-exit").onclick = function(){ bulkReset(); render(); };
+    var fieldSel = document.getElementById("bulk-field");
+    if(fieldSel){
+      fieldSel.onchange = function(){
+        state.bulk.field = fieldSel.value; state.bulk.value = "";
+        document.getElementById("bulk-value-wrap").innerHTML = bulkValueControl(E.columns.find(function(x){return x.key===state.bulk.field;}));
+        bindBulkValue();
+      };
+      bindBulkValue();
+      document.getElementById("bulk-apply").onclick = bulkApply;
+    }
+    document.getElementById("bulk-delete").onclick = bulkDelete;
+    bulkRefreshCount();
+  }
+  function bindBulkValue(){
+    var v = document.getElementById("bulk-value");
+    if(v){ v.addEventListener("input", function(){ state.bulk.value = v.value; }); v.addEventListener("change", function(){ state.bulk.value = v.value; }); if(v.tagName==="SELECT") state.bulk.value = v.value; }
+  }
+
+  // After the change, would at least one admin remain?
+  function adminsRemainAfter(changes){   // changes: {memberId: "admin"|"general"|"external"|null(deleted)}
+    return state.members.some(function(m){
+      var p = Object.prototype.hasOwnProperty.call(changes, m.id) ? changes[m.id] : memberPermission(m);
+      return p==="admin";
+    });
+  }
+  function bulkApply(){
+    var entity = state.bulk.entity, E = CSV_ENTITIES[entity];
+    if(!csvCanWrite(entity)) return;
+    var ids = bulkSelectedIds();
+    if(!ids.length){ toast("変更する行を選択してください"); return; }
+    var col = E.columns.find(function(c){ return c.key===state.bulk.field; });
+    if(!col) return;
+    var raw = (document.getElementById("bulk-value")||{}).value || "";
+    var res = parseCell(col, raw, null), value;
+    if(res.error){ toast(res.error); return; }
+    if(res.empty){
+      if(col.options && col.type!=="list" || col.type==="number" || col.type==="bool" || col.type==="perm"){ toast("変更後の値を入力してください"); return; }
+      value = (col.type==="names"||col.type==="list") ? [] : "";
+    }else value = res.value;
+    var shown = Array.isArray(value) ? (value.join("、")||"（なし）") : (col.type==="perm" ? permissionLabel(value) : (col.type==="bool" ? (value?"はい":"いいえ") : (value===""?"（空欄）":String(value))));
+    if(entity==="members" && col.key==="permission"){
+      var ch = {}; ids.forEach(function(id){ ch[id] = value; });
+      if(!adminsRemainAfter(ch)){ toast("管理者が1人もいなくなるため変更できません"); return; }
+    }
+    openModal("一括編集の確認",
+      '<div style="font-size:13px;line-height:1.7">選択した <b>'+ids.length+'</b> 件の「'+esc(col.label)+'」を<br><b>'+esc(shown)+'</b><br>に変更します。よろしいですか？</div>',
+      '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="bulk-apply-ok">変更する</button>');
+    document.getElementById("bulk-apply-ok").onclick = function(){
+      document.getElementById("bulk-apply-ok").disabled = true;
+      var list = E.all();
+      var jobs = ids.map(function(id){
+        var existing = list.find(function(x){ return x.id===id; });
+        var patch = {}; patch[col.key] = value;
+        return saveRaw(E.col, id, E.finalize(patch, existing));
+      });
+      state.bulk.selected = {};
+      runBatch(jobs, "変更");
+    };
+  }
+  function bulkDelete(){
+    var entity = state.bulk.entity, E = CSV_ENTITIES[entity];
+    if(!csvCanWrite(entity)) return;
+    var ids = bulkSelectedIds();
+    if(!ids.length){ toast("削除する行を選択してください"); return; }
+    if(entity==="members"){
+      var me = myMember();
+      if(me && ids.indexOf(me.id)!==-1){ toast("ログイン中のご自身は削除できません"); return; }
+      var ch = {}; ids.forEach(function(id){ ch[id] = null; });
+      if(!adminsRemainAfter(ch)){ toast("管理者が1人もいなくなるため削除できません"); return; }
+    }
+    confirmDelete("選択した"+ids.length+"件の"+E.label+"を削除しますか？この操作は取り消せません。", function(){
+      state.bulk.selected = {};
+      runBatch(ids.map(function(id){ return deleteRaw(E.col, id); }), "削除");
+    });
+  }
+
 
   function copyProjectSummary(id){
     var p = state.projects.find(function(x){return x.id===id;});
@@ -1971,7 +2657,9 @@
     }); });
     c.querySelectorAll("[data-del-customer]").forEach(function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-del-customer"); confirmDelete("この顧客を削除しますか？",function(){deleteDoc("customers",id,"顧客を削除しました");}); }); });
     c.querySelectorAll("[data-done-task]").forEach(function(el){ el.addEventListener("click", function(){ writeDoc("tasks", el.getAttribute("data-done-task"), {done:true}, "タスクを完了しました"); }); });
-    c.querySelectorAll("[data-csv]").forEach(function(el){ el.addEventListener("click", function(){ exportCsv(el.getAttribute("data-csv")); }); });
+    c.querySelectorAll("[data-csv-export]").forEach(function(el){ el.addEventListener("click", function(){ csvExport(el.getAttribute("data-csv-export")); }); });
+    c.querySelectorAll("[data-csv-import]").forEach(function(el){ el.addEventListener("click", function(){ openCsvImport(el.getAttribute("data-csv-import")); }); });
+    c.querySelectorAll("[data-bulk-toggle]").forEach(function(el){ el.addEventListener("click", function(){ bulkToggle(el.getAttribute("data-bulk-toggle")); }); });
     c.querySelectorAll("[data-edit-member]").forEach(function(el){ el.addEventListener("click", function(){ editMember(el.getAttribute("data-edit-member")); }); });
     c.querySelectorAll("[data-goto-memberform]").forEach(function(el){ el.addEventListener("click", goMemberForm); });
     c.querySelectorAll("[data-copy-summary]").forEach(function(el){ el.addEventListener("click", function(){ copyProjectSummary(el.getAttribute("data-copy-summary")); }); });
