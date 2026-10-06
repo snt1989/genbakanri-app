@@ -576,6 +576,7 @@
     constFilter:{name:"",status:["契約済","施工中"],type:"all",store:"all",assignees:[],page:1},
     filesFilter:{project:"all",kind:"all"},
     memberSeg:"all",
+    settingsSeg:"company",
     activeChat:null,
     chatMsgs:{},
     myName:null,
@@ -584,7 +585,7 @@
     editingProject:null,
     formMode:"sales",
     viewingProjectId:null,
-    orgSettings:{companyName:"株式会社サノー",representative:"阿部 晋太郎",address:"岩手県盛岡市盛岡駅前通1-1",phone:"019-000-0000"}
+    orgSettings:{companyName:"株式会社サノー",representative:"阿部 晋太郎",zip:"",address:"岩手県盛岡市盛岡駅前通1-1",phone:"019-000-0000",fax:"",email:"",website:""}
   };
 
   var db=null, downloadsCap=null, assetsCap=null;
@@ -690,7 +691,6 @@
   function startLoadWatchdog(){
     setTimeout(function(){
       var stillLoading = Object.keys(state.loaded).some(function(k){ return !state.loaded[k]; });
-      console.log("[watchdog] fired, state.loaded=", JSON.stringify(state.loaded), "stillLoading=", stillLoading);
       if(stillLoading){
         setPreview();
         state.loadTimedOut = true;
@@ -741,16 +741,7 @@
     try{ return await withTimeout(p, 12000); }catch(e){ return null; }
   }
 
-  // TEMPORARY DIAGNOSTIC HOOKS -- expose internal state/db for live
-  // console inspection while tracking down why the standalone (Vercel)
-  // deployment stays in offline mode even though a manual, hand-typed
-  // subscription to window.__fbDbPromise successfully receives all 8 real
-  // members. Safe to remove once the root cause is found.
-  window.__debugState = function(){ return state; };
-  window.__debugDb = function(){ return db; };
-
   async function boot(){
-    console.log("[boot] start, window.claude=", !!window.claude);
     bindLoginAndTopbarEvents();
     renderShell(); render();
     startLoadWatchdog();
@@ -769,12 +760,9 @@
       // Use the Firebase-backed persistence layer instead, so data
       // actually survives reloads/redeploys rather than always resetting
       // to the hardcoded sample data.
-      console.log("[boot] connecting firebase...");
-      try{ db = await connectFirebase(); }catch(e){ console.log("[boot] connectFirebase threw", e); db=null; }
-      console.log("[boot] db=", db);
-      if(!db){ console.log("[boot] db is null, falling back to preview"); setPreview(); render(); return; }
+      try{ db = await connectFirebase(); }catch(e){ db=null; }
+      if(!db){ setPreview(); render(); return; }
     }
-    console.log("[boot] calling subscribeAll()");
     subscribeAll();
     db.doc("settings/org").get().then(function(snap){ if(snap.exists){ state.orgSettings = Object.assign({}, state.orgSettings, snap.data()); render(); } }).catch(function(){});
   }
@@ -788,18 +776,14 @@
   }
 
   function subscribeAll(){
-    console.log("[subscribeAll] registering listeners, db=", db);
     db.collection("projects").onSnapshot(function(snap){
-      console.log("[subscribeAll] projects snapshot", snap.docs.length);
       state.projects = snap.docs.map(toObj); state.loaded.projects=true; render();
     }, onErr);
     db.collection("customers").onSnapshot(function(snap){
-      console.log("[subscribeAll] customers snapshot", snap.docs.length);
       state.customers = snap.docs.map(toObj).sort(function(a,b){return (b.registeredDate||"").localeCompare(a.registeredDate||"");});
       state.loaded.customers=true; render();
     }, onErr);
     db.collection("members").onSnapshot(function(snap){
-      console.log("[subscribeAll] members snapshot", snap.docs.length);
       state.members = snap.docs.map(toObj); state.loaded.members=true; state.offlineMode=false; updateLoginHint();
       // Keep the logged-in user's admin flag in sync if another admin
       // changes it (or their own record) while they're signed in.
@@ -820,7 +804,6 @@
     }, onErr);
   }
   function onErr(e){
-    console.log("[onErr]", e);
     toast("同期エラー: "+(e&&e.code||"unknown"));
     // A read error on some collection means its onSnapshot will never call
     // back with real data. setPreview() only backfills collections that
@@ -937,8 +920,9 @@
   function renderShell(){
     var nav = document.getElementById("mainnav");
     var highlight = SUBPAGES[state.tab] ? state.returnTab : state.tab;
-    var visibleTabs = TABS.filter(function(t){ return t.id!=="settings" || state.isAdmin; });
-    nav.innerHTML = visibleTabs.map(function(t){
+    // 設定 is now open to everyone (it holds each person's own 個人情報);
+    // only the 会社情報 editing and the 管理画面 section inside it are admin-only.
+    nav.innerHTML = TABS.map(function(t){
       return '<button class="navbtn'+(highlight===t.id?" active":"")+'" data-tab="'+t.id+'">'+t.icon()+'<span>'+t.label+'</span></button>';
     }).join("");
     document.getElementById("bell-icon").innerHTML = iBell()+(state.tasks.filter(overdueOrToday).length? '<span class="bell-dot">'+state.tasks.filter(overdueOrToday).length+'</span>':'');
@@ -953,7 +937,6 @@
   function overdueOrToday(t){ return !t.done && t.dueDate<=todayISO(); }
 
   function setTab(id){
-    if(id==="settings" && !state.isAdmin){ toast("設定の変更は管理者のみ行えます"); return; }
     state.tab=id; state.sidebarOpen=false; if(!SUBPAGES[id]) state.returnTab=id; render();
   }
   function goProjectForm(mode, project){ state.formMode=mode||state.returnTab; state.editingProject=project||null; state.tab="project-form"; render(); }
@@ -983,7 +966,7 @@
     else if(state.tab==="members") c.innerHTML = banner+renderMembers();
     else if(state.tab==="customers") c.innerHTML = banner+renderCustomers();
     else if(state.tab==="files") c.innerHTML = banner+renderFiles();
-    else if(state.tab==="settings") c.innerHTML = banner+(state.isAdmin ? renderSettings() : emptyState(iBox,"管理者のみ閲覧できます",""));
+    else if(state.tab==="settings") c.innerHTML = banner+renderSettings();
     else if(state.tab==="project-form") c.innerHTML = banner+renderProjectForm();
     else if(state.tab==="project-detail") c.innerHTML = banner+renderProjectDetail();
     else if(state.tab==="member-form") c.innerHTML = banner+renderMemberForm();
@@ -1644,18 +1627,134 @@
   }
 
   /* ============ SETTINGS ============ */
+  // 設定 has three sections: 会社情報 (everyone can view, admins edit),
+  // 個人情報 (each person edits only their own record), and 管理画面
+  // (admins only: stats, permission/password management, backup).
+  function settingsSections(){
+    var s = [["company","会社情報"],["personal","個人情報"]];
+    if(state.isAdmin) s.push(["admin","管理画面"]);
+    return s;
+  }
+  function myMember(){
+    if(!state.myName) return null;
+    return state.members.find(function(m){ return m.name===state.myName; }) || null;
+  }
   function renderSettings(){
-    var s = state.orgSettings;
+    var sections = settingsSections();
+    if(!sections.some(function(x){return x[0]===state.settingsSeg;})) state.settingsSeg = "company";
     var html = '<h1 class="pagetitle">設定</h1><div style="height:14px"></div>';
-    html += '<div class="card" style="padding:20px;max-width:480px;display:flex;flex-direction:column;gap:14px">';
-    html += '<h2 style="font-size:13.5px;margin-bottom:4px">組織情報</h2>';
-    html += field("会社名", '<input type="text" id="set-company" value="'+esc(s.companyName)+'">');
-    html += field("代表者名", '<input type="text" id="set-rep" value="'+esc(s.representative)+'">');
-    html += field("住所", '<input type="text" id="set-address" value="'+esc(s.address)+'">');
-    html += field("電話番号", '<input type="text" id="set-phone" value="'+esc(s.phone)+'">');
-    html += '<div><button class="btn primary" id="set-save">保存する</button></div>';
+    html += '<div class="segmented" style="margin-bottom:16px">'+sections.map(function(x){
+      return '<div class="segopt'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+x[1]+'</div>';
+    }).join("")+'</div>';
+    if(state.settingsSeg==="personal") html += renderSettingsPersonal();
+    else if(state.settingsSeg==="admin") html += renderSettingsAdmin();
+    else html += renderSettingsCompany();
+    return html;
+  }
+
+  function renderSettingsCompany(){
+    var s = state.orgSettings;
+    var ro = state.isAdmin ? "" : " disabled";
+    var html = '<div class="card" style="padding:20px;max-width:520px;display:flex;flex-direction:column;gap:14px">';
+    html += '<h2 style="font-size:13.5px;margin-bottom:4px">会社情報</h2>';
+    if(!state.isAdmin) html += '<div style="font-size:11.5px;color:var(--ink-faint)">会社情報の編集は管理者のみ行えます</div>';
+    html += field("会社名", '<input type="text" id="set-company" value="'+esc(s.companyName)+'"'+ro+'>');
+    html += field("代表者名", '<input type="text" id="set-rep" value="'+esc(s.representative)+'"'+ro+'>');
+    html += field("郵便番号", '<input type="text" id="set-zip" placeholder="例：020-0000" value="'+esc(s.zip||"")+'"'+ro+'>');
+    html += field("住所", '<input type="text" id="set-address" value="'+esc(s.address)+'"'+ro+'>');
+    html += field("電話番号", '<input type="text" id="set-phone" value="'+esc(s.phone)+'"'+ro+'>');
+    html += field("FAX番号", '<input type="text" id="set-fax" value="'+esc(s.fax||"")+'"'+ro+'>');
+    html += field("代表メールアドレス", '<input type="email" id="set-email" value="'+esc(s.email||"")+'"'+ro+'>');
+    html += field("ウェブサイト", '<input type="text" id="set-website" placeholder="https://" value="'+esc(s.website||"")+'"'+ro+'>');
+    if(state.isAdmin) html += '<div><button class="btn primary" id="set-save">保存する</button></div>';
     html += '</div>';
     return html;
+  }
+
+  function renderSettingsPersonal(){
+    if(!state.loaded.members) return skeleton();
+    var me = myMember();
+    if(!me) return emptyState(iUsers,"ご自身のメンバー情報が見つかりません","メンバー一覧に登録されている氏名でログインしてください");
+    var perm = memberPermission(me);
+    var html = '<div class="card" style="padding:20px;max-width:520px;display:flex;flex-direction:column;gap:14px">';
+    html += '<h2 style="font-size:13.5px;margin-bottom:4px">個人情報</h2>';
+    html += '<div style="display:flex;align-items:center;gap:12px"><span class="mini-avatar" style="background:'+avaColor(me.name)+';width:44px;height:44px;font-size:16px">'+esc(initials(me.name))+'</span>'+
+      '<div><div style="font-weight:700;font-size:14px">'+esc(me.name)+'</div><div style="font-size:11.5px;color:var(--ink-faint)">'+esc(me.company||"")+(me.store?" ／ "+esc(me.store):"")+'</div></div></div>';
+    html += '<div class="kv" style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--ink-soft)">'+
+      '<span class="tag'+(perm==="admin"?"":" muted")+'">'+esc(permissionLabel(perm))+'</span>'+
+      (me.roles||[]).map(function(r){return '<span class="tag muted">'+esc(r)+'</span>';}).join("")+'</div>';
+    html += '<div style="font-size:11.5px;color:var(--ink-faint)">氏名（ログインID）・所属・店舗・職種・権限の変更は管理者にご依頼ください</div>';
+    html += field("ふりがな", '<input type="text" id="me-kana" value="'+esc(me.kana||"")+'">');
+    html += field("携帯番号", '<input type="tel" id="me-phone" value="'+esc(me.phone||"")+'">');
+    html += field("メールアドレス", '<input type="email" id="me-email" value="'+esc(me.email||"")+'">');
+    html += '<div><button class="btn primary" id="me-save">個人情報を保存する</button></div>';
+    html += '</div>';
+
+    html += '<div class="card" style="padding:20px;max-width:520px;display:flex;flex-direction:column;gap:14px;margin-top:16px">';
+    html += '<h2 style="font-size:13.5px;margin-bottom:4px">パスワードの変更</h2>';
+    html += field("現在のパスワード", '<input type="password" id="me-pw-old" autocomplete="current-password">');
+    html += field("新しいパスワード", '<input type="password" id="me-pw-new" autocomplete="new-password">');
+    html += field("新しいパスワード（確認）", '<input type="password" id="me-pw-new2" autocomplete="new-password">');
+    html += '<div><button class="btn" id="me-pw-save">パスワードを変更する</button></div>';
+    html += '</div>';
+    return html;
+  }
+
+  function renderSettingsAdmin(){
+    if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
+    if(!state.loaded.members || !state.loaded.projects) return skeleton();
+    var counts = {admin:0, general:0, external:0};
+    state.members.forEach(function(m){ var p=memberPermission(m); counts[p]=(counts[p]||0)+1; });
+    var stat = function(label, val){ return '<div class="card" style="padding:14px 16px;min-width:120px;flex:1"><div style="font-size:11px;color:var(--ink-faint);font-weight:600">'+label+'</div><div class="num" style="font-size:22px;font-weight:700;margin-top:4px">'+val+'</div></div>'; };
+    var html = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">'+
+      stat("メンバー（全体）", state.members.length)+
+      stat("管理者", counts.admin)+
+      stat("一般", counts.general)+
+      stat("外部", counts.external)+
+      stat("案件", state.projects.length)+
+      stat("顧客", state.customers.length)+
+    '</div>';
+
+    html += '<h2 style="font-size:13.5px;margin:4px 0 10px">メンバー権限・パスワード管理</h2>';
+    html += '<div class="tablewrap"><table><thead><tr><th>氏名</th><th>所属会社</th><th>権限</th><th></th></tr></thead><tbody>';
+    html += state.members.map(function(m){
+      var perm = memberPermission(m);
+      return '<tr class="rowhover"><td><div class="member-name"><span class="mini-avatar" style="background:'+avaColor(m.name)+'">'+esc(initials(m.name))+'</span>'+esc(m.name)+'</div></td>'+
+        '<td>'+esc(m.company||"—")+'</td>'+
+        '<td><select class="perm-select" data-perm-select="'+m.id+'">'+PERMISSION_LEVELS.map(function(p){
+          return '<option value="'+p[0]+'"'+(p[0]===perm?" selected":"")+'>'+p[1]+'</option>';
+        }).join("")+'</select></td>'+
+        '<td style="white-space:nowrap"><button class="btn sm" data-reset-pw="'+m.id+'">パスワードを初期化</button></td></tr>';
+    }).join("");
+    html += '</tbody></table></div>';
+    html += '<div style="font-size:11.5px;color:var(--ink-faint);margin:8px 0 18px">メンバーの追加・削除は「メンバー」タブから行えます。パスワードの初期化は「1234」に戻します。</div>';
+
+    html += '<h2 style="font-size:13.5px;margin:4px 0 10px">データの状態とバックアップ</h2>';
+    html += '<div class="card" style="padding:16px 18px;max-width:520px;display:flex;flex-direction:column;gap:10px">';
+    html += '<div class="side-stat" style="padding:0;border:none">接続モード<b style="font-size:12.5px">'+(state.offlineMode?'オフライン（デモ）':(window.claude?'claude.ai':'Firebase'))+'</b></div>';
+    html += '<div class="side-stat" style="padding:0;border:none">ログイン中<b style="font-size:12.5px">'+esc(state.myName||"")+'</b></div>';
+    html += '<div><button class="btn outline" id="admin-backup">全データをバックアップ（JSON）</button></div>';
+    html += '</div>';
+    return html;
+  }
+
+  function backupAllData(){
+    var payload = {
+      exportedAt: new Date().toISOString(),
+      orgSettings: state.orgSettings,
+      members: state.members.map(function(m){ var c=Object.assign({},m); delete c.password; return c; }),
+      projects: state.projects, customers: state.customers, tasks: state.tasks, chats: state.chats
+    };
+    var blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
+    var filename = "genba-backup-"+todayISO()+".json";
+    if(downloadsCap){
+      downloadsCap.save({filename:filename, data:blob}).catch(function(){ toast("ダウンロードがキャンセルされました"); });
+    } else {
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = filename;
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    }
   }
 
   /* ============ modal / small forms ============ */
@@ -1733,7 +1832,13 @@
   /* ============ db writes ============ */
   function writeDoc(col,id,data,msg,after){
     if(!state.canWrite){ toast("この操作を行う権限がありません"); return; }
-    if(col==="members" && !state.isAdmin){ toast("メンバーの変更は管理者のみ行えます"); return; }
+    if(col==="members" && !state.isAdmin){
+      // Non-admins may only edit their OWN contact fields / password
+      // (個人情報) -- never name, company, store, roles or permission.
+      var me = myMember();
+      var selfOk = !!(id && me && me.id===id && Object.keys(data).every(function(k){ return ["kana","phone","email","password"].indexOf(k)!==-1; }));
+      if(!selfOk){ toast("メンバーの変更は管理者のみ行えます"); return; }
+    }
     data.updatedAt = new Date().toISOString();
     if(!db){
       var arr = state[col];
@@ -1923,21 +2028,69 @@
       if(chatInput) chatInput.addEventListener("keydown", function(e){ if(e.key==="Enter") doSend(); });
     }
 
+    c.querySelectorAll("[data-setseg]").forEach(function(el){ el.addEventListener("click", function(){ state.settingsSeg = el.getAttribute("data-setseg"); render(); }); });
+
     var setSave = document.getElementById("set-save");
     if(setSave){
       setSave.addEventListener("click", function(){
-        if(!state.isAdmin){ toast("設定の変更は管理者のみ行えます"); return; }
+        if(!state.isAdmin){ toast("会社情報の変更は管理者のみ行えます"); return; }
+        var val = function(id){ return document.getElementById(id).value.trim(); };
+        var companyName = val("set-company");
+        if(!companyName){ toast("会社名を入力してください"); return; }
         state.orgSettings = {
-          companyName: document.getElementById("set-company").value.trim(),
-          representative: document.getElementById("set-rep").value.trim(),
-          address: document.getElementById("set-address").value.trim(),
-          phone: document.getElementById("set-phone").value.trim()
+          companyName: companyName,
+          representative: val("set-rep"),
+          zip: val("set-zip"),
+          address: val("set-address"),
+          phone: val("set-phone"),
+          fax: val("set-fax"),
+          email: val("set-email"),
+          website: val("set-website")
         };
         renderShell();
-        if(db){ db.doc("settings/org").set(state.orgSettings).then(function(){toast("設定を保存しました");}).catch(function(){toast("保存に失敗しました");}); }
-        else { toast("設定を保存しました（プレビューのみ）"); }
+        if(db){ db.doc("settings/org").set(state.orgSettings).then(function(){toast("会社情報を保存しました");}).catch(function(){toast("保存に失敗しました");}); }
+        else { toast("会社情報を保存しました（プレビューのみ）"); }
       });
     }
+
+    var meSave = document.getElementById("me-save");
+    if(meSave){
+      meSave.addEventListener("click", function(){
+        var me = myMember(); if(!me) return;
+        var val = function(id){ return document.getElementById(id).value.trim(); };
+        writeDoc("members", me.id, {kana:val("me-kana"), phone:val("me-phone"), email:val("me-email")}, "個人情報を保存しました");
+      });
+    }
+    var mePw = document.getElementById("me-pw-save");
+    if(mePw){
+      mePw.addEventListener("click", function(){
+        var me = myMember(); if(!me) return;
+        var oldPw = document.getElementById("me-pw-old").value;
+        var newPw = document.getElementById("me-pw-new").value;
+        var newPw2 = document.getElementById("me-pw-new2").value;
+        if(oldPw!==me.password){ toast("現在のパスワードが正しくありません"); return; }
+        if(!newPw || newPw.length<4){ toast("新しいパスワードは4文字以上で入力してください"); return; }
+        if(newPw!==newPw2){ toast("新しいパスワード（確認）が一致しません"); return; }
+        writeDoc("members", me.id, {password:newPw}, "パスワードを変更しました", function(){
+          try{ if(localStorage.getItem("gc_login_password")!==null) localStorage.setItem("gc_login_password", newPw); }catch(e){}
+        });
+      });
+    }
+
+    c.querySelectorAll("[data-reset-pw]").forEach(function(el){
+      el.addEventListener("click", function(){
+        var id = el.getAttribute("data-reset-pw");
+        var m = state.members.find(function(x){ return x.id===id; });
+        if(!m) return;
+        openModal("パスワードの初期化",'<div style="font-size:13px">'+esc(m.name)+' さんのパスワードを「1234」に戻します。よろしいですか？</div>',
+          '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-reset-confirm">初期化する</button>');
+        document.getElementById("f-reset-confirm").onclick = function(){
+          writeDoc("members", id, {password:"1234"}, m.name+" さんのパスワードを初期化しました");
+        };
+      });
+    });
+    var backupBtn = document.getElementById("admin-backup");
+    if(backupBtn) backupBtn.addEventListener("click", function(){ if(!state.isAdmin) return; backupAllData(); });
   }
 
   document.addEventListener("click", function(e){
