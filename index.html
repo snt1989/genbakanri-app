@@ -127,6 +127,8 @@
   .iconbtn{width:30px;height:30px;border-radius:8px;border:none;background:transparent;color:var(--ink-faint);cursor:pointer;display:flex;align-items:center;justify-content:center;}
   .iconbtn:hover{background:var(--surface-2);color:var(--ink);}
 
+  select.status-quick{appearance:none;-webkit-appearance:none;border:none;cursor:pointer;font-family:inherit;width:auto;margin:0;padding:4px 24px 4px 11px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23fff' stroke-width='3.4' stroke-linecap='round'/%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23555' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 9px center}
+  select.status-quick:hover{filter:brightness(.96)}
   .badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:4px 11px;border-radius:999px;white-space:nowrap;}
   .badge.fill-black{background:var(--black-badge);color:var(--surface);}
   .badge.fill-green{background:var(--accent);color:var(--accent-ink);}
@@ -663,6 +665,13 @@
     "施工中":"fill-green","施工完了":"fill-gray","清算済":"fill-info","失注":"line-red"
   };
   var STATUS_PALETTE = ["line-green","fill-info","fill-black","line-gray","fill-gray","fill-green"];
+  // 進捗バッジ。編集権限があればその場でプルダウンから変更できる
+  function statusBadge(p){
+    var cur = p.status||"";
+    if(!state.canWrite || isExternalViewer()) return '<span class="badge '+statusStyle(cur)+'">'+esc(cur||"未入力")+'</span>';
+    var opts = STATUS_LIST.slice(); if(cur && opts.indexOf(cur)===-1) opts.push(cur); if(!cur) opts.unshift("");
+    return '<select class="badge status-quick '+statusStyle(cur)+'" data-status-quick="'+esc(p.id)+'" title="クリックして進捗を変更">'+opts.map(function(o){ return '<option value="'+esc(o)+'"'+(o===cur?" selected":"")+'>'+esc(o||"未入力")+'</option>'; }).join("")+'</select>';
+  }
   function statusStyle(st){
     if(STATUS_STYLE[st]) return STATUS_STYLE[st];
     var h=0; for(var i=0;i<(st||"").length;i++) h=(h*31+st.charCodeAt(i))%STATUS_PALETTE.length;
@@ -1816,7 +1825,7 @@
             '<div class="cell-sub">'+(hiddenFor(p,"pr_addr")?"":esc(propertyAddressOf(p).full))+'</div>'+
             '<div class="tagrow">'+names.map(function(a){return '<span class="tag">'+esc(a)+'</span>';}).join("")+'</div>'+
           '</td>'+
-          '<td>'+(hiddenFor(p,"p_status")?"—":'<span class="badge '+statusStyle(p.status)+'">'+esc(p.status||"未入力")+'</span>')+'</td>'+
+          '<td>'+(hiddenFor(p,"p_status")?"—":statusBadge(p))+'</td>'+
           '<td class="num">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.startDate))+'</td>'+
           '<td class="num">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.endDate))+'</td>'+
           '<td class="num">'+(hiddenFor(p,"p_amount")?"—":fmtYen(p.amount))+'</td>'+
@@ -2272,7 +2281,7 @@
     };
 
     var rows = '';
-    var badges = (hiddenFor(p,"p_status") ? '' : '<span class="badge '+statusStyle(p.status)+'">'+esc(p.status||"未入力")+'</span>'+lockTag("p_status")) +
+    var badges = (hiddenFor(p,"p_status") ? '' : statusBadge(p)+lockTag("p_status")) +
       (hiddenFor(p,"p_amount") ? '' : '<span class="num" style="font-weight:700">'+fmtYen(p.amount)+'</span>'+lockTag("p_amount"));
     rows += '<div class="kv" style="display:flex;align-items:center;gap:14px">'+badges+'<button class="btn sm" style="margin-left:auto" data-edit-project="'+p.id+'">編集</button></div>';
     rows += kvRow("案件名", esc(p.name));
@@ -4477,6 +4486,13 @@
 
     c.querySelectorAll("[data-goto]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); setTab(el.getAttribute("data-goto")); }); });
     c.querySelectorAll("[data-open-project]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var id=el.getAttribute("data-open-project"); if(id) goProjectDetail(id); }); });
+    c.querySelectorAll("[data-status-quick]").forEach(function(el){
+      el.addEventListener("click", function(ev){ ev.stopPropagation(); });
+      el.addEventListener("change", function(){
+        var id = el.getAttribute("data-status-quick"), v = el.value;
+        writeDoc("projects", id, {status:v}, "進捗を「"+(v||"未入力")+"」に変更しました");
+      });
+    });
     c.querySelectorAll("[data-pd-goto]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); state.tab = el.getAttribute("data-pd-goto"); render(); }); });
     c.querySelectorAll("[data-pd-add]").forEach(function(el){ el.addEventListener("click", function(){
       var k = el.getAttribute("data-pd-add"), pid = el.getAttribute("data-pid");
