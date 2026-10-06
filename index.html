@@ -643,6 +643,7 @@
 
   var TABS = [
     {id:"home", label:"ホーム", icon:iHome},
+    {id:"tasks", label:"タスク管理", icon:iTaskList},
     {id:"sales", label:"営業案件一覧", icon:iBriefcase},
     {id:"construction", label:"施工案件一覧", icon:iDoc},
     {id:"calendar", label:"カレンダー", icon:iCalendar},
@@ -686,7 +687,7 @@
     salesFilter:{name:"",status:STATUS_LIST.slice(),type:"all",store:"all",assignees:[],page:1},
     constFilter:{name:"",status:["契約済","施工中"],type:"all",store:"all",assignees:[],page:1},
     filesFilter:{project:"all",kind:"all"},
-    masterTab:"project", calView:"grid", ganttView:"chart", calMonth:null, calFilter:{project:true,step:true,task:true,event:true}, ganttStart:null, ganttScale:"1m", ganttHideDone:true, ganttClosed:{}, filesView:"all", pfFolder:"", pfSort:"date_desc", pfView:"thumb", pfMine:false, pfSel:{}, filesProjectId:null, projectFilesKind:"all", filesBack:"detail",
+    masterTab:"project", taskFilter:{status:"open",project:"all",assignee:"all",q:""}, calView:"grid", ganttView:"chart", calMonth:null, calFilter:{project:true,step:true,task:true,event:true}, ganttStart:null, ganttScale:"1m", ganttHideDone:true, ganttClosed:{}, filesView:"all", pfFolder:"", pfSort:"date_desc", pfView:"thumb", pfMine:false, pfSel:{}, filesProjectId:null, projectFilesKind:"all", filesBack:"detail",
     memberSeg:"all",
     bulk:{on:false,entity:null,selected:{},field:"",value:""},
     settingsSeg:"company",
@@ -1098,6 +1099,7 @@
   function svgIcon(p,size){ return '<svg width="'+(size||17)+'" height="'+(size||17)+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+p+'</svg>'; }
   function iCalendar(){ return svgIcon('<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>'); }
   function iGantt(){ return svgIcon('<path d="M4 6h9M7 12h11M10 18h9"/><path d="M4 3v18"/>'); }
+  function iTaskList(){ return svgIcon('<path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.3 1.3L7 5M3.5 12l1.3 1.3L7 11M3.5 18l1.3 1.3L7 17"/>'); }
   function iHome(){ return svgIcon('<path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/><path d="M9.5 20v-6h5v6"/>'); }
   function iBriefcase(){ return svgIcon('<rect x="3" y="7.5" width="18" height="12" rx="1.8"/><path d="M8 7.5V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1.5"/><path d="M3 12.5h18"/>'); }
   function iBriefcase2(){ return iBriefcase(); }
@@ -1196,6 +1198,7 @@
     if(state.tab==="home") c.innerHTML = banner+renderHome();
     else if(state.tab==="sales") c.innerHTML = banner+renderProjectList("sales");
     else if(state.tab==="construction") c.innerHTML = banner+renderProjectList("construction");
+    else if(state.tab==="tasks") c.innerHTML = banner+renderTasks();
     else if(state.tab==="calendar") c.innerHTML = banner+renderCalendar();
     else if(state.tab==="schedule") c.innerHTML = banner+renderSchedule();
     else if(state.tab==="chat") c.innerHTML = renderChat();
@@ -1252,7 +1255,7 @@
     if(kind==="project"||kind==="handover") goProjectDetail(id);
     else if(kind==="step"){ var s=state.steps.find(function(x){return x.id===id;}); if(s) openStepModal(s); }
     else if(kind==="event"){ var e=state.events.find(function(x){return x.id===id;}); if(e) openEventModal(e); }
-    else if(kind==="task") setTab("home");
+    else if(kind==="task") setTab("tasks");
   }
   function localToday(){ return isoOf(new Date()); }
 
@@ -1603,6 +1606,63 @@
     e.preventDefault(); e.stopPropagation(); closeModal(); openScheduleItem(kind,id);
   }, true);
 
+  /* ============ タスク管理 ============ */
+  function renderTasks(){
+    if(!state.loaded.tasks || !state.loaded.projects || !state.loaded.members) return skeleton();
+    var f = state.taskFilter, today = todayISO();
+    var all = state.tasks;
+    var open = all.filter(function(t){ return !t.done; });
+    var stat = function(label, val, color){ return '<div class="card" style="padding:12px 16px;min-width:110px;flex:1"><div style="font-size:11px;color:var(--ink-faint);font-weight:600">'+label+'</div><div class="num" style="font-size:22px;font-weight:700;margin-top:2px;color:'+(color||'inherit')+'">'+val+'</div></div>'; };
+    var overdue = open.filter(function(t){ return t.dueDate<today; }).length;
+    var todayN = open.filter(function(t){ return t.dueDate===today; }).length;
+    var week = open.filter(function(t){ return t.dueDate>today && t.dueDate<=addDays(today,7); }).length;
+    var list = filterTasks();
+    var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">タスク管理</h1>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+csvToolbar("tasks")+'<button class="btn primary" data-task-add="">'+iPlus()+' タスクを追加</button></div></div><div style="height:12px"></div>';
+    html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'+stat("未完了",open.length)+stat("期限超過",overdue,overdue?'var(--danger)':'')+stat("本日期限",todayN)+stat("7日以内",week)+stat("完了",all.length-open.length)+'</div>';
+    html += '<div class="segmented" style="margin-bottom:12px">'+[["open","未完了"],["done","完了"],["all","すべて"]].map(function(x){ return '<div class="segopt'+(f.status===x[0]?' active':'')+'" data-task-status="'+x[0]+'">'+x[1]+'</div>'; }).join("")+'</div>';
+    var projs = state.projects.slice().sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");});
+    var names = state.members.map(function(m){return m.name;});
+    html += '<div class="card filter-card"><div class="filter-line">'+
+      '<div class="fitem"><span>検索</span><input type="text" id="tk-q" placeholder="タイトル・案件名・メモ" value="'+esc(f.q)+'"></div>'+
+      '<div class="fitem" style="min-width:200px"><span>案件</span><select id="tk-project"><option value="all">すべての案件</option>'+projs.map(function(p){ return '<option value="'+esc(p.id)+'"'+(f.project===p.id?' selected':'')+'>'+esc(p.name)+'</option>'; }).join("")+'</select></div>'+
+      '<div class="fitem"><span>担当者</span><select id="tk-assignee"><option value="all">すべて</option>'+names.map(function(n){ return '<option value="'+esc(n)+'"'+(f.assignee===n?' selected':'')+'>'+esc(n)+'</option>'; }).join("")+'</select></div>'+
+    '</div></div>';
+    html += '<div class="summary-line"><span><b>'+list.length+'</b>件 / 全'+all.length+'件</span></div>';
+    if(!list.length){ return html + emptyState(iTaskList,"タスクがありません","「タスクを追加」から登録できます"); }
+    html += '<div class="tablewrap"><table><thead><tr><th style="width:44px">完了</th><th>タスク</th><th>案件</th><th>担当者</th><th>期限</th><th></th></tr></thead><tbody>';
+    html += list.map(function(t){
+      var d = t.dueDate ? daysUntil(t.dueDate) : 0;
+      var rel = t.done ? '<span style="color:var(--ink-faint)">完了</span>' : (d<0 ? '<span style="color:var(--danger);font-weight:700">'+Math.abs(d)+'日超過</span>' : (d===0 ? '<span style="color:var(--danger);font-weight:700">本日</span>' : '<span style="color:var(--ink-faint)">あと'+d+'日</span>'));
+      return '<tr class="rowhover" data-row-id="'+esc(t.id)+'"><td><input type="checkbox" data-task-toggle="'+esc(t.id)+'"'+(t.done?' checked':'')+' style="width:auto"></td>'+
+        '<td><div class="cell-name"'+(t.done?' style="text-decoration:line-through;color:var(--ink-faint)"':'')+'>'+esc(t.title||"")+'</div>'+(t.note?'<div class="cell-sub">'+esc(t.note)+'</div>':'')+'</td>'+
+        '<td>'+(t.projectName?'<a href="#" data-open-project="'+esc(t.projectId||"")+'">'+esc(t.projectName)+'</a>':'—')+'</td>'+
+        '<td>'+esc(t.assignee||"—")+'</td><td class="num">'+esc(fmtDate(t.dueDate))+'<div class="cell-sub">'+rel+'</div></td>'+
+        '<td style="white-space:nowrap"><button class="btn sm" data-task-edit="'+esc(t.id)+'">'+iEdit()+' 編集</button> <button class="iconbtn" data-task-del="'+esc(t.id)+'" title="削除">'+iTrash()+'</button></td></tr>';
+    }).join("");
+    return html + '</tbody></table></div>';
+  }
+  function openTaskModal(t){
+    var x = t || {dueDate:todayISO(), done:false};
+    var projs = state.projects.slice().sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");});
+    openModal(t?"タスクの編集":"タスクの追加",
+      field("タイトル",'<input type="text" id="f-ttitle" maxlength="80" placeholder="例）見積書送付、現地確認" value="'+esc(x.title||"")+'">')+
+      '<div class="field-row">'+field("期限",'<input type="date" id="f-tdue" value="'+esc(x.dueDate||"")+'">')+
+      field("担当者",'<select id="f-tassg"><option value="">（未設定）</option>'+state.members.map(function(m){ return '<option value="'+esc(m.name)+'"'+(m.name===x.assignee?' selected':'')+'>'+esc(m.name)+'</option>'; }).join("")+'</select>')+'</div>'+
+      field("案件（任意）",'<select id="f-tproj">'+projectOptions(x.projectId)+'</select>')+
+      field("メモ",'<textarea id="f-tnote" style="min-height:60px">'+esc(x.note||"")+'</textarea>')+
+      '<label class="radioopt" style="margin-top:4px"><input type="checkbox" id="f-tdone"'+(x.done?' checked':'')+'> 完了にする</label>',
+      (t?'<button class="btn" id="f-tdel" style="color:var(--danger);margin-right:auto">'+iTrash()+' 削除</button>':'')+'<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-tsave">'+(t?"保存する":"追加する")+'</button>');
+    if(t) document.getElementById("f-tdel").addEventListener("click", function(){ confirmDelete("このタスクを削除しますか？", function(){ deleteDoc("tasks", t.id, "タスクを削除しました"); }); });
+    document.getElementById("f-tsave").addEventListener("click", function(){
+      var title = document.getElementById("f-ttitle").value.trim(), due = document.getElementById("f-tdue").value;
+      if(!title){ toast("タイトルを入力してください"); return; }
+      if(!due){ toast("期限を入力してください"); return; }   // tasks are listed ordered by dueDate
+      var pid = document.getElementById("f-tproj").value, pr = state.projects.find(function(y){return y.id===pid;});
+      writeDoc("tasks", t?t.id:null, {title:title, dueDate:due, assignee:document.getElementById("f-tassg").value, projectId:pid||"", projectName:pr?pr.name:"", note:document.getElementById("f-tnote").value.trim(), done:document.getElementById("f-tdone").checked}, t?"タスクを更新しました":"タスクを追加しました");
+    });
+  }
+
   /* ============ HOME ============ */
   function renderHome(){
     if(!state.loaded.tasks || !state.loaded.projects) return skeleton();
@@ -1628,7 +1688,7 @@
       }).join("");
     }
     html += '</div>';
-    if(todo.length>8) html += '<div style="text-align:center;margin-top:16px"><button class="btn outline" data-goto="sales">もっと見る</button></div>';
+    if(todo.length>8) html += '<div style="text-align:center;margin-top:16px"><button class="btn outline" data-goto="tasks">もっと見る</button></div>';
     html += '</div>';
 
     html += '<div style="display:flex;flex-direction:column;gap:16px">';
@@ -3303,10 +3363,12 @@
         {key:"id",label:"ID",readonly:true},
         {key:"title",label:"タイトル"},
         {key:"projectName",label:"案件名"},
+        {key:"assignee",label:"担当者",bulk:true},
         {key:"dueDate",label:"期限",type:"date",bulk:true},
-        {key:"done",label:"完了",type:"bool",bulk:true}
+        {key:"done",label:"完了",type:"bool",bulk:true},
+        {key:"note",label:"メモ"}
       ],
-      sample:{title:"見積書送付",projectName:"山田様邸 除草作業",dueDate:"2026-10-15",done:"いいえ"},
+      sample:{title:"見積書送付",projectName:"山田様邸 除草作業",assignee:"阿部 晋太郎",dueDate:"2026-10-15",done:"いいえ",note:""},
       all:function(){ return state.tasks; },
       fileLabel:function(){ return "タスク一覧"; },
       finalize:function(patch, existing){
@@ -3439,8 +3501,18 @@
       return true;
     }).sort(function(a,b){return (b.uploadedAt||"").localeCompare(a.uploadedAt||"");});
   }
+  function taskMatches(t, f){
+    if(f.status==="open" && t.done) return false;
+    if(f.status==="done" && !t.done) return false;
+    if(f.project!=="all" && t.projectId!==f.project) return false;
+    if(f.assignee!=="all" && (t.assignee||"")!==f.assignee) return false;
+    if(f.q && ((t.title||"")+(t.projectName||"")+(t.note||"")).indexOf(f.q)===-1) return false;
+    return true;
+  }
   function filterTasks(){
-    return state.tasks.slice().sort(function(a,b){return (a.dueDate||"").localeCompare(b.dueDate||"");});
+    var list = state.tasks.slice();
+    if(state.tab==="tasks") list = list.filter(function(t){ return taskMatches(t, state.taskFilter); });
+    return list.sort(function(a,b){return (a.dueDate||"").localeCompare(b.dueDate||"");});
   }
   function filterEvents(){ return state.events.slice().sort(function(a,b){ return (a.date||"").localeCompare(b.date||""); }); }
   function filterSteps(){ return state.steps.slice().sort(function(a,b){ return (a.projectName||"").localeCompare(b.projectName||"") || (a.startDate||"").localeCompare(b.startDate||""); }); }
@@ -3448,7 +3520,7 @@
     switch(state.tab){
       case "calendar": return state.calView==="list" ? "events" : null;
       case "schedule": return state.ganttView==="list" ? "steps" : null;
-      case "home": return "tasks";
+      case "home": case "tasks": return "tasks";
       case "sales": case "construction": return "projects";
       case "customers": return "customers";
       case "members": return "members";
@@ -3980,6 +4052,17 @@
       pfInput.value = "";
     });
     if(state.tab==="calendar"||state.tab==="schedule") bindScheduleEvents(c);
+    if(state.tab==="tasks"){
+      var tf = state.taskFilter;
+      c.querySelectorAll("[data-task-status]").forEach(function(el){ el.addEventListener("click", function(){ tf.status = el.getAttribute("data-task-status"); render(); }); });
+      var tq = document.getElementById("tk-q"); if(tq) tq.addEventListener("keydown", function(e){ if(e.key==="Enter"){ tf.q = tq.value.trim(); render(); } }), tq.addEventListener("change", function(){ tf.q = tq.value.trim(); render(); });
+      var tp = document.getElementById("tk-project"); if(tp) tp.addEventListener("change", function(){ tf.project = tp.value; render(); });
+      var ta = document.getElementById("tk-assignee"); if(ta) ta.addEventListener("change", function(){ tf.assignee = ta.value; render(); });
+      c.querySelectorAll("[data-task-add]").forEach(function(el){ el.addEventListener("click", function(){ openTaskModal(null); }); });
+      c.querySelectorAll("[data-task-edit]").forEach(function(el){ el.addEventListener("click", function(){ var t=state.tasks.find(function(x){return x.id===el.getAttribute("data-task-edit");}); if(t) openTaskModal(t); }); });
+      c.querySelectorAll("[data-task-del]").forEach(function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-task-del"); confirmDelete("このタスクを削除しますか？", function(){ deleteDoc("tasks", id, "タスクを削除しました"); }); }); });
+      c.querySelectorAll("[data-task-toggle]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.stopPropagation(); }); el.addEventListener("change", function(){ writeDoc("tasks", el.getAttribute("data-task-toggle"), {done:el.checked}, el.checked?"タスクを完了しました":"タスクを未完了に戻しました"); }); });
+    }
     c.querySelectorAll("[data-pf-folder]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); state.pfFolder = el.getAttribute("data-pf-folder")||""; state.pfSel={}; render(); }); });
     var pfNew = document.getElementById("pf-newfolder");
     if(pfNew) pfNew.addEventListener("click", function(){ openFolderModal(state.filesProjectId, null); });
