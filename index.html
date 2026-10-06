@@ -1519,7 +1519,6 @@
       if(f.name && (p.name||"").indexOf(f.name)===-1 && propertyAddressOf(p).full.indexOf(f.name)===-1 && (p.address||"").indexOf(f.name)===-1) return false;
       if(f.status.length && p.status && f.status.indexOf(p.status)===-1) return false;
       if(f.type!=="all" && p.type!==f.type) return false;
-      if(f.store!=="all" && p.store!==f.store) return false;
       if(f.assignees.length){
         var names = normalizeAssignees(p.assignees).map(function(a){return a.name;});
         if(!names.some(function(n){return f.assignees.indexOf(n)!==-1;})) return false;
@@ -1545,7 +1544,6 @@
     html += '<div class="filter-line">'+
       '<div class="fitem" style="min-width:220px"><span>案件名・住所で検索</span><input type="text" id="flt-name" value="'+esc(f.name)+'" placeholder="案件名または住所"></div>'+
       '<div class="fitem"><span>案件種類</span><select id="flt-type"><option value="all">すべて</option>'+PROJECT_TYPES.map(function(t){return '<option value="'+esc(t)+'"'+(f.type===t?" selected":"")+'>'+esc(t)+'</option>';}).join("")+'</select></div>'+
-      '<div class="fitem"><span>店舗</span><select id="flt-store"><option value="all">すべて</option>'+STORES.map(function(s){return '<option value="'+esc(s)+'"'+(f.store===s?" selected":"")+'>'+esc(s)+'</option>';}).join("")+'</select></div>'+
       '<button class="btn primary" id="flt-search">'+iSearch()+' 検索する</button>'+
     '</div>';
     html += '<div class="fitem"><span>案件の進捗</span><div class="checkgroup">'+STATUS_LIST.map(function(s){
@@ -1639,7 +1637,6 @@
     html += formRow("案件の進捗", false, false, selectHtml("f-status", STATUS_LIST, selVal(p.status, state.formMode==="construction"?"契約済":"現地調査前")), "p_status");
     html += formRow("契約金額", false, false, '<div class="inline2" style="max-width:260px"><input type="number" id="f-amount" min="0" step="1000" value="'+(p.amount||0)+'"><span>円</span></div>', "p_amount");
     html += formRow("施工予定", false, false, '<div class="inline2" style="max-width:340px"><input type="date" id="f-start" value="'+(p.startDate||"")+'"><span>〜</span><input type="date" id="f-end" value="'+(p.endDate||"")+'"></div>', "p_period");
-    html += formRow("店舗", false, false, selectHtml("f-store", STORES, selVal(p.store, STORES[0])), "p_store");
     html += formRow("施工指示", false, false, '<textarea id="f-instruction" placeholder="例：なになにをやってください">'+esc(p.workInstruction||"")+'</textarea>', "p_instruction");
     html += formRow("引渡し日", false, false, '<input type="date" id="f-handover" value="'+(p.handoverDate||"")+'" style="max-width:200px">', "p_handover");
     html += '</div>';
@@ -1657,11 +1654,11 @@
   // p.secretFields = the list of keys marked 社外秘. External members never see
   // those items. Untouched projects use DEFAULT_SECRET (案件情報 + 顧客情報).
   var SECRET_HINT = {c_invoice:"適格請求書・事業所種別・法人番号", c_addr:"住所すべて", c_contact:"連絡先すべて"};
-  var DEFAULT_SECRET = ["p_type","p_status","p_amount","p_period","p_store","p_instruction","p_handover","c_name","c_invoice","c_contact","c_addr","c_notes"];
+  var DEFAULT_SECRET = ["p_type","p_status","p_amount","p_period","p_instruction","p_handover","c_name","c_invoice","c_contact","c_addr","c_notes"];
   var secretCtx = DEFAULT_SECRET.slice();   // set per screen via secretSet()
   // 管理画面で変更した初期設定（settings/secret）。未設定ならDEFAULT_SECRET。
   var SECRET_GROUPS = [
-    ["案件情報", [["p_type","案件種類"],["p_status","進捗"],["p_amount","契約金額"],["p_period","施工予定"],["p_store","店舗"],["p_instruction","施工指示"],["p_handover","引渡し日"]]],
+    ["案件情報", [["p_type","案件種類"],["p_status","進捗"],["p_amount","契約金額"],["p_period","施工予定"],["p_instruction","施工指示"],["p_handover","引渡し日"]]],
     ["物件情報", [["pr_type","物件種類／構造"],["pr_addr","物件住所"],["pr_notes","備考"]]],
     ["顧客情報", [["c_name","名前・ふりがな"],["c_invoice","適格請求書・事業所種別・法人番号"],["c_contact","連絡先（担当者・部署・メール・電話）"],["c_addr","住所"],["c_notes","社内メモ"]]]
   ];
@@ -1852,7 +1849,6 @@
         amount: parseInt(document.getElementById("f-amount").value||"0",10),
         startDate: document.getElementById("f-start").value,
         endDate: document.getElementById("f-end").value,
-        store: document.getElementById("f-store").value,
         workInstruction: document.getElementById("f-instruction").value.trim(),
         handoverDate: document.getElementById("f-handover").value
       };
@@ -2029,7 +2025,6 @@
     rows += kvRow("案件名", esc(p.name));
     rows += kvRow("案件種類", esc(p.type||"—"), "p_type", p);
     rows += kvRow("施工予定", (p.startDate||p.endDate) ? (fmtDate(p.startDate)+" 〜 "+fmtDate(p.endDate)) : "-", "p_period", p);
-    rows += kvRow("店舗", esc(p.store||"-"), "p_store", p);
     rows += kvRow("施工指示", esc(p.workInstruction||"-"), "p_instruction", p);
     rows += kvRow("引渡し日", fmtDate(p.handoverDate), "p_handover", p);
     html += section("案件情報", rows, null);
@@ -2590,14 +2585,14 @@
   var MASTERS = [
     {key:"statuses", label:"案件進捗", arr:STATUS_LIST, note:"案件の進捗（一覧の絞り込み・登録画面）に出ます。契約済・施工中・施工完了・清算済・失注は集計に使うため削除できません。色は自動で付きます"},
     {key:"projectTypes", label:"案件種類", arr:PROJECT_TYPES, note:"案件の登録・編集の「案件種類」に出ます"},
-    {key:"stores", label:"店舗", arr:STORES, note:"案件・メンバーの「店舗」に出ます"},
+    {key:"stores", label:"店舗", arr:STORES, note:"メンバーの「店舗」に出ます"},
     {key:"roles", label:"職種", arr:ROLES, note:"メンバーの「職種」に出ます"},
     {key:"propertyTypes", label:"物件種類", arr:PROPERTY_TYPES, note:"物件情報の「物件種類」に出ます"},
     {key:"propertyStructures", label:"物件構造", arr:PROPERTY_STRUCTURES, note:"物件情報の「構造」に出ます"}
   ];
   // 画面ごとのタブ（店舗は案件・メンバーで共通の項目）
   var MASTER_TABS = [
-    ["project","案件",["statuses","projectTypes","stores"]],
+    ["project","案件",["statuses","projectTypes"]],
     ["property","物件情報",["propertyTypes","propertyStructures"]],
     ["member","メンバー",["roles","stores"]]
   ];
@@ -2625,7 +2620,7 @@
     var n = 0;
     if(m.key==="projectTypes") n = rawStore.projects.filter(function(p){return p.type===name;}).length;
     else if(m.key==="statuses") n = rawStore.projects.filter(function(p){return p.status===name;}).length;
-    else if(m.key==="stores") n = rawStore.projects.filter(function(p){return p.store===name;}).length + state.members.filter(function(x){return x.store===name;}).length;
+    else if(m.key==="stores") n = state.members.filter(function(x){return x.store===name;}).length;
     else if(m.key==="roles") n = state.members.filter(function(x){return (x.roles||[]).indexOf(name)!==-1;}).length;
     else if(m.key==="propertyTypes") n = rawStore.projects.filter(function(p){return p.propertyType===name;}).length;
     else if(m.key==="propertyStructures") n = rawStore.projects.filter(function(p){return p.propertyStructure===name;}).length;
@@ -2642,7 +2637,7 @@
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;max-width:1000px">';
     curTab[2].map(function(k){ return MASTERS.find(function(m){return m.key===k;}); }).forEach(function(m){
       html += '<div class="card" style="padding:16px 18px;display:flex;flex-direction:column;gap:8px">'+
-        '<h2 style="font-size:13.5px">'+esc(m.label)+(m.key==="stores"?' <span style="font-size:11px;font-weight:500;color:var(--ink-faint)">（案件・メンバー共通）</span>':'')+'</h2><div style="font-size:11px;color:var(--ink-faint)">'+esc(m.note)+'</div>'+
+        '<h2 style="font-size:13.5px">'+esc(m.label)+''+'</h2><div style="font-size:11px;color:var(--ink-faint)">'+esc(m.note)+'</div>'+
         '<textarea data-master-ta="'+m.key+'" style="min-height:170px;font-size:13px;line-height:1.7">'+esc(m.arr.join("\n"))+'</textarea>'+
         '<div style="font-size:11px;color:var(--ink-faint)">使用中： '+m.arr.map(function(n){ var u=masterUsage(m,n); return u?esc(n)+' '+u+'件':''; }).filter(Boolean).join(" ／ ")+'</div>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-master-save="'+m.key+'">'+iAdmin()+'保存する</button><button class="btn outline" data-master-reset="'+m.key+'">標準に戻す</button></div></div>';
@@ -2654,7 +2649,7 @@
   // マスタから項目を削除すると、その項目を使っていた登録済みデータは「未入力」に変わる。
   var MASTER_FIELDS = {
     statuses:[["projects","status"]], projectTypes:[["projects","type"]],
-    stores:[["projects","store"],["members","store"]],
+    stores:[["members","store"]],
     propertyTypes:[["projects","propertyType"]], propertyStructures:[["projects","propertyStructure"]],
     roles:[["members","roles"]]
   };
@@ -3050,7 +3045,6 @@
         {key:"name",label:"案件名"},
         {key:"type",label:"案件種類",options:PROJECT_TYPES,bulk:true},
         {key:"status",label:"進捗",options:STATUS_LIST,bulk:true},
-        {key:"store",label:"店舗",options:STORES,bulk:true},
         {key:"customerName",label:"顧客名"},
         {key:"prefecture",label:"都道府県",options:PREFS},
         {key:"address",label:"物件住所"},
@@ -3194,7 +3188,6 @@
       if(f.name && (p.name||"").indexOf(f.name)===-1 && propertyAddressOf(p).full.indexOf(f.name)===-1 && (p.address||"").indexOf(f.name)===-1) return false;
       if(f.status.length && p.status && f.status.indexOf(p.status)===-1) return false;
       if(f.type!=="all" && p.type!==f.type) return false;
-      if(f.store!=="all" && p.store!==f.store) return false;
       if(f.assignees.length){
         var names = normalizeAssignees(p.assignees).map(function(a){return a.name;});
         if(!names.some(function(n){return f.assignees.indexOf(n)!==-1;})) return false;
@@ -3870,7 +3863,6 @@
       searchBtn.addEventListener("click", function(){
         f.name = document.getElementById("flt-name").value.trim();
         f.type = document.getElementById("flt-type").value;
-        f.store = document.getElementById("flt-store").value;
         f.status = Array.prototype.slice.call(c.querySelectorAll(".flt-status:checked")).map(function(x){return x.value;});
         f.page = 1;
         render();
