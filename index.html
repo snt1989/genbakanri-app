@@ -1227,6 +1227,8 @@
   function addDays(iso,n){ var d=parseISO(iso); d.setDate(d.getDate()+n); return isoOf(d); }
   function diffDays(a,b){ return Math.round((parseISO(b)-parseISO(a))/86400000); }
   var WEEKDAYS = ["日","月","火","水","木","金","土"];
+  var STEP_NAMES = ["下見","見積","契約","着工準備","施工","検査","清掃・片付け","引渡し"];
+  var EVENT_TYPES = ["現地調査","打ち合わせ","見積提出","施工","引渡し","その他"];
   function secretVisible(x){ return !(x.secret && isExternalViewer()); }
   function scheduleItems(){
     var items = [];
@@ -1242,7 +1244,7 @@
       if(t.dueDate) items.push({group:"task",kind:"task",id:t.id,title:t.title||"タスク",start:t.dueDate,end:t.dueDate,cls:"k-task"+(t.done?" done":"")});
     });
     state.events.filter(secretVisible).filter(function(e){ return projectVisibleId(e.projectId); }).forEach(function(e){
-      if(e.date) items.push({group:"event",kind:"event",id:e.id,title:e.title||"予定",start:e.date,end:(e.endDate&&e.endDate>=e.date)?e.endDate:e.date,cls:"k-event"});
+      if(e.date) items.push({group:"event",kind:"event",id:e.id,title:(e.category?"["+e.category+"] ":"")+(e.title||"予定"),start:e.date,end:(e.endDate&&e.endDate>=e.date)?e.endDate:e.date,cls:"k-event"});
     });
     return items;
   }
@@ -1319,6 +1321,7 @@
   function openEventModal(ev, day){
     var e = ev || {date:day||localToday()};
     openModal(ev?"予定の編集":"予定の追加",
+      field("予定の種類",selectHtml("f-ecat", EVENT_TYPES, selVal(e.category, "")))+
       field("タイトル",'<input type="text" id="f-etitle" maxlength="60" placeholder="例）現地調査、打ち合わせ" value="'+esc(e.title||"")+'">')+
       '<div class="field-row">'+field("開始日",'<input type="date" id="f-edate" value="'+esc(e.date||"")+'">')+field("終了日（任意）",'<input type="date" id="f-eend" value="'+esc(e.endDate||"")+'">')+'</div>'+
       field("案件（任意）",'<select id="f-eproj">'+projectOptions(e.projectId)+'</select>')+
@@ -1331,7 +1334,7 @@
       if(!date){ toast("開始日を入力してください"); return; }
       if(end && end<date){ toast("終了日は開始日以降にしてください"); return; }
       var pid = document.getElementById("f-eproj").value, pr = state.projects.find(function(x){return x.id===pid;});
-      writeDoc("events", ev?ev.id:null, {title:title, date:date, endDate:end||"", projectId:pid||"", projectName:pr?pr.name:"", note:document.getElementById("f-enote").value.trim(), secret:document.querySelector('input[name="f-sscope"]:checked').value==="secret", createdBy:(ev&&ev.createdBy)||state.myName||""}, ev?"予定を更新しました":"予定を追加しました");
+      writeDoc("events", ev?ev.id:null, {title:title, category:document.getElementById("f-ecat").value, date:date, endDate:end||"", projectId:pid||"", projectName:pr?pr.name:"", note:document.getElementById("f-enote").value.trim(), secret:document.querySelector('input[name="f-sscope"]:checked').value==="secret", createdBy:(ev&&ev.createdBy)||state.myName||""}, ev?"予定を更新しました":"予定を追加しました");
     });
   }
   function openStepModal(st, projectId){
@@ -1340,7 +1343,7 @@
     var today = localToday();
     openModal(st?"工程の編集":"工程の追加",
       field("案件",'<select id="f-sproj">'+state.projects.slice().sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");}).map(function(p){ return '<option value="'+esc(p.id)+'"'+(p.id===s.projectId?" selected":"")+'>'+esc(p.name)+'</option>'; }).join("")+'</select>')+
-      field("工程名",'<input type="text" id="f-sname" maxlength="40" placeholder="例）下見、伐採、片付け、清掃" value="'+esc(s.name||"")+'">')+
+      field("工程名",selectHtml("f-sname", STEP_NAMES, selVal(s.name, STEP_NAMES[0])))+
       '<div class="field-row">'+field("開始日",'<input type="date" id="f-sstart" value="'+esc(s.startDate||(st?"":today))+'">')+field("終了日",'<input type="date" id="f-send" value="'+esc(s.endDate||(st?"":today))+'">')+'</div>'+
       '<div class="field-row">'+field("担当者",'<select id="f-sassg"><option value="">（未設定）</option>'+members.map(function(n){ return '<option value="'+esc(n)+'"'+(n===s.assignee?" selected":"")+'>'+esc(n)+'</option>'; }).join("")+'</select>')+
       field("進捗（%）",'<input type="number" id="f-sprog" min="0" max="100" step="5" value="'+(+s.progress||0)+'">')+'</div>'+secretRadio(s.secret),
@@ -1350,7 +1353,7 @@
       var pid = document.getElementById("f-sproj").value, name = document.getElementById("f-sname").value.trim();
       var start = document.getElementById("f-sstart").value, end = document.getElementById("f-send").value;
       if(!pid){ toast("案件を選択してください"); return; }
-      if(!name){ toast("工程名を入力してください"); return; }
+      if(!name){ toast("工程名を選択してください"); return; }
       if(!start || !end){ toast("開始日と終了日を入力してください"); return; }
       if(end<start){ toast("終了日は開始日以降にしてください"); return; }
       var pr = state.projects.find(function(x){return x.id===pid;});
@@ -1407,7 +1410,7 @@
       rows += '<div class="gt-row prj"><div class="gt-lbl"><button class="gt-tg" data-gantt-toggle="'+esc(p.id)+'" title="工程の開閉">'+(open?'▾':'▸')+'</button><a href="#" class="gt-name" data-open-project="'+esc(p.id)+'" title="'+esc(p.name)+'">'+esc(p.name)+'</a><button class="btn sm gt-add" data-step-add="'+esc(p.id)+'" title="工程を追加">'+iPlus()+'</button></div>'+
         '<div class="gt-cols" style="width:'+W+'px;'+grid+'">'+(hasPeriod?bar(p.startDate,(p.endDate&&p.endDate>=p.startDate)?p.endDate:p.startDate,"k-project",p.status,null,'data-cal-item="project:'+esc(p.id)+'"'):'')+'</div></div>';
       if(open) sts.forEach(function(s){
-        rows += '<div class="gt-row"><div class="gt-lbl sub"><span class="gt-name" style="cursor:pointer" data-cal-item="step:'+esc(s.id)+'">'+(s.secret?iLock()+' ':'')+esc(s.name)+'</span>'+(s.assignee?'<span class="gt-as">'+esc(s.assignee)+'</span>':'')+'</div>'+
+        rows += '<div class="gt-row"><div class="gt-lbl sub"><span class="gt-name" style="cursor:pointer" data-cal-item="step:'+esc(s.id)+'">'+(s.secret?iLock()+' ':'')+esc(s.name||"（未入力）")+'</span>'+(s.assignee?'<span class="gt-as">'+esc(s.assignee)+'</span>':'')+'</div>'+
           '<div class="gt-cols" style="width:'+W+'px;'+grid+'">'+bar(s.startDate,(s.endDate&&s.endDate>=s.startDate)?s.endDate:s.startDate,"k-step",s.name,+s.progress||0,'data-cal-item="step:'+esc(s.id)+'"')+'</div></div>';
       });
     });
@@ -2588,13 +2591,17 @@
     {key:"stores", label:"店舗", arr:STORES, note:"メンバーの「店舗」に出ます"},
     {key:"roles", label:"職種", arr:ROLES, note:"メンバーの「職種」に出ます"},
     {key:"propertyTypes", label:"物件種類", arr:PROPERTY_TYPES, note:"物件情報の「物件種類」に出ます"},
-    {key:"propertyStructures", label:"物件構造", arr:PROPERTY_STRUCTURES, note:"物件情報の「構造」に出ます"}
+    {key:"propertyStructures", label:"物件構造", arr:PROPERTY_STRUCTURES, note:"物件情報の「構造」に出ます"},
+    {key:"stepNames", label:"工程名", arr:STEP_NAMES, note:"工程表の「工程を追加」で選ぶ工程名に出ます"},
+    {key:"eventTypes", label:"予定の種類", arr:EVENT_TYPES, note:"カレンダーの「予定を追加」で選ぶ種類に出ます"}
   ];
   // 画面ごとのタブ（店舗は案件・メンバーで共通の項目）
   var MASTER_TABS = [
     ["project","案件",["statuses","projectTypes"]],
     ["property","物件情報",["propertyTypes","propertyStructures"]],
-    ["member","メンバー",["roles","stores"]]
+    ["member","メンバー",["roles","stores"]],
+    ["schedule","工程表",["stepNames"]],
+    ["calendar","カレンダー",["eventTypes"]]
   ];
   var MASTER_DEFAULTS = {};
   MASTERS.forEach(function(m){ MASTER_DEFAULTS[m.key] = m.arr.slice(); });
@@ -2623,6 +2630,8 @@
     else if(m.key==="stores") n = state.members.filter(function(x){return x.store===name;}).length;
     else if(m.key==="roles") n = state.members.filter(function(x){return (x.roles||[]).indexOf(name)!==-1;}).length;
     else if(m.key==="propertyTypes") n = rawStore.projects.filter(function(p){return p.propertyType===name;}).length;
+    else if(m.key==="stepNames") n = state.steps.filter(function(x){return x.name===name;}).length;
+    else if(m.key==="eventTypes") n = state.events.filter(function(x){return x.category===name;}).length;
     else if(m.key==="propertyStructures") n = rawStore.projects.filter(function(p){return p.propertyStructure===name;}).length;
     return n;
   }
@@ -2651,7 +2660,7 @@
     statuses:[["projects","status"]], projectTypes:[["projects","type"]],
     stores:[["members","store"]],
     propertyTypes:[["projects","propertyType"]], propertyStructures:[["projects","propertyStructure"]],
-    roles:[["members","roles"]]
+    roles:[["members","roles"]], stepNames:[["steps","name"]], eventTypes:[["events","category"]]
   };
   function masterAffected(key, removed){
     var out = [];
