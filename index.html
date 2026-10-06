@@ -799,6 +799,7 @@
     subscribeAll();
     db.doc("settings/org").get().then(function(snap){ if(snap.exists){ state.orgSettings = Object.assign({}, state.orgSettings, snap.data()); render(); } }).catch(function(){});
     loadDeletePassword();
+    loadSecretDefaults();
   }
 
   // 削除用パスワード: one shared password (set by an admin in 設定 > 管理画面)
@@ -1289,8 +1290,22 @@
   // those items. Untouched projects use DEFAULT_SECRET (案件情報 + 顧客情報).
   var SECRET_HINT = {c_invoice:"適格請求書・事業所種別・法人番号", c_addr:"住所すべて", c_contact:"連絡先すべて"};
   var DEFAULT_SECRET = ["p_type","p_status","p_amount","p_period","p_store","p_instruction","p_handover","c_name","c_invoice","c_contact","c_addr","c_notes"];
-  var secretCtx = DEFAULT_SECRET.slice();
-  function secretSet(p){ return (p && Array.isArray(p.secretFields)) ? p.secretFields : DEFAULT_SECRET.slice(); }
+  var secretCtx = DEFAULT_SECRET.slice();   // set per screen via secretSet()
+  // 管理画面で変更した初期設定（settings/secret）。未設定ならDEFAULT_SECRET。
+  var SECRET_GROUPS = [
+    ["案件情報", [["p_type","案件種類"],["p_status","進捗"],["p_amount","契約金額"],["p_period","施工予定"],["p_store","店舗"],["p_instruction","施工指示"],["p_handover","引渡し日"]]],
+    ["物件情報", [["pr_type","物件種類／構造"],["pr_addr","物件住所"],["pr_notes","備考"]]],
+    ["顧客情報", [["c_name","名前・ふりがな"],["c_invoice","適格請求書・事業所種別・法人番号"],["c_contact","連絡先（担当者・部署・メール・電話）"],["c_addr","住所"],["c_notes","社内メモ"]]]
+  ];
+  function secretDefaults(){ return Array.isArray(state.secretDefaults) ? state.secretDefaults : DEFAULT_SECRET.slice(); }
+  function loadSecretDefaults(){
+    if(!db) return;
+    db.doc("settings/secret").get().then(function(snap){
+      var d = snap.exists ? snap.data() : null;
+      if(d && Array.isArray(d.defaults)){ state.secretDefaults = d.defaults; render(); }
+    }).catch(function(){});
+  }
+  function secretSet(p){ return (p && Array.isArray(p.secretFields)) ? p.secretFields : secretDefaults(); }
   function isExternalViewer(){ var m = myMember(); return !!m && memberPermission(m)==="external"; }
   function hiddenFor(p, key){ return isExternalViewer() && secretSet(p).indexOf(key)!==-1; }
   function secretChk(key){
@@ -2165,6 +2180,17 @@
     html += field("新しい削除用パスワード（4文字以上）", '<input type="password" id="del-pw-new" autocomplete="new-password">');
     html += field("新しい削除用パスワード（確認）", '<input type="password" id="del-pw-new2" autocomplete="new-password">');
     html += '<div><button class="btn primary" id="del-pw-save">'+iAdmin()+'削除用パスワードを変更する</button></div>';
+    html += '</div>';
+
+    html += '<h2 style="font-size:13.5px;margin:4px 0 10px">社外秘の初期設定</h2>';
+    html += '<div class="card" style="padding:16px 18px;max-width:520px;display:flex;flex-direction:column;gap:12px;margin-bottom:18px">';
+    html += '<div style="font-size:11.5px;color:var(--ink-faint);line-height:1.6">チェックした項目は、案件の登録時に最初から「社外秘」（社外メンバーに非表示）になります。個別に設定を変えていない既存の案件にも反映されます。案件ごとの設定は案件の編集画面で変更できます。</div>';
+    var curDef = secretDefaults();
+    SECRET_GROUPS.forEach(function(g){
+      html += '<div><div style="font-size:12px;font-weight:700;margin-bottom:6px">'+esc(g[0])+'</div><div style="display:flex;flex-direction:column;gap:6px">'+
+        g[1].map(function(it){ return '<label class="secret-chk" style="font-size:12px;margin:0;color:var(--ink)"><input type="checkbox" data-secret-default="'+it[0]+'"'+(curDef.indexOf(it[0])!==-1?" checked":"")+'>'+iLock()+' '+esc(it[1])+'</label>'; }).join("")+'</div></div>';
+    });
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="secret-def-save">'+iAdmin()+'初期設定を保存する</button><button class="btn outline" id="secret-def-reset">標準に戻す</button></div>';
     html += '</div>';
 
     html += '<h2 style="font-size:13.5px;margin:4px 0 10px">データの状態とバックアップ</h2>';
@@ -3410,6 +3436,19 @@
         else done();
       });
     });
+    var saveSecretDefaults = function(list, msg){
+      if(!state.isAdmin){ toast("初期設定の変更は管理者のみ行えます"); return; }
+      var done = function(){ state.secretDefaults = list; toast(msg); render(); };
+      if(db) db.doc("settings/secret").set({defaults:list, updatedAt:new Date().toISOString()}).then(done).catch(function(){ toast("保存に失敗しました"); });
+      else done();
+    };
+    var sdSave = document.getElementById("secret-def-save");
+    if(sdSave) sdSave.addEventListener("click", function(){
+      var list = Array.prototype.slice.call(c.querySelectorAll("input[data-secret-default]:checked")).map(function(b){ return b.getAttribute("data-secret-default"); });
+      saveSecretDefaults(list, "社外秘の初期設定を保存しました");
+    });
+    var sdReset = document.getElementById("secret-def-reset");
+    if(sdReset) sdReset.addEventListener("click", function(){ saveSecretDefaults(DEFAULT_SECRET.slice(), "標準の設定に戻しました"); });
     var backupBtn = document.getElementById("admin-backup");
     if(backupBtn) backupBtn.addEventListener("click", function(){ if(!state.isAdmin) return; backupAllData(); });
   }
