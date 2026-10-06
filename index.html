@@ -1743,10 +1743,13 @@
     html += '<div class="kv" style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--ink-soft)">'+
       '<span class="tag'+(perm==="admin"?"":" muted")+'">'+esc(permissionLabel(perm))+'</span>'+
       (me.roles||[]).map(function(r){return '<span class="tag muted">'+esc(r)+'</span>';}).join("")+'</div>';
-    html += '<div style="font-size:11.5px;color:var(--ink-faint)">氏名（ログインID）・所属・店舗・職種・権限の変更は管理者にご依頼ください</div>';
+    html += '<div style="font-size:11.5px;color:var(--ink-faint)">職種・権限の変更は管理者にご依頼ください。氏名はログインIDも兼ねるため、変更後は新しい氏名でログインしてください</div>';
+    html += field("氏名（ログインID）", '<input type="text" id="me-name" value="'+esc(me.name||"")+'">');
     html += field("ふりがな", '<input type="text" id="me-kana" value="'+esc(me.kana||"")+'">');
     html += field("携帯番号", '<input type="tel" id="me-phone" value="'+esc(me.phone||"")+'">');
     html += field("メールアドレス", '<input type="email" id="me-email" value="'+esc(me.email||"")+'">');
+    html += field("所属会社", '<input type="text" id="me-company" value="'+esc(me.company||"")+'">');
+    html += field("店舗", selectHtml("me-store", ["未選択"].concat(STORES), me.store || "未選択"));
     html += '<div><button class="btn primary" id="me-save">個人情報を保存する</button></div>';
     html += '</div>';
 
@@ -1896,7 +1899,7 @@
       // Non-admins may only edit their OWN contact fields / password
       // (個人情報) -- never name, company, store, roles or permission.
       var me = myMember();
-      var selfOk = !!(id && me && me.id===id && Object.keys(data).every(function(k){ return ["kana","phone","email","password"].indexOf(k)!==-1; }));
+      var selfOk = !!(id && me && me.id===id && Object.keys(data).every(function(k){ return ["name","kana","phone","email","company","store","password"].indexOf(k)!==-1; }));
       if(!selfOk){ toast("メンバーの変更は管理者のみ行えます"); return; }
     }
     data.updatedAt = new Date().toISOString();
@@ -2798,7 +2801,18 @@
       meSave.addEventListener("click", function(){
         var me = myMember(); if(!me) return;
         var val = function(id){ return document.getElementById(id).value.trim(); };
-        writeDoc("members", me.id, {kana:val("me-kana"), phone:val("me-phone"), email:val("me-email")}, "個人情報を保存しました");
+        var name = val("me-name"), oldName = me.name;
+        if(!name){ toast("氏名を入力してください"); return; }
+        if(name!==oldName && state.members.some(function(x){ return x.id!==me.id && x.name===name; })){ toast("同じ氏名のメンバーが既に登録されています"); return; }
+        var store = document.getElementById("me-store").value;
+        writeDoc("members", me.id, {name:name, kana:val("me-kana"), phone:val("me-phone"), email:val("me-email"), company:val("me-company"), store:store==="未選択"?"":store}, "個人情報を保存しました", function(){
+          if(name!==oldName){
+            renameInProjects(oldName, name);
+            state.myName = name;
+            try{ localStorage.setItem("gc_myname", name); if(localStorage.getItem("gc_login_name")!==null) localStorage.setItem("gc_login_name", name); }catch(e){}
+          }
+          render();
+        });
       });
     }
     var mePw = document.getElementById("me-pw-save");
