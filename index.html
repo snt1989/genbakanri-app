@@ -1213,21 +1213,7 @@
 
     html += '<div class="form-section-title"><span>物件情報</span><span class="lockhint" style="color:var(--ink-faint)">社外の案件メンバーに公開されます</span></div>';
     html += '<div class="form-card">';
-    html += formRow("物件種類 / 構造", false, false, '<div class="inline2" style="max-width:360px">'+selectHtml("f-ptype", PROPERTY_TYPES, p.propertyType||PROPERTY_TYPES[0])+selectHtml("f-pstruct", PROPERTY_STRUCTURES, p.propertyStructure||PROPERTY_STRUCTURES[0])+'</div>');
-    html += formRow("物件住所区分", false, false, '<div class="radiogroup">'+
-      '<label class="radioopt"><input type="radio" name="addrmode" value="same"'+(p.addressMode!=="new"?" checked":"")+'>顧客の住所と同じ場所</label>'+
-      '<label class="radioopt"><input type="radio" name="addrmode" value="new"'+(p.addressMode==="new"?" checked":"")+'>新しい住所を入力</label>'+
-    '</div>');
-    var newAddr = p.addressMode==="new";
-    var pv = function(k){ return esc(p[k]||""); };
-    var pcf = function(label, inner, span){ return '<label class="cf-field" style="grid-column:span '+span+'"><span class="cf-label">'+esc(label)+'</span>'+inner+'</label>'; };
-    html += '<div id="prop-addr-wrap" class="form-row" style="'+(newAddr?'':'display:none')+'"><div class="flabel">物件の住所</div><div class="fcontrol"><div class="cf-grid">'+
-      pcf("郵便番号", '<input type="text" id="f-ppostal" placeholder="例：020-0033" maxlength="8" value="'+esc(customerPostal({postalCode:p.propertyPostalCode}))+'">', 1)+
-      pcf("都道府県", selectHtml("f-ppref", ["未選択"].concat(PREFS), p.propertyPrefecture || (newAddr?"未選択":"岩手県")), 1)+
-      pcf("市区町村・番地", '<input type="text" id="f-paddress" placeholder="例：盛岡市盛岡駅前通10-38" value="'+pv("propertyAddress")+'">', 2)+
-      pcf("建物名・部屋番号など", '<input type="text" id="f-pbuilding" value="'+pv("propertyBuilding")+'">', 4)+
-    '</div></div></div>';
-    html += formRow("備考", false, false, '<textarea id="f-propnotes" placeholder="例：前の道が狭いためトラックは入れません">'+esc(p.propertyNotes||"")+'</textarea>');
+    html += propertyFormRowsHtml(p);
     html += '</div>';
 
     html += '<div class="formfoot"><button class="btn primary" id="f-submit" style="padding:11px 34px">'+(isEdit?"更新する":"登録する")+'</button></div>';
@@ -1304,6 +1290,52 @@
     e2.addEventListener("input", function(){ e2.value = toHalf(e2.value).slice(0,4); run(); });
   }
 
+  // 物件情報 rows (also used by the 詳細画面's 物件情報 editor).
+  function propertyFormRowsHtml(p){
+    var html = "";
+    html += formRow("物件種類 / 構造", false, false, '<div class="inline2" style="max-width:360px">'+selectHtml("f-ptype", PROPERTY_TYPES, p.propertyType||PROPERTY_TYPES[0])+selectHtml("f-pstruct", PROPERTY_STRUCTURES, p.propertyStructure||PROPERTY_STRUCTURES[0])+'</div>');
+    html += formRow("物件住所区分", false, false, '<div class="radiogroup">'+
+      '<label class="radioopt"><input type="radio" name="addrmode" value="same"'+(p.addressMode!=="new"?" checked":"")+'>顧客の住所と同じ場所</label>'+
+      '<label class="radioopt"><input type="radio" name="addrmode" value="new"'+(p.addressMode==="new"?" checked":"")+'>新しい住所を入力</label>'+
+    '</div>');
+    var newAddr = p.addressMode==="new";
+    var pv = function(k){ return esc(p[k]||""); };
+    var pcf = function(label, inner, span){ return '<label class="cf-field" style="grid-column:span '+span+'"><span class="cf-label">'+esc(label)+'</span>'+inner+'</label>'; };
+    html += '<div id="prop-addr-wrap" class="form-row" style="'+(newAddr?'':'display:none')+'"><div class="flabel">物件の住所</div><div class="fcontrol"><div class="cf-grid">'+
+      pcf("郵便番号", '<input type="text" id="f-ppostal" placeholder="例：020-0033" maxlength="8" value="'+esc(customerPostal({postalCode:p.propertyPostalCode}))+'">', 1)+
+      pcf("都道府県", selectHtml("f-ppref", ["未選択"].concat(PREFS), p.propertyPrefecture || (newAddr?"未選択":"岩手県")), 1)+
+      pcf("市区町村・番地", '<input type="text" id="f-paddress" placeholder="例：盛岡市盛岡駅前通10-38" value="'+pv("propertyAddress")+'">', 2)+
+      pcf("建物名・部屋番号など", '<input type="text" id="f-pbuilding" value="'+pv("propertyBuilding")+'">', 4)+
+    '</div></div></div>';
+    html += formRow("備考", false, false, '<textarea id="f-propnotes" placeholder="例：前の道が狭いためトラックは入れません">'+esc(p.propertyNotes||"")+'</textarea>');
+    return html;
+  }
+  function bindPropertyFormEvents(root){
+    bindPostalLookup("f-ppostal", null, "f-ppref", "f-paddress");
+    var propWrap = document.getElementById("prop-addr-wrap");
+    root.querySelectorAll('input[name="addrmode"]').forEach(function(r){
+      r.addEventListener("change", function(){
+        var on = document.querySelector('input[name="addrmode"]:checked').value==="new";
+        propWrap.style.display = on ? "" : "none";
+        if(on){ var pe = document.getElementById("f-ppostal"); if(pe) pe.focus(); }
+      });
+    });
+  }
+  function readPropertyData(){
+    var addrMode = document.querySelector('input[name="addrmode"]:checked');
+    var isNew = !!(addrMode && addrMode.value==="new");
+    return {
+      propertyType: document.getElementById("f-ptype").value,
+      propertyStructure: document.getElementById("f-pstruct").value,
+      addressMode: isNew ? "new" : "same",
+      propertyPostalCode: isNew ? document.getElementById("f-ppostal").value.trim() : "",
+      propertyPrefecture: isNew ? (function(){ var v=document.getElementById("f-ppref").value; return v==="未選択"?"":v; })() : "",
+      propertyAddress: isNew ? document.getElementById("f-paddress").value.trim() : "",
+      propertyBuilding: isNew ? document.getElementById("f-pbuilding").value.trim() : "",
+      propertyNotes: document.getElementById("f-propnotes").value.trim()
+    };
+  }
+
   function bindProjectFormPicks(){
     var internalPicked = [], externalPicked = [];
     var c = document.getElementById("content");
@@ -1326,15 +1358,7 @@
     var pickBtn = document.getElementById("pick-customer-btn");
     if(pickBtn) pickBtn.addEventListener("click", openCustomerPicker);
     bindCustomerFormEvents();
-    bindPostalLookup("f-ppostal", null, "f-ppref", "f-paddress");
-    var propWrap = document.getElementById("prop-addr-wrap");
-    c.querySelectorAll('input[name="addrmode"]').forEach(function(r){
-      r.addEventListener("change", function(){
-        var on = document.querySelector('input[name="addrmode"]:checked').value==="new";
-        propWrap.style.display = on ? "" : "none";
-        if(on){ var pe = document.getElementById("f-ppostal"); if(pe) pe.focus(); }
-      });
-    });
+    bindPropertyFormEvents(c);
 
     var submit = document.getElementById("f-submit");
     if(submit) submit.addEventListener("click", function(){
@@ -1342,7 +1366,6 @@
       if(!name){ toast("案件名を入力してください"); return; }
       if(!document.getElementById("f-cname").value.trim()){ toast("顧客名を入力してください"); return; }
       var cdata = readCustomerForm(); if(!cdata) return;
-      var addrMode = document.querySelector('input[name="addrmode"]:checked');
 
       var existingAssignees = normalizeAssignees((state.editingProject&&state.editingProject.assignees)||[]);
       var statusMap = {}; existingAssignees.forEach(function(a){ statusMap[a.name]=a.status; });
@@ -1359,18 +1382,10 @@
         endDate: document.getElementById("f-end").value,
         store: document.getElementById("f-store").value,
         workInstruction: document.getElementById("f-instruction").value.trim(),
-        handoverDate: document.getElementById("f-handover").value,
-        propertyType: document.getElementById("f-ptype").value,
-        propertyStructure: document.getElementById("f-pstruct").value,
-        addressMode: addrMode ? addrMode.value : "same",
-        propertyPostalCode: (addrMode && addrMode.value==="new") ? document.getElementById("f-ppostal").value.trim() : "",
-        propertyPrefecture: (addrMode && addrMode.value==="new") ? (function(){ var v=document.getElementById("f-ppref").value; return v==="未選択"?"":v; })() : "",
-        propertyAddress: (addrMode && addrMode.value==="new") ? document.getElementById("f-paddress").value.trim() : "",
-        propertyBuilding: (addrMode && addrMode.value==="new") ? document.getElementById("f-pbuilding").value.trim() : "",
-        propertyNotes: document.getElementById("f-propnotes").value.trim()
+        handoverDate: document.getElementById("f-handover").value
       };
 
-      Object.assign(data, projectCustomerData(cdata));
+      Object.assign(data, projectCustomerData(cdata), readPropertyData());
       ensureCustomer(cdata, function(customerId){
         data.customerId = customerId;
         var id = state.editingProject ? state.editingProject.id : null;
@@ -1414,6 +1429,73 @@
     });
   }
 
+  /* ============ 詳細画面: 物件情報 / 顧客情報 / メンバーの個別編集 ============ */
+  function openProjectSectionEdit(kind, id){
+    var p = state.projects.find(function(x){ return x.id===id; });
+    if(!p) return;
+    var cancel = '<button class="btn" data-close-modal>キャンセル</button>';
+    var box = function(){ return document.getElementById("modal-box"); };
+    var styleFoot = function(){ var f = box().querySelector(".modal-foot"); if(f){ f.style.background="var(--surface-2)"; f.style.borderRadius="0 0 16px 16px"; } };
+
+    if(kind==="property"){
+      openModal("物件情報の編集", '<div style="margin:-16px -18px">'+propertyFormRowsHtml(p)+'</div>', cancel+'<button class="btn primary" id="sec-save">保存する</button>');
+      box().style.maxWidth = "760px"; styleFoot();
+      bindPropertyFormEvents(box());
+      document.getElementById("sec-save").onclick = function(){
+        writeDoc("projects", p.id, readPropertyData(), "物件情報を更新しました");
+      };
+    }
+    else if(kind==="customer"){
+      var pick = '<label class="cf-field" style="margin-bottom:6px"><span class="cf-label">顧客一覧から選ぶ</span><select id="sec-cust-pick"><option value="">選択してください</option>'+
+        state.customers.map(function(c){ return '<option value="'+esc(c.id)+'">'+esc(c.name)+'</option>'; }).join("")+'</select></label>';
+      openModal("顧客情報の編集", pick+customerFormSectionsHtml(projectCustomerSrc(p), false), cancel+'<button class="btn primary" id="sec-save">保存する</button>');
+      box().style.maxWidth = "860px"; styleFoot();
+      bindCustomerFormEvents();
+      document.getElementById("sec-cust-pick").onchange = function(){
+        var c = state.customers.find(function(x){ return x.id===this.value; }.bind(this));
+        if(c) setCustomerFormValues(c);
+      };
+      document.getElementById("sec-save").onclick = function(){
+        var cdata = readCustomerForm(); if(!cdata) return;
+        ensureCustomer(cdata, function(customerId){
+          var data = projectCustomerData(cdata); data.customerId = customerId;
+          writeDoc("projects", p.id, data, "顧客情報を更新しました");
+        });
+      };
+    }
+    else if(kind==="members"){
+      var cur = normalizeAssignees(p.assignees);
+      var picked = cur.map(function(a){ return a.name; });
+      var chips = function(list, attr){
+        return list.map(function(m){ return '<span class="chip-toggle'+(picked.indexOf(m.name)!==-1?" on":"")+'" '+attr+'="'+esc(m.name)+'">'+esc(m.name)+'</span>'; }).join("") || '<span style="font-size:11.5px;color:var(--ink-faint)">登録されていません</span>';
+      };
+      var internal = state.members.filter(function(m){ return m.kind==="internal"; });
+      var external = state.members.filter(function(m){ return m.kind==="external"; });
+      // names on the project that are no longer in the member list stay selectable too
+      var known = {}; state.members.forEach(function(m){ known[m.name]=true; });
+      var orphans = cur.filter(function(a){ return !known[a.name]; });
+      var body = '<div><div class="cf-label" style="margin-bottom:6px">自社の案件メンバー</div><div class="assignee-pick">'+chips(internal,"data-sec-pick")+'</div></div>'+
+        '<div><div class="cf-label" style="margin-bottom:6px">社外の案件メンバー</div><div class="assignee-pick">'+chips(external,"data-sec-pick")+'</div></div>'+
+        (orphans.length ? '<div><div class="cf-label" style="margin-bottom:6px">登録のないメンバー</div><div class="assignee-pick">'+chips(orphans,"data-sec-pick")+'</div></div>' : '');
+      openModal("案件メンバーの編集", body, cancel+'<button class="btn primary" id="sec-save">保存する</button>');
+      box().querySelectorAll("[data-sec-pick]").forEach(function(chip){
+        chip.addEventListener("click", function(){
+          var n = chip.getAttribute("data-sec-pick"), i = picked.indexOf(n);
+          if(i===-1){ picked.push(n); chip.classList.add("on"); } else { picked.splice(i,1); chip.classList.remove("on"); }
+        });
+      });
+      document.getElementById("sec-save").onclick = function(){
+        var old = {}; cur.forEach(function(a){ old[a.name] = a; });
+        var list = picked.map(function(n){
+          if(old[n]) return old[n];                       // keep 確認ステータス
+          var m = memberByName(n);
+          return {name:n, kind:m?m.kind:"internal", status:"未確認"};
+        });
+        writeDoc("projects", p.id, {assignees:list}, "案件メンバーを更新しました");
+      };
+    }
+  }
+
   /* ============ PROJECT DETAIL (full page) ============ */
   function renderProjectDetail(){
     var p = state.projects.find(function(x){return x.id===state.viewingProjectId;});
@@ -1445,7 +1527,7 @@
     html += kvRow("引渡し日", fmtDate(p.handoverDate));
     html += '</div>';
 
-    html += '<div class="form-section-title"><span>物件情報</span><span class="lockhint" style="color:var(--ink-faint)">社外の案件メンバーに公開されます</span></div>';
+    html += '<div class="form-section-title"><span>物件情報</span><span style="display:flex;align-items:center;gap:10px"><span class="lockhint" style="color:var(--ink-faint)">社外の案件メンバーに公開されます</span><button class="btn sm" data-edit-section="property">'+iEdit()+' 編集</button></span></div>';
     html += '<div class="form-card">';
     html += '<div class="kv"><dt>物件種類</dt><dd>'+esc(p.propertyType||"—")+'　<b>構造</b> '+esc(p.propertyStructure||"—")+'</dd></div>';
     var fullAddr = (p.prefecture||"")+(p.address||"");   // 顧客の住所
@@ -1455,7 +1537,7 @@
     if(p.propertyNotes) html += kvRow("備考", esc(p.propertyNotes));
     html += '</div>';
 
-    html += '<div class="form-section-title"><span>顧客情報</span><span class="lockhint">'+iLock()+' 社外には非表示の項目</span></div>';
+    html += '<div class="form-section-title"><span>顧客情報</span><span style="display:flex;align-items:center;gap:10px"><span class="lockhint">'+iLock()+' 社外には非表示の項目</span><button class="btn sm" data-edit-section="customer">'+iEdit()+' 編集</button></span></div>';
     html += '<div class="form-card">';
     var cs = projectCustomerSrc(p);
     html += '<div class="kv" style="display:flex;justify-content:space-between;align-items:center"><div><b style="font-size:13.5px">'+esc(cs.name||"—")+'</b>'+(cs.kana?'<div class="cell-sub">'+esc(cs.kana)+'</div>':'')+'</div></div>';
@@ -1471,7 +1553,7 @@
     html += '</div>'; // end left col
 
     html += '<div>';
-    html += '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h3 style="font-size:13px">案件メンバー</h3><span class="badge line-gray">'+assignees.length+'</span></div>';
+    html += '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h3 style="font-size:13px">案件メンバー</h3><span style="display:flex;align-items:center;gap:8px"><span class="badge line-gray">'+assignees.length+'</span><button class="btn sm" data-edit-section="members">'+iEdit()+' 編集</button></span></div>';
     if(assignees.length===0){ html += '<div style="font-size:11.5px;color:var(--ink-faint)">メンバーが未設定です</div>'; }
     else{
       html += assignees.map(function(a){
@@ -1485,7 +1567,7 @@
         '</div>';
       }).join("");
     }
-    html += '<div style="display:flex;gap:8px;margin-top:12px"><button class="btn sm outline" data-chat-project="'+p.id+'">チャットする</button><button class="btn sm primary" data-edit-project="'+p.id+'">'+iPlus()+' メンバー追加</button></div>';
+    html += '<div style="display:flex;gap:8px;margin-top:12px"><button class="btn sm outline" data-chat-project="'+p.id+'">チャットする</button><button class="btn sm primary" data-edit-section="members">'+iPlus()+' メンバー追加</button></div>';
     html += '</div>';
     html += '<div style="margin-top:14px"><button class="btn outline" style="width:100%;justify-content:center" data-copy-summary="'+p.id+'">'+iDownload()+' 案件情報をコピー</button></div>';
     html += '</div>';
@@ -2892,6 +2974,7 @@
 
     c.querySelectorAll("[data-goto]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); setTab(el.getAttribute("data-goto")); }); });
     c.querySelectorAll("[data-open-project]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var id=el.getAttribute("data-open-project"); if(id) goProjectDetail(id); }); });
+    c.querySelectorAll("[data-edit-section]").forEach(function(el){ el.addEventListener("click", function(){ openProjectSectionEdit(el.getAttribute("data-edit-section"), state.viewingProjectId); }); });
     c.querySelectorAll("[data-edit-project]").forEach(function(el){ el.addEventListener("click", function(){ var p=state.projects.find(function(x){return x.id===el.getAttribute("data-edit-project");}); goProjectForm(state.returnTab, p); }); });
     c.querySelectorAll("[data-newproject]").forEach(function(el){ el.addEventListener("click", function(){ goProjectForm(el.getAttribute("data-newproject"), null); }); });
     c.querySelectorAll("[data-del-project]").forEach(function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-del-project"); confirmDelete("この案件を削除しますか？",function(){deleteDoc("projects",id,"案件を削除しました", function(){ setTab(state.returnTab); }); }); }); });
