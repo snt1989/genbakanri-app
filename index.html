@@ -256,6 +256,13 @@
   .cm .cact button:hover{background:var(--surface-2);color:var(--accent);}
   .cm .cact button.del:hover{color:var(--danger);}
   .cm .cact svg{width:15px;height:15px;}
+  .cm .cquote{border-left:3px solid var(--accent);background:rgba(0,0,0,.05);border-radius:4px;padding:4px 8px;margin-bottom:6px;font-size:11.5px;cursor:pointer;display:flex;flex-direction:column;gap:1px;max-width:380px;}
+  .cm .cquote b{font-size:11px;color:var(--accent);}
+  .cm .cquote span{color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cm.flash .cbub{outline:2px solid var(--accent);}
+  .chat-replybar{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--surface-2);border-left:3px solid var(--accent);border-radius:4px;padding:6px 10px;margin-bottom:8px;font-size:12px;}
+  .chat-replybar span{display:block;color:var(--ink-faint);max-width:620px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .chat-replybar button{background:none;border:none;font-size:20px;cursor:pointer;color:var(--ink-faint);line-height:1;}
   .cm .cedited{font-size:10.5px;color:var(--ink-faint);margin-left:6px;}
   .cm.me{justify-content:flex-end;}
   .cm.me .crow{flex-direction:row-reverse;}
@@ -1214,6 +1221,7 @@
   function iDownload(){ return svgIcon('<path d="M12 4v11M7.5 11 12 15.5 16.5 11"/><path d="M4.5 18.5h15"/>',14); }
   function iUpload(){ return svgIcon('<path d="M12 15V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4.5 18.5h15"/>',14); }
   function iPin(on){ return svgIcon('<path d="M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6z"'+(on?' fill="currentColor"':'')+'/><path d="M12 14v7"/>',15); }
+  function iReply(){ return svgIcon('<path d="M9 7 4 12l5 5"/><path d="M4 12h10a6 6 0 0 1 6 6v1"/>',15); }
   function iSend(){ return svgIcon('<path d="M4 12 20 4l-7 16-2.5-7L4 12z"/>',15); }
   function iMenu(){ return svgIcon('<path d="M4 6.5h16M4 12h16M4 17.5h16"/>'); }
   // 社外秘 (hidden from external members): a red padlock.
@@ -2912,15 +2920,17 @@
           var att = m.attachment ? (String(m.attachment.contentType||"").indexOf("image/")===0 ?
               '<a href="'+esc(m.attachment.url)+'" target="_blank" rel="noopener"><img class="catt" src="'+esc(m.attachment.url)+'" alt=""></a>' :
               '<br><a class="cfile" href="'+esc(m.attachment.url)+'" target="_blank" rel="noopener">'+iDoc()+esc(m.attachment.filename||"ファイル")+'</a>') : '';
-          return out+'<div class="cm'+(mine?" me":"")+'">'+(mine?'':'<div class="cav" style="background:'+avaColor(m.author)+'">'+esc(initials(m.author))+'</div>')+
-            '<div class="cbody">'+(mine?'':'<div class="cname">'+esc(m.author)+'</div>')+'<div class="crow"><div class="cbub">'+chatText(m.text)+att+'</div><div class="ctime">'+esc(chatTime(m.ts))+(m.edited?'<span class="cedited">編集済み</span>':'')+'</div>'+
-            ((mine||state.isAdmin) && m.id ? '<div class="cact">'+(mine?'<button data-chat-medit="'+esc(m.id)+'" title="編集">'+iEdit()+'</button>':'')+'<button class="del" data-chat-mdel="'+esc(m.id)+'" title="削除">'+iTrash()+'</button></div>' : '')+
+          return out+'<div class="cm'+(mine?" me":"")+'" id="cm-'+esc(m.id||"")+'">'+(mine?'':'<div class="cav" style="background:'+avaColor(m.author)+'">'+esc(initials(m.author))+'</div>')+
+            '<div class="cbody">'+(mine?'':'<div class="cname">'+esc(m.author)+'</div>')+'<div class="crow"><div class="cbub">'+(m.replyTo?'<div class="cquote" data-chat-jump="'+esc(m.replyTo.id||"")+'"><b>'+esc(m.replyTo.author||"")+'</b><span>'+esc(m.replyTo.text||"")+'</span></div>':'')+chatText(m.text)+att+'</div><div class="ctime">'+esc(chatTime(m.ts))+(m.edited?'<span class="cedited">編集済み</span>':'')+'</div>'+
+            (m.id ? '<div class="cact"><button data-chat-reply="'+esc(m.id)+'" title="返信">'+iReply()+'</button>'+(mine?'<button data-chat-medit="'+esc(m.id)+'" title="編集">'+iEdit()+'</button>':'')+((mine||state.isAdmin)?'<button class="del" data-chat-mdel="'+esc(m.id)+'" title="削除">'+iTrash()+'</button>':'')+'</div>' : '')+
             '</div></div></div>';
         }).join("");
       }
       html += '</div>';
       var draft = (state.chatDraft||{})[chat.id] || "";
       html += '<div class="chat-input-wrap">';
+      var rp = (state.chatReply||{})[chat.id];
+      if(rp) html += '<div class="chat-replybar"><div><b>'+esc(rp.author)+'</b> に返信<span>'+esc(rp.text)+'</span></div><button type="button" id="chat-reply-x" title="返信をやめる">×</button></div>';
       if(state.chatPop==="emoji") html += '<div class="chat-pop"><div class="emo">'+CHAT_EMOJI.map(function(e){ return '<button data-chat-emoji="'+e+'">'+e+'</button>'; }).join("")+'</div></div>';
       if(state.chatPop==="mention") html += '<div class="chat-pop"><button class="mem" data-chat-mention="全員" style="font-weight:700">@全員<span style="font-weight:400;color:var(--ink-faint);font-size:11px;margin-left:6px">このチャットのメンバー全員宛て</span></button>'+chatMembers(chat).map(function(m){ return '<button class="mem" data-chat-mention="'+esc(m.name)+'">@'+esc(m.name)+'</button>'; }).join("")+'</div>';
       html += '<div class="chat-tools">'+
@@ -4872,7 +4882,9 @@
         var text = input.value.trim();
         if(!text) return;
         state.chatDraft[state.activeChat] = ""; state.chatPop = "";
-        postMsg({text:text}, null);
+        var rpl = (state.chatReply||{})[state.activeChat], m0 = {text:text};
+        if(rpl){ m0.replyTo = {id:rpl.id, author:rpl.author, text:rpl.text}; delete state.chatReply[state.activeChat]; }
+        postMsg(m0, null);
         if(db){ input.value=""; sendBtn.classList.remove("ready"); }
       };
       sendBtn.addEventListener("click", doSend);
@@ -4905,6 +4917,19 @@
         });
       });
     }
+    c.querySelectorAll("[data-chat-reply]").forEach(function(el){ el.addEventListener("click", function(){
+      var m = (state.chatMsgs[state.activeChat]||[]).find(function(x){return x.id===el.getAttribute("data-chat-reply");}); if(!m) return;
+      var inp = document.getElementById("chat-input"); if(inp) (state.chatDraft = state.chatDraft||{})[state.activeChat] = inp.value;
+      var t = (m.text || (m.attachment ? "（添付: "+(m.attachment.filename||"ファイル")+"）" : "")).replace(/\s+/g," ").slice(0,60);
+      state.chatReply = state.chatReply || {}; state.chatReply[state.activeChat] = {id:m.id, author:m.author, text:t};
+      render(); var i2 = document.getElementById("chat-input"); if(i2) i2.focus();
+    }); });
+    var rx = document.getElementById("chat-reply-x");
+    if(rx) rx.addEventListener("click", function(){ var inp = document.getElementById("chat-input"); if(inp) (state.chatDraft = state.chatDraft||{})[state.activeChat] = inp.value; delete state.chatReply[state.activeChat]; render(); });
+    c.querySelectorAll("[data-chat-jump]").forEach(function(el){ el.addEventListener("click", function(){
+      var t = document.getElementById("cm-"+el.getAttribute("data-chat-jump")); if(!t){ toast("元のメッセージは削除されています"); return; }
+      t.scrollIntoView({block:"center", behavior:"smooth"}); t.classList.add("flash"); setTimeout(function(){ t.classList.remove("flash"); }, 1500);
+    }); });
     var chatEdit = document.getElementById("chat-edit");
     if(chatEdit) chatEdit.addEventListener("click", function(){ var ch = state.chats.find(function(x){return x.id===state.activeChat;}); if(ch) openChatForm(ch); });
     var msgRef = function(id){ return db.collection("chats").doc(state.activeChat).collection("messages").doc(id); };
