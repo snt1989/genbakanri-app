@@ -577,7 +577,7 @@
     {id:"files", label:"写真・ファイル", icon:iImage},
     {id:"settings", label:"設定", icon:iBox}
   ];
-  var SUBPAGES = {"project-form":1,"project-detail":1,"member-form":1};
+  var SUBPAGES = {"project-form":1,"project-detail":1,"member-form":1,"project-files":1};
 
   var STATUS_LIST = ["現地調査前","現地調査済","見積提出済","契約済","施工中","施工完了","清算済","失注"];
   var STATUS_STYLE = {
@@ -602,6 +602,7 @@
     salesFilter:{name:"",status:STATUS_LIST.slice(),type:"all",store:"all",assignees:[],page:1},
     constFilter:{name:"",status:["契約済","施工中"],type:"all",store:"all",assignees:[],page:1},
     filesFilter:{project:"all",kind:"all"},
+    filesView:"all", filesProjectId:null, projectFilesKind:"all", filesBack:"detail",
     memberSeg:"all",
     bulk:{on:false,entity:null,selected:{},field:"",value:""},
     settingsSeg:"company",
@@ -988,6 +989,8 @@
   }
   function goProjectForm(mode, project){ state.formMode=mode||state.returnTab; state.editingProject=project||null; state.tab="project-form"; render(); }
   function goProjectDetail(id){ state.viewingProjectId=id; state.tab="project-detail"; render(); }
+  // 案件別ファイル管理ページ. from: "detail" (案件詳細) or "files" (写真・ファイル一覧)
+  function goProjectFiles(id, from){ bulkReset(); state.filesProjectId=id; state.filesBack=from||"detail"; state.projectFilesKind="all"; state.tab="project-files"; render(); }
   function goMemberForm(){
     if(!state.isAdmin){ toast("メンバーの追加は管理者のみ行えます"); return; }
     state.editingMember=null;
@@ -1024,6 +1027,7 @@
     else if(state.tab==="settings") c.innerHTML = banner+renderSettings();
     else if(state.tab==="project-form") c.innerHTML = banner+renderProjectForm();
     else if(state.tab==="project-detail") c.innerHTML = banner+renderProjectDetail();
+    else if(state.tab==="project-files") c.innerHTML = banner+renderProjectFiles();
     else if(state.tab==="member-form") c.innerHTML = banner+renderMemberForm();
     bindEvents();
     applyBulkUi();
@@ -1529,7 +1533,7 @@
     html += '<div class="detail-grid">';
     html += '<div>';
 
-    html += '<div class="form-section-title" style="padding-top:0"><span>ファイル管理</span><span class="lockhint" style="color:var(--ink-faint)"><a href="#" data-goto="files">写真・ファイルページで見る</a></span></div>';
+    html += '<div class="form-section-title" style="padding-top:0"><span>ファイル管理</span><span class="lockhint" style="color:var(--ink-faint)"><a href="#" data-open-files="'+p.id+'">この案件のファイル管理ページを開く</a></span></div>';
     html += '<div class="card" style="padding:16px 18px">';
     html += '<div class="photo-grid">';
     html += pfiles.map(function(f){ return fileThumb(f, true); }).join("");
@@ -1792,10 +1796,15 @@
       return true;
     }).sort(function(a,b){return (b.uploadedAt||"").localeCompare(a.uploadedAt||"");});
 
+    var byProject = state.filesView==="project";
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">'+
       '<h1 class="pagetitle">写真・ファイル</h1>'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="files-upload-btn">'+iPlus()+' 写真・ファイルを追加</button>'+csvToolbar("files")+'</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="files-upload-btn">'+iPlus()+' 写真・ファイルを追加</button>'+(byProject?'':csvToolbar("files"))+'</div>'+
       '</div><div style="height:14px"></div>';
+    html += '<div class="segmented" style="margin-bottom:16px">'+
+      '<div class="segopt'+(byProject?'':' active')+'" data-files-view="all">すべて</div>'+
+      '<div class="segopt'+(byProject?' active':'')+'" data-files-view="project">案件別</div></div>';
+    if(byProject) return html + renderFilesByProject();
 
     html += '<div class="card filter-card"><div class="filter-line">'+
       '<div class="fitem" style="min-width:220px"><span>案件で絞り込み</span><select id="files-flt-project"><option value="all">すべての案件</option>'+
@@ -1816,6 +1825,59 @@
       html += emptyState(iImage,"写真・ファイルがありません","案件詳細ページ、またはこのページから追加してください");
     }else{
       html += '<div class="photo-grid">'+list.map(function(x){ return fileThumb(x, true, true); }).join("")+'</div>';
+    }
+    return html;
+  }
+
+  function fmtSize(n){
+    n = n||0;
+    if(n<1024) return n+" B";
+    if(n<1024*1024) return (n/1024).toFixed(1)+" KB";
+    return (n/1024/1024).toFixed(1)+" MB";
+  }
+  // 写真・ファイル > 案件別: one row per project with its file counts.
+  function renderFilesByProject(){
+    var projects = state.projects.slice().sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");});
+    if(projects.length===0) return emptyState(iBriefcase,"案件がありません","");
+    var html = '<div class="tablewrap"><table><thead><tr><th>案件名</th><th>進捗</th><th>写真</th><th>その他</th><th>最終追加</th><th></th></tr></thead><tbody>';
+    html += projects.map(function(p){
+      var fl = filesForProject(p.id);
+      var imgs = fl.filter(isImageFile).length;
+      var last = fl.length ? fl[fl.length-1].uploadedAt : "";
+      return '<tr class="rowhover"><td><div class="cell-name"><a href="#" data-open-files="'+esc(p.id)+'" data-files-from="files">'+esc(p.name)+'</a></div><div class="cell-sub">'+esc(propertyAddressOf(p).full)+'</div></td>'+
+        '<td><span class="badge '+(STATUS_STYLE[p.status]||"line-gray")+'">'+esc(p.status)+'</span></td>'+
+        '<td class="num">'+imgs+'</td><td class="num">'+(fl.length-imgs)+'</td><td class="num">'+(last?fmtDateTime(last):"—")+'</td>'+
+        '<td style="white-space:nowrap"><button class="btn sm" data-open-files="'+esc(p.id)+'" data-files-from="files">ファイル管理を開く</button></td></tr>';
+    }).join("");
+    return html+'</tbody></table></div>';
+  }
+
+  /* ============ 案件別ファイル管理ページ ============ */
+  function renderProjectFiles(){
+    if(!state.loaded.files || !state.loaded.projects) return skeleton();
+    var p = state.projects.find(function(x){ return x.id===state.filesProjectId; });
+    var back = state.filesBack==="files" ? crumb("写真・ファイルに戻る","files") : '<a href="#" class="crumb" data-open-project="'+esc(p?p.id:"")+'">'+iBack()+' 案件詳細に戻る</a>';
+    if(!p) return crumb("写真・ファイルに戻る","files")+emptyState(iBriefcase,"案件が見つかりません","");
+    var all = filesForProject(p.id);
+    var kind = state.projectFilesKind;
+    var list = all.filter(function(x){ return kind==="image" ? isImageFile(x) : (kind==="other" ? !isImageFile(x) : true); }).reverse();
+    var imgs = all.filter(isImageFile).length;
+    var html = back;
+    html += '<div class="detail-head"><div><h1>'+esc(p.name)+'　ファイル管理</h1><div class="cell-sub">'+esc(propertyAddressOf(p).full)+'</div></div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="badge '+(STATUS_STYLE[p.status]||"line-gray")+'">'+esc(p.status)+'</span>'+
+      '<label class="btn primary" style="cursor:pointer">'+iPlus()+' 写真・ファイルを追加<input type="file" id="pf-input" multiple style="display:none"></label></div></div>';
+    html += '<div class="card filter-card"><div class="filter-line"><div class="fitem"><span>種類</span><select id="pf-kind">'+
+      '<option value="all"'+(kind==="all"?" selected":"")+'>すべて</option>'+
+      '<option value="image"'+(kind==="image"?" selected":"")+'>写真</option>'+
+      '<option value="other"'+(kind==="other"?" selected":"")+'>その他ファイル</option></select></div></div></div>';
+    html += '<div class="summary-line"><span><b>'+list.length+'</b>件 / 全'+all.length+'件</span><span>写真 <b style="font-size:13px">'+imgs+'</b></span><span>その他 <b style="font-size:13px">'+(all.length-imgs)+'</b></span></div>';
+    if(list.length===0){
+      html += emptyState(iImage,"写真・ファイルがありません","右上の「写真・ファイルを追加」から登録できます");
+    }else{
+      html += '<div class="photo-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px">'+list.map(function(f){
+        return '<div>'+fileThumb(f, true)+'<div class="cell-sub" style="word-break:break-all;margin-top:5px;color:var(--ink)">'+esc(f.filename||"ファイル")+'</div>'+
+          '<div class="cell-sub" style="margin-top:0">'+esc(fmtDateTime(f.uploadedAt))+(f.uploadedBy?" ・ "+esc(f.uploadedBy):"")+(f.size?" ・ "+fmtSize(f.size):"")+'</div></div>';
+      }).join("")+'</div>';
     }
     return html;
   }
@@ -3018,6 +3080,15 @@
 
     c.querySelectorAll("[data-goto]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); setTab(el.getAttribute("data-goto")); }); });
     c.querySelectorAll("[data-open-project]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var id=el.getAttribute("data-open-project"); if(id) goProjectDetail(id); }); });
+    c.querySelectorAll("[data-open-files]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); goProjectFiles(el.getAttribute("data-open-files"), el.getAttribute("data-files-from")||"detail"); }); });
+    c.querySelectorAll("[data-files-view]").forEach(function(el){ el.addEventListener("click", function(){ bulkReset(); state.filesView = el.getAttribute("data-files-view"); render(); }); });
+    var pfInput = document.getElementById("pf-input");
+    if(pfInput) pfInput.addEventListener("change", function(){
+      Array.prototype.forEach.call(pfInput.files||[], function(file){ uploadProjectFile(state.filesProjectId, file); });
+      pfInput.value = "";
+    });
+    var pfKind = document.getElementById("pf-kind");
+    if(pfKind) pfKind.addEventListener("change", function(){ state.projectFilesKind = pfKind.value; render(); });
     c.querySelectorAll("[data-edit-section]").forEach(function(el){ el.addEventListener("click", function(){ openProjectSectionEdit(el.getAttribute("data-edit-section"), state.viewingProjectId); }); });
     c.querySelectorAll("[data-edit-project]").forEach(function(el){ el.addEventListener("click", function(){ var p=state.projects.find(function(x){return x.id===el.getAttribute("data-edit-project");}); goProjectForm(state.returnTab, p); }); });
     c.querySelectorAll("[data-newproject]").forEach(function(el){ el.addEventListener("click", function(){ goProjectForm(el.getAttribute("data-newproject"), null); }); });
