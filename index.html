@@ -1065,6 +1065,18 @@
     return html;
   }
 
+  /* ============ 物件住所 ============ */
+  // 物件住所区分 "same": the customer's address; "new": the separately entered 物件住所.
+  function propertyAddressOf(p){
+    if(p.addressMode==="new"){
+      var text = (p.propertyPrefecture||"")+(p.propertyAddress||"");
+      var postal = customerPostal({postalCode:p.propertyPostalCode});
+      return {postal:postal, text:text, building:p.propertyBuilding||"", full:text+(p.propertyBuilding?" "+p.propertyBuilding:"")};
+    }
+    var t = (p.prefecture||"")+(p.address||"");
+    return {postal:customerPostal({postalCode:p.postalCode, postalCode1:p.postalCode1, postalCode2:p.postalCode2}), text:t, building:p.building||"", full:t+(p.building?" "+p.building:"")};
+  }
+
   /* ============ PROJECT LIST ============ */
   function renderProjectList(mode){
     if(!state.loaded.projects || !state.loaded.members) return skeleton();
@@ -1072,7 +1084,7 @@
     var title = mode==="sales" ? "営業案件一覧" : "施工案件一覧";
 
     var filtered = state.projects.filter(function(p){
-      if(f.name && (p.name||"").indexOf(f.name)===-1 && (p.address||"").indexOf(f.name)===-1) return false;
+      if(f.name && (p.name||"").indexOf(f.name)===-1 && propertyAddressOf(p).full.indexOf(f.name)===-1 && (p.address||"").indexOf(f.name)===-1) return false;
       if(f.status.length && f.status.indexOf(p.status)===-1) return false;
       if(f.type!=="all" && p.type!==f.type) return false;
       if(f.store!=="all" && p.store!==f.store) return false;
@@ -1127,7 +1139,7 @@
         var names = normalizeAssignees(p.assignees).map(function(a){return a.name;});
         return '<tr class="rowhover" data-row-id="'+esc(p.id)+'"><td>'+
             '<div class="cell-name"><a href="#" data-open-project="'+p.id+'">'+esc(p.name)+'</a></div>'+
-            '<div class="cell-sub">'+esc(p.address||"")+'</div>'+
+            '<div class="cell-sub">'+esc(propertyAddressOf(p).full)+'</div>'+
             '<div class="tagrow">'+names.map(function(a){return '<span class="tag">'+esc(a)+'</span>';}).join("")+'</div>'+
           '</td>'+
           '<td><span class="badge '+(STATUS_STYLE[p.status]||"line-gray")+'">'+esc(p.status)+'</span></td>'+
@@ -1206,6 +1218,15 @@
       '<label class="radioopt"><input type="radio" name="addrmode" value="same"'+(p.addressMode!=="new"?" checked":"")+'>顧客の住所と同じ場所</label>'+
       '<label class="radioopt"><input type="radio" name="addrmode" value="new"'+(p.addressMode==="new"?" checked":"")+'>新しい住所を入力</label>'+
     '</div>');
+    var newAddr = p.addressMode==="new";
+    var pv = function(k){ return esc(p[k]||""); };
+    var pcf = function(label, inner, span){ return '<label class="cf-field" style="grid-column:span '+span+'"><span class="cf-label">'+esc(label)+'</span>'+inner+'</label>'; };
+    html += '<div id="prop-addr-wrap" class="form-row" style="'+(newAddr?'':'display:none')+'"><div class="flabel">物件の住所</div><div class="fcontrol"><div class="cf-grid">'+
+      pcf("郵便番号", '<input type="text" id="f-ppostal" placeholder="例：020-0033" maxlength="8" value="'+esc(customerPostal({postalCode:p.propertyPostalCode}))+'">', 1)+
+      pcf("都道府県", selectHtml("f-ppref", ["未選択"].concat(PREFS), p.propertyPrefecture || (newAddr?"未選択":"岩手県")), 1)+
+      pcf("市区町村・番地", '<input type="text" id="f-paddress" placeholder="例：盛岡市盛岡駅前通10-38" value="'+pv("propertyAddress")+'">', 2)+
+      pcf("建物名・部屋番号など", '<input type="text" id="f-pbuilding" value="'+pv("propertyBuilding")+'">', 4)+
+    '</div></div></div>';
     html += formRow("備考", false, false, '<textarea id="f-propnotes" placeholder="例：前の道が狭いためトラックは入れません">'+esc(p.propertyNotes||"")+'</textarea>');
     html += '</div>';
 
@@ -1305,6 +1326,15 @@
     var pickBtn = document.getElementById("pick-customer-btn");
     if(pickBtn) pickBtn.addEventListener("click", openCustomerPicker);
     bindCustomerFormEvents();
+    bindPostalLookup("f-ppostal", null, "f-ppref", "f-paddress");
+    var propWrap = document.getElementById("prop-addr-wrap");
+    c.querySelectorAll('input[name="addrmode"]').forEach(function(r){
+      r.addEventListener("change", function(){
+        var on = document.querySelector('input[name="addrmode"]:checked').value==="new";
+        propWrap.style.display = on ? "" : "none";
+        if(on){ var pe = document.getElementById("f-ppostal"); if(pe) pe.focus(); }
+      });
+    });
 
     var submit = document.getElementById("f-submit");
     if(submit) submit.addEventListener("click", function(){
@@ -1333,6 +1363,10 @@
         propertyType: document.getElementById("f-ptype").value,
         propertyStructure: document.getElementById("f-pstruct").value,
         addressMode: addrMode ? addrMode.value : "same",
+        propertyPostalCode: (addrMode && addrMode.value==="new") ? document.getElementById("f-ppostal").value.trim() : "",
+        propertyPrefecture: (addrMode && addrMode.value==="new") ? (function(){ var v=document.getElementById("f-ppref").value; return v==="未選択"?"":v; })() : "",
+        propertyAddress: (addrMode && addrMode.value==="new") ? document.getElementById("f-paddress").value.trim() : "",
+        propertyBuilding: (addrMode && addrMode.value==="new") ? document.getElementById("f-pbuilding").value.trim() : "",
         propertyNotes: document.getElementById("f-propnotes").value.trim()
       };
 
@@ -1414,8 +1448,10 @@
     html += '<div class="form-section-title"><span>物件情報</span><span class="lockhint" style="color:var(--ink-faint)">社外の案件メンバーに公開されます</span></div>';
     html += '<div class="form-card">';
     html += '<div class="kv"><dt>物件種類</dt><dd>'+esc(p.propertyType||"—")+'　<b>構造</b> '+esc(p.propertyStructure||"—")+'</dd></div>';
-    var fullAddr = (p.prefecture||"")+(p.address||"");
-    html += '<div class="kv"><dt>住所</dt><dd>'+esc(fullAddr||"—")+(fullAddr?' <a class="maplink" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(fullAddr)+'">'+iMap()+' Googleマップで見る</a>':'')+'</dd></div>';
+    var fullAddr = (p.prefecture||"")+(p.address||"");   // 顧客の住所
+    var pa = propertyAddressOf(p);
+    var propLine = (pa.postal?"〒"+pa.postal+" ":"")+pa.full;
+    html += '<div class="kv"><dt>住所</dt><dd>'+esc(propLine.trim()||"—")+(pa.full?' <a class="maplink" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(pa.text)+'">'+iMap()+' Googleマップで見る</a>':'')+(p.addressMode==="new"?'<div class="cell-sub">顧客の住所とは別の場所</div>':'')+'</dd></div>';
     if(p.propertyNotes) html += kvRow("備考", esc(p.propertyNotes));
     html += '</div>';
 
@@ -2299,7 +2335,7 @@
   function filterProjects(mode){
     var f = mode==="sales" ? state.salesFilter : state.constFilter;
     return state.projects.filter(function(p){
-      if(f.name && (p.name||"").indexOf(f.name)===-1 && (p.address||"").indexOf(f.name)===-1) return false;
+      if(f.name && (p.name||"").indexOf(f.name)===-1 && propertyAddressOf(p).full.indexOf(f.name)===-1 && (p.address||"").indexOf(f.name)===-1) return false;
       if(f.status.length && f.status.indexOf(p.status)===-1) return false;
       if(f.type!=="all" && p.type!==f.type) return false;
       if(f.store!=="all" && p.store!==f.store) return false;
@@ -2837,7 +2873,7 @@
       "【"+p.name+"】",
       "進捗: "+p.status, "案件種類: "+(p.type||""), "金額: "+fmtYen(p.amount),
       "施工予定: "+(fmtDate(p.startDate)+" 〜 "+fmtDate(p.endDate)),
-      "住所: "+(p.prefecture||"")+(p.address||""),
+      "住所: "+propertyAddressOf(p).full,
       "顧客: "+(p.customerName||"")
     ];
     var text = lines.join("\n");
