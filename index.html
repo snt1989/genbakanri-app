@@ -678,7 +678,7 @@
     salesFilter:{name:"",status:STATUS_LIST.slice(),type:"all",store:"all",assignees:[],page:1},
     constFilter:{name:"",status:["契約済","施工中"],type:"all",store:"all",assignees:[],page:1},
     filesFilter:{project:"all",kind:"all"},
-    calMonth:null, calFilter:{project:true,step:true,task:true,event:true}, ganttStart:null, ganttScale:"1m", ganttHideDone:true, ganttClosed:{}, filesView:"all", pfFolder:"", pfSort:"date_desc", pfView:"thumb", pfMine:false, pfSel:{}, filesProjectId:null, projectFilesKind:"all", filesBack:"detail",
+    masterTab:"project", calMonth:null, calFilter:{project:true,step:true,task:true,event:true}, ganttStart:null, ganttScale:"1m", ganttHideDone:true, ganttClosed:{}, filesView:"all", pfFolder:"", pfSort:"date_desc", pfView:"thumb", pfMine:false, pfSel:{}, filesProjectId:null, projectFilesKind:"all", filesBack:"detail",
     memberSeg:"all",
     bulk:{on:false,entity:null,selected:{},field:"",value:""},
     settingsSeg:"company",
@@ -2585,6 +2585,12 @@
     {key:"propertyTypes", label:"物件種類", arr:PROPERTY_TYPES, note:"物件情報の「物件種類」に出ます"},
     {key:"propertyStructures", label:"物件構造", arr:PROPERTY_STRUCTURES, note:"物件情報の「構造」に出ます"}
   ];
+  // 画面ごとのタブ（店舗は案件・メンバーで共通の項目）
+  var MASTER_TABS = [
+    ["project","案件",["projectTypes","stores"]],
+    ["property","物件情報",["propertyTypes","propertyStructures"]],
+    ["member","メンバー",["roles","stores"]]
+  ];
   var MASTER_DEFAULTS = {};
   MASTERS.forEach(function(m){ MASTER_DEFAULTS[m.key] = m.arr.slice(); });
   function applyMasters(d){
@@ -2608,10 +2614,15 @@
   function renderSettingsMaster(){
     if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
     var html = '<div style="font-size:12px;color:var(--ink-faint);line-height:1.7;max-width:760px;margin-bottom:14px">各画面の選択肢を編集します。<b>1行に1項目</b>で入力し、上から順に表示されます。項目名を変えても、すでに登録済みのデータの値は自動では書き換わりません（そのまま残ります）。</div>';
+    if(!MASTER_TABS.some(function(t){return t[0]===state.masterTab;})) state.masterTab = "project";
+    html += '<div class="segmented" style="margin-bottom:16px">'+MASTER_TABS.map(function(t){
+      return '<div class="segopt'+(state.masterTab===t[0]?' active':'')+'" data-master-tab="'+t[0]+'">'+t[1]+'画面</div>';
+    }).join("")+'</div>';
+    var curTab = MASTER_TABS.find(function(t){return t[0]===state.masterTab;});
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;max-width:1000px">';
-    MASTERS.forEach(function(m){
+    curTab[2].map(function(k){ return MASTERS.find(function(m){return m.key===k;}); }).forEach(function(m){
       html += '<div class="card" style="padding:16px 18px;display:flex;flex-direction:column;gap:8px">'+
-        '<h2 style="font-size:13.5px">'+esc(m.label)+'</h2><div style="font-size:11px;color:var(--ink-faint)">'+esc(m.note)+'</div>'+
+        '<h2 style="font-size:13.5px">'+esc(m.label)+(m.key==="stores"?' <span style="font-size:11px;font-weight:500;color:var(--ink-faint)">（案件・メンバー共通）</span>':'')+'</h2><div style="font-size:11px;color:var(--ink-faint)">'+esc(m.note)+'</div>'+
         '<textarea data-master-ta="'+m.key+'" style="min-height:170px;font-size:13px;line-height:1.7">'+esc(m.arr.join("\n"))+'</textarea>'+
         '<div style="font-size:11px;color:var(--ink-faint)">使用中： '+m.arr.map(function(n){ var u=masterUsage(m,n); return u?esc(n)+' '+u+'件':''; }).filter(Boolean).join(" ／ ")+'</div>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-master-save="'+m.key+'">'+iAdmin()+'保存する</button><button class="btn outline" data-master-reset="'+m.key+'">標準に戻す</button></div></div>';
@@ -3953,6 +3964,7 @@
       if(db) db.doc("settings/secret").set({defaults:list, updatedAt:new Date().toISOString()}).then(done).catch(function(){ toast("保存に失敗しました"); });
       else done();
     };
+    c.querySelectorAll("[data-master-tab]").forEach(function(el){ el.addEventListener("click", function(){ state.masterTab = el.getAttribute("data-master-tab"); render(); }); });
     c.querySelectorAll("[data-master-save]").forEach(function(btn){ btn.addEventListener("click", function(){
       var key = btn.getAttribute("data-master-save"), ta = c.querySelector('[data-master-ta="'+key+'"]');
       var list = []; ta.value.split(/\r?\n/).forEach(function(x){ x=x.trim(); if(x && list.indexOf(x)===-1) list.push(x); });
