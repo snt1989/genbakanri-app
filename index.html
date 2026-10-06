@@ -1471,15 +1471,21 @@
   function projectWorkSection(p){
     var evs = state.events.filter(function(x){ return x.projectId===p.id && secretVisible(x); }).sort(function(a,b){return (a.date||"").localeCompare(b.date||"");});
     var sts = state.steps.filter(function(x){ return x.projectId===p.id && secretVisible(x); }).sort(function(a,b){return (a.startDate||"").localeCompare(b.startDate||"");});
-    var col = function(title, add, addLabel, rows){
-      return '<div class="card" style="padding:12px 14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:13px">'+esc(title)+'</b>'+
-        '<button class="btn sm primary" data-pd-add="'+add+'" data-pid="'+esc(p.id)+'">'+iPlus()+' '+esc(addLabel)+'</button></div>'+
-        (rows.length ? rows.slice(0,5).map(function(r){ return '<div style="font-size:12px;padding:4px 0;border-top:1px solid var(--border)">'+r+'</div>'; }).join("")+(rows.length>5?'<div style="font-size:11px;color:var(--ink-faint);padding-top:4px">ほか'+(rows.length-5)+'件</div>':'') : '<div style="font-size:12px;color:var(--ink-faint)">まだありません</div>')+'</div>';
+    var range = function(a,b){ return fmtDate(a)+((b&&b!==a)?" 〜 "+fmtDate(b):""); };
+    var block = function(title, addKey, addLabel, tab, empty, rows){
+      return '<div class="form-section-title"><span>'+esc(title)+'</span><span><button class="btn sm primary" data-pd-add="'+addKey+'" data-pid="'+esc(p.id)+'">'+iPlus()+' '+esc(addLabel)+'</button></span></div>'+
+        '<div class="card" style="padding:6px 18px">'+(rows.length ? rows.slice(0,8).join("")+(rows.length>8?'<div style="font-size:12px;padding:8px 0"><a href="#" data-pd-goto="'+tab+'">すべて見る（'+rows.length+'件）</a></div>':'') : '<div style="font-size:12px;color:var(--ink-faint);padding:12px 0">'+esc(empty)+'</div>')+'</div>';
     };
-    return '<div class="form-section-title"><span>予定・工程</span></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:22px">'+
-      col("カレンダー（予定）","event","予定を追加", evs.map(function(x){ return '<a href="#" data-pd-event="'+esc(x.id)+'">'+esc(fmtDate(x.date))+'　'+esc(x.title||"")+'</a>'; }))+
-      col("工程表","step","工程を追加", sts.map(function(x){ return '<a href="#" data-pd-step="'+esc(x.id)+'">'+esc(x.name||"")+'　<span style="color:var(--ink-faint)">'+esc(fmtDate(x.startDate))+'〜'+esc(fmtDate(x.endDate))+'</span></a>'; }))+
-    '</div>';
+    var row = function(attr, id, lock, name, sub, badge){
+      return '<div class="pf-docrow" style="align-items:center"><div style="flex:1;min-width:0"><a class="nm" href="#" '+attr+'="'+esc(id)+'">'+(lock?iLock()+' ':'')+esc(name)+'</a><div class="d" style="font-size:11.5px;color:var(--ink-faint)">'+sub+'</div></div>'+
+        badge+' <button class="btn sm" '+attr+'="'+esc(id)+'">'+iEdit()+' 編集</button></div>';
+    };
+    return block("カレンダー","event","予定を追加","calendar","この案件の予定はまだありません", evs.map(function(x){
+        return row("data-pd-event", x.id, x.secret, x.title||"（無題）", esc(range(x.date,x.endDate))+(x.category?' ・ '+esc(x.category):''), '');
+      }))+
+      block("工程表","step","工程を追加","schedule","この案件の工程はまだありません", sts.map(function(x){
+        return row("data-pd-step", x.id, x.secret, x.name||"（無題）", esc(range(x.startDate,x.endDate))+(x.assignee?' ・ '+esc(x.assignee):''), '<span class="badge line-gray">進捗 '+esc(String(x.progress||0))+'%</span>');
+      }));
   }
   function openEventModal(ev, day, projectId){
     var e = ev || {date:day||localToday(), projectId:projectId||""};
@@ -4471,6 +4477,7 @@
 
     c.querySelectorAll("[data-goto]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); setTab(el.getAttribute("data-goto")); }); });
     c.querySelectorAll("[data-open-project]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var id=el.getAttribute("data-open-project"); if(id) goProjectDetail(id); }); });
+    c.querySelectorAll("[data-pd-goto]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); state.tab = el.getAttribute("data-pd-goto"); render(); }); });
     c.querySelectorAll("[data-pd-add]").forEach(function(el){ el.addEventListener("click", function(){
       var k = el.getAttribute("data-pd-add"), pid = el.getAttribute("data-pid");
       if(k==="event") openEventModal(null, null, pid); else if(k==="step") openStepModal(null, pid); else openReportModal(null, pid);
