@@ -680,8 +680,8 @@
 
   var state = {
     tab:"home", returnTab:"sales",
-    projects:[], customers:[], members:[], tasks:[], chats:[], files:[], folders:[], events:[], steps:[],
-    loaded:{projects:false,customers:false,members:false,tasks:false,chats:false,files:false,folders:false,events:false,steps:false},
+    projects:[], customers:[], members:[], tasks:[], chats:[], files:[], folders:[], events:[], steps:[], trash:[],
+    loaded:{projects:false,customers:false,members:false,tasks:false,chats:false,files:false,folders:false,events:false,steps:false,trash:false},
     canWrite:true,
     sidebarOpen:false,
     salesFilter:{name:"",status:STATUS_LIST.slice(),type:"all",store:"all",assignees:[],page:1},
@@ -953,6 +953,9 @@
     db.collection("files").orderBy("uploadedAt").onSnapshot(function(snap){
       state.files = snap.docs.map(toObj); state.loaded.files=true; render();
     }, onErr);
+    db.collection("trash").onSnapshot(function(snap){
+      state.trash = snap.docs.map(toObj); state.loaded.trash=true; render();
+    }, function(e){ state.loaded.trash=true; state.trash=[]; render(); });
     db.collection("events").onSnapshot(function(snap){
       state.events = snap.docs.map(toObj); state.loaded.events=true; render();
     }, function(e){ state.loaded.events=true; state.events=[]; render(); });
@@ -1069,10 +1072,12 @@
     confirmDelete("フォルダ「"+folder.name+"」を削除しますか？（中のファイル"+inside.length+"件は削除されず「未分類」に移動します）", function(){
       if(!db){
         inside.forEach(function(f){ f.folderId=null; });
+        trashPut("folders", folder.id);
         state.folders = state.folders.filter(function(x){return x.id!==folder.id;});
         state.pfFolder=""; toast("フォルダを削除しました（プレビューのみ）"); render(); return;
       }
       Promise.all(inside.map(function(f){ return db.collection("files").doc(f.id).update({folderId:null}); }))
+        .then(function(){ return trashPut("folders", folder.id); })
         .then(function(){ return db.collection("folders").doc(folder.id).delete(); })
         .then(function(){ state.pfFolder=""; toast("フォルダを削除しました"); render(); })
         .catch(function(){ toast("削除に失敗しました"); });
@@ -2721,7 +2726,7 @@
   // (admins only: stats, permission/password management, backup).
   function settingsSections(){
     var s = [["company","会社情報"],["personal","個人情報"]];
-    if(state.isAdmin){ s.push(["admin","管理画面"]); s.push(["master","マスタ管理"]); }
+    if(state.isAdmin){ s.push(["admin","管理画面"]); s.push(["master","マスタ管理"]); s.push(["trash","ゴミ箱"]); }
     return s;
   }
   function myMember(){
@@ -2733,11 +2738,12 @@
     if(!sections.some(function(x){return x[0]===state.settingsSeg;})) state.settingsSeg = "company";
     var html = '<h1 class="pagetitle">設定</h1><div style="height:14px"></div>';
     html += '<div class="segmented" style="margin-bottom:16px">'+sections.map(function(x){
-      return '<div class="segopt'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+((x[0]==="admin"||x[0]==="master")?iAdmin():'')+x[1]+'</div>';
+      return '<div class="segopt'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+((x[0]==="admin"||x[0]==="master"||x[0]==="trash")?iAdmin():'')+x[1]+'</div>';
     }).join("")+'</div>';
     if(state.settingsSeg==="personal") html += renderSettingsPersonal();
     else if(state.settingsSeg==="admin") html += renderSettingsAdmin();
     else if(state.settingsSeg==="master") html += renderSettingsMaster();
+    else if(state.settingsSeg==="trash") html += renderSettingsTrash();
     else html += renderSettingsCompany();
     return html;
   }
@@ -2845,6 +2851,24 @@
     else if(m.key==="eventTypes") n = state.events.filter(function(x){return x.category===name;}).length;
     else if(m.key==="propertyStructures") n = rawStore.projects.filter(function(p){return p.propertyStructure===name;}).length;
     return n;
+  }
+  function renderSettingsTrash(){
+    if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
+    if(!state.loaded.trash) return skeleton();
+    var t = state.trashType||"all";
+    var all = state.trash.slice().sort(function(a,b){ return (b.deletedAt||"").localeCompare(a.deletedAt||""); });
+    var list = all.filter(function(x){ return t==="all" || x.col===t; });
+    var html = '<div style="font-size:12px;color:var(--ink-faint);line-height:1.7;max-width:760px;margin-bottom:12px">削除したデータはここに残り、「元に戻す」で復元できます。「完全に削除」するとデータは消えて復元できません。</div>';
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">'+
+      '<select id="trash-type" style="width:auto"><option value="all">すべての種類（'+all.length+'件）</option>'+Object.keys(TRASH_TYPES).map(function(k){ var n=all.filter(function(x){return x.col===k;}).length; return n?'<option value="'+k+'"'+(t===k?' selected':'')+'>'+TRASH_TYPES[k]+'（'+n+'件）</option>':''; }).join("")+'</select><span style="flex:1"></span>'+
+      (list.length?'<button class="btn outline" id="trash-empty" style="color:var(--danger)">'+iAdmin()+iTrash()+' '+(t==="all"?'ゴミ箱を空にする':TRASH_TYPES[t]+'をすべて完全に削除')+'</button>':'')+'</div>';
+    if(!list.length) return html + emptyState(iTrash,"ゴミ箱は空です","削除したデータがここに表示されます");
+    html += '<div class="tablewrap"><table><thead><tr><th>種類</th><th>名前</th><th>削除日時</th><th>削除した人</th><th></th></tr></thead><tbody>'+
+      list.map(function(x){
+        return '<tr class="rowhover"><td><span class="badge line-gray">'+esc(TRASH_TYPES[x.col]||x.col)+'</span></td><td><div class="cell-name">'+esc(x.name||"（名称なし）")+'</div></td><td class="num">'+esc(fmtDateTime(x.deletedAt))+'</td><td>'+esc(x.deletedBy||"—")+'</td>'+
+          '<td style="white-space:nowrap"><button class="btn sm primary" data-trash-restore="'+esc(x.id)+'">元に戻す</button> <button class="btn sm" data-trash-purge="'+esc(x.id)+'" style="color:var(--danger)">完全に削除</button></td></tr>';
+      }).join("")+'</tbody></table></div>';
+    return html;
   }
   function renderSettingsMaster(){
     if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
@@ -3220,11 +3244,42 @@
     var p = id ? db.collection(col).doc(id).update(data) : db.collection(col).add(Object.assign({createdAt:new Date().toISOString()},data));
     p.then(function(ref){ closeModal(); toast(msg); if(after) after(id||(ref&&ref.id)); }).catch(function(e){ toast("保存に失敗しました"); });
   }
+  // ---- ゴミ箱: 削除したデータは trash コレクションに控えを残し、管理画面から復元できる ----
+  var TRASH_TYPES = {projects:"案件",customers:"顧客",members:"メンバー",tasks:"タスク",files:"ファイル",events:"予定",steps:"工程",folders:"フォルダ"};
+  var TRASH_NAME = {projects:"name",customers:"name",members:"name",tasks:"title",files:"filename",events:"title",steps:"name",folders:"name"};
+  function trashPut(col, id){
+    var rec = TRASH_TYPES[col] ? rawOf(col).find(function(x){ return x.id===id; }) : null;
+    if(!rec) return Promise.resolve();
+    var data = Object.assign({}, rec); delete data.id;
+    var nm = rec[TRASH_NAME[col]] || "";
+    if(col==="steps") nm = (rec.projectName?rec.projectName+"：":"")+(rec.name||"");
+    var entry = {col:col, docId:id, name:nm, data:data, deletedAt:new Date().toISOString(), deletedBy:state.myName||""};
+    if(!db){ state.trash.unshift(Object.assign({id:uid()}, entry)); return Promise.resolve(); }
+    return db.collection("trash").add(entry);
+  }
   function deleteDoc(col,id,msg,after){
     if(!state.canWrite){ toast("この操作を行う権限がありません"); return; }
     if(col==="members" && !state.isAdmin){ toast("メンバーの削除は管理者のみ行えます"); return; }
-    if(!db){ setRaw(col, rawOf(col).filter(function(x){return x.id!==id;})); toast(msg+"（プレビューのみ）"); render(); if(after) after(); return; }
-    db.collection(col).doc(id).delete().then(function(){toast(msg); if(after) after();}).catch(function(){toast("削除に失敗しました");});
+    var put = trashPut(col,id);
+    if(!db){ put.then(function(){ setRaw(col, rawOf(col).filter(function(x){return x.id!==id;})); toast(msg+"（プレビューのみ）"); render(); if(after) after(); }); return; }
+    put.then(function(){ return db.collection(col).doc(id).delete(); }).then(function(){toast(msg); if(after) after();}).catch(function(){toast("削除に失敗しました");});
+  }
+  function restoreTrash(entry){
+    var col = entry.col, id = entry.docId;
+    if(rawOf(col).some(function(x){ return x.id===id; })){ toast("同じデータがすでに存在します"); return; }
+    var data = Object.assign({}, entry.data);
+    if(col==="files" && data.folderId && !state.folders.some(function(g){ return g.id===data.folderId; })) data.folderId = null;
+    if(!db){
+      rawOf(col).unshift(Object.assign({id:id}, data));
+      state.trash = state.trash.filter(function(x){ return x.id!==entry.id; });
+      toast("「"+(entry.name||TRASH_TYPES[col])+"」を元に戻しました（プレビューのみ）"); render(); return;
+    }
+    db.collection(col).doc(id).set(data).then(function(){ return db.collection("trash").doc(entry.id).delete(); })
+      .then(function(){ toast("「"+(entry.name||TRASH_TYPES[col])+"」を元に戻しました"); }).catch(function(){ toast("元に戻せませんでした"); });
+  }
+  function purgeTrash(ids){
+    if(!db){ state.trash = state.trash.filter(function(x){ return ids.indexOf(x.id)===-1; }); toast(ids.length+"件を完全に削除しました（プレビューのみ）"); render(); return; }
+    Promise.all(ids.map(function(id){ return db.collection("trash").doc(id).delete(); })).then(function(){ toast(ids.length+"件を完全に削除しました"); }).catch(function(){ toast("削除に失敗しました"); });
   }
 
   /* ============ CSV 入力・出力 / 一括編集 (all list screens) ============ */
@@ -3687,8 +3742,10 @@
     return id ? db.collection(col).doc(id).update(data) : db.collection(col).add(Object.assign({createdAt:now}, data));
   }
   function deleteRaw(col, id){
-    if(!db){ setRaw(col, rawOf(col).filter(function(x){return x.id!==id;})); return Promise.resolve(); }
-    return db.collection(col).doc(id).delete();
+    return trashPut(col,id).then(function(){
+      if(!db){ setRaw(col, rawOf(col).filter(function(x){return x.id!==id;})); return; }
+      return db.collection(col).doc(id).delete();
+    });
   }
   function runBatch(promises, doneLabel){
     var ok = 0, fail = 0;
@@ -4318,6 +4375,13 @@
       if(db) db.doc("settings/secret").set({defaults:list, updatedAt:new Date().toISOString()}).then(done).catch(function(){ toast("保存に失敗しました"); });
       else done();
     };
+    var tt = document.getElementById("trash-type"); if(tt) tt.addEventListener("change", function(){ state.trashType = tt.value; render(); });
+    c.querySelectorAll("[data-trash-restore]").forEach(function(el){ el.addEventListener("click", function(){ var e=state.trash.find(function(x){return x.id===el.getAttribute("data-trash-restore");}); if(e) restoreTrash(e); }); });
+    c.querySelectorAll("[data-trash-purge]").forEach(function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-trash-purge"); confirmDelete("このデータを完全に削除します。復元できなくなります。", function(){ purgeTrash([id]); }, {title:"完全に削除の確認", button:"完全に削除"}); }); });
+    var te = document.getElementById("trash-empty"); if(te) te.addEventListener("click", function(){
+      var ty = state.trashType||"all", ids = state.trash.filter(function(x){ return ty==="all" || x.col===ty; }).map(function(x){return x.id;});
+      confirmDelete(ids.length+"件を完全に削除します。復元できなくなります。", function(){ purgeTrash(ids); }, {title:"完全に削除の確認", button:"完全に削除"});
+    });
     c.querySelectorAll("[data-master-tab]").forEach(function(el){ el.addEventListener("click", function(){ state.masterTab = el.getAttribute("data-master-tab"); render(); }); });
     c.querySelectorAll("[data-master-save]").forEach(function(btn){ btn.addEventListener("click", function(){
       var key = btn.getAttribute("data-master-save"), ta = c.querySelector('[data-master-ta="'+key+'"]');
