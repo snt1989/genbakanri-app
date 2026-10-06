@@ -325,7 +325,7 @@
     <header class="topbar">
       <button class="menubtn" id="menu-toggle"></button>
       <div class="bellwrap" id="bell-icon"></div>
-      <div class="topbar-user"><div class="avatar" id="user-avatar">阿</div><span id="user-name">阿部 晋太郎（株式会社サノー）</span><button class="iconbtn" id="logout-btn" title="ログアウト"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg></button></div>
+      <div class="topbar-user"><div class="avatar" id="user-avatar">阿</div><span id="user-name">阿部 晋太郎（株式会社三桜）</span><button class="iconbtn" id="logout-btn" title="ログアウト"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg></button></div>
     </header>
     <div class="content" id="content"></div>
   </div>
@@ -368,12 +368,12 @@
       {id:"c5", data:{name:"亀田 幸宏", phone:"090-3364-6725", address:"岩手県盛岡市月が丘1丁目4-22", registeredDate:"2026-09-17"}}
     ],
     members: [
-      {id:"m1", data:{name:"阿部 晋太郎", company:"株式会社サノー", store:"盛岡店", roles:["営業"], kind:"internal", password:"1234", isAdmin:true, permission:"admin"}},
-      {id:"m2", data:{name:"佐藤 裕之", company:"株式会社サノー", store:"盛岡店", roles:["営業"], kind:"internal", password:"1234", permission:"general"}},
-      {id:"m3", data:{name:"瀬戸 美奈", company:"株式会社サノー", store:"盛岡店", roles:["現場監督"], kind:"internal", password:"1234", permission:"general"}},
-      {id:"m4", data:{name:"鷹羽 悠希", company:"株式会社サノー", store:"仙台店", roles:["営業"], kind:"internal", password:"1234", isAdmin:true, permission:"admin"}},
-      {id:"m5", data:{name:"松草 美佳子", company:"株式会社サノー", store:"盛岡店", roles:["ハウスクリーニング"], kind:"internal", password:"1234", permission:"general"}},
-      {id:"m6", data:{name:"因幡 隆", company:"株式会社サノー", store:"盛岡店", roles:["現場監督"], kind:"internal", password:"1234", permission:"general"}},
+      {id:"m1", data:{name:"阿部 晋太郎", company:"株式会社三桜", store:"盛岡店", roles:["営業"], kind:"internal", password:"1234", isAdmin:true, permission:"admin"}},
+      {id:"m2", data:{name:"佐藤 裕之", company:"株式会社三桜", store:"盛岡店", roles:["営業"], kind:"internal", password:"1234", permission:"general"}},
+      {id:"m3", data:{name:"瀬戸 美奈", company:"株式会社三桜", store:"盛岡店", roles:["現場監督"], kind:"internal", password:"1234", permission:"general"}},
+      {id:"m4", data:{name:"鷹羽 悠希", company:"株式会社三桜", store:"仙台店", roles:["営業"], kind:"internal", password:"1234", isAdmin:true, permission:"admin"}},
+      {id:"m5", data:{name:"松草 美佳子", company:"株式会社三桜", store:"盛岡店", roles:["ハウスクリーニング"], kind:"internal", password:"1234", permission:"general"}},
+      {id:"m6", data:{name:"因幡 隆", company:"株式会社三桜", store:"盛岡店", roles:["現場監督"], kind:"internal", password:"1234", permission:"general"}},
       {id:"m7", data:{name:"小見 清志", company:"有限会社小見塗装", store:"", roles:["塗装"], kind:"external", password:"1234", permission:"external"}},
       {id:"m8", data:{name:"熊谷 義男", company:"株式会社三桜", store:"", roles:["解体"], kind:"external", password:"1234", permission:"external"}}
     ],
@@ -519,10 +519,17 @@
           var any = false;
           membersSnap.docs.forEach(function(d){
             var data = d.data();
-            if(data.permission) return;
-            var perm = data.isAdmin ? "admin" : (data.kind==="external" ? "external" : (BOOTSTRAP_ADMIN_NAMES.indexOf(data.name)!==-1 ? "admin" : "general"));
-            migBatch.update(fsMod.doc(fs, "members", d.id), { permission: perm, isAdmin: perm==="admin", kind: perm==="external"?"external":"internal" });
-            any = true;
+            var upd = {};
+            if(!data.permission){
+              var perm = data.isAdmin ? "admin" : (data.kind==="external" ? "external" : (BOOTSTRAP_ADMIN_NAMES.indexOf(data.name)!==-1 ? "admin" : "general"));
+              upd = { permission: perm, isAdmin: perm==="admin", kind: perm==="external"?"external":"internal" };
+            }
+            // Company was renamed: members still on the old name move to the new one.
+            if(data.company === "株式会社サノー") upd.company = "株式会社三桜";
+            if(Object.keys(upd).length){
+              migBatch.update(fsMod.doc(fs, "members", d.id), upd);
+              any = true;
+            }
           });
           if(any) await migBatch.commit();
         }catch(e){ console.error("Firestore permission migration failed (non-fatal)", e); }
@@ -2111,9 +2118,9 @@
   /* ============ offline preview sample data ============ */
   var t0 = todayISO();
   var SAMPLE_MEMBERS = [
-    {id:"m1", name:"佐藤 裕之", company:"株式会社サノー", store:"盛岡店", roles:["営業"], kind:"internal", password:"1234", permission:"general"},
-    {id:"m2", name:"瀬戸 美奈", company:"株式会社サノー", store:"盛岡店", roles:["現場監督"], kind:"internal", password:"1234", permission:"general"},
-    {id:"m3", name:"鷹羽 悠希", company:"株式会社サノー", store:"仙台店", roles:["営業"], kind:"internal", password:"1234", isAdmin:true, permission:"admin"},
+    {id:"m1", name:"佐藤 裕之", company:"株式会社三桜", store:"盛岡店", roles:["営業"], kind:"internal", password:"1234", permission:"general"},
+    {id:"m2", name:"瀬戸 美奈", company:"株式会社三桜", store:"盛岡店", roles:["現場監督"], kind:"internal", password:"1234", permission:"general"},
+    {id:"m3", name:"鷹羽 悠希", company:"株式会社三桜", store:"仙台店", roles:["営業"], kind:"internal", password:"1234", isAdmin:true, permission:"admin"},
     {id:"m4", name:"小見 清志", company:"有限会社小見塗装", store:"", roles:["塗装"], kind:"external", permission:"external"}
   ];
   var SAMPLE_CUSTOMERS = [
