@@ -2500,7 +2500,7 @@
     var byProject = state.filesView==="project";
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">'+
       '<h1 class="pagetitle">写真・ファイル</h1>'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="files-upload-btn">'+iPlus()+' 写真・ファイルを追加</button>'+(byProject?'':csvToolbar("files"))+'</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="files-upload-btn">'+iPlus()+' 写真・ファイルを追加</button>'+(byProject?'':csvToolbar("files"))+(state.isAdmin?'<button class="btn outline" id="files-backup-btn">'+iAdmin()+' ファイルをバックアップ</button>':'')+'</div>'+
       '</div><div style="height:14px"></div>';
     html += '<div class="segmented" style="margin-bottom:16px">'+
       '<div class="segopt'+(byProject?'':' active')+'" data-files-view="all">すべて</div>'+
@@ -2582,6 +2582,7 @@
       '<label class="btn primary" style="cursor:pointer;border-radius:999px;padding:10px 22px">'+iUpload()+' ファイルをアップロード<input type="file" id="pf-input" multiple style="display:none"></label>'+
       (cur ? '' : '<button class="btn outline" id="pf-newfolder" style="border-radius:999px;padding:10px 22px">新規フォルダ作成</button>')+
       (cur ? '<button class="btn outline" data-pf-edit-folder="'+esc(cur.id)+'" style="border-radius:999px;padding:10px 22px">'+iEdit()+' フォルダを編集</button>' : '')+
+      (state.isAdmin ? '<button class="btn outline" id="pf-backup" style="border-radius:999px;padding:10px 22px">'+iAdmin()+' この案件のファイルをバックアップ</button>' : '')+
     '</div>';
     html += '<div class="pf-bar">'+
       '<label><input type="checkbox" id="pf-selall"'+(list.length && list.every(function(x){return state.pfSel[x.id];})?" checked":"")+'> ファイル一括選択</label>'+
@@ -3026,10 +3027,18 @@
     }
     saveBackupPayload(payload, []);
   }
+  // 写真・ファイル画面用：ファイル情報・フォルダ・本体だけのバックアップ（projectId指定でその案件のみ）
+  function backupFilesOnly(projectId){
+    var pick = function(col){ return rawOf(col).filter(function(x){ return !projectId || x.projectId===projectId; }).map(function(o){ return Object.assign({},o); }); };
+    var payload = {format:"genba-backup", version:2, scope:"files", exportedAt:new Date().toISOString(), exportedBy:state.myName||"", data:{files:pick("files"), folders:pick("folders")}};
+    payload.counts = {files:payload.data.files.length, folders:payload.data.folders.length};
+    if(!payload.data.files.length && !payload.data.folders.length){ toast("バックアップするファイルがありません"); return; }
+    return collectFileBlobs(payload).then(function(failed){ saveBackupPayload(payload, failed); });
+  }
   function saveBackupPayload(payload, failed){
     var blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
-    var filename = "genba-backup-"+(payload.includesFiles?"full-":"")+todayISO()+".json";
-    var done = function(){ markBackup(); toast("バックアップを保存しました（"+BACKUP_COLS.reduce(function(n,c){return n+payload.counts[c[0]];},0)+"件"+(payload.includesFiles?"・写真/ファイル"+Object.keys(payload.blobs).length+"点":"")+"）"+(failed.length?" 取得できなかったファイル: "+failed.length+"点":"")); render(); };
+    var filename = (payload.scope==="files"?"genba-files-backup-":"genba-backup-"+(payload.includesFiles?"full-":""))+todayISO()+".json";
+    var done = function(){ markBackup(); toast("バックアップを保存しました（"+BACKUP_COLS.reduce(function(n,c){return n+(payload.counts[c[0]]||0);},0)+"件"+(payload.includesFiles?"・写真/ファイル"+Object.keys(payload.blobs).length+"点":"")+"）"+(failed.length?" 取得できなかったファイル: "+failed.length+"点":"")); render(); };
     if(downloadsCap){
       downloadsCap.save({filename:filename, data:blob}).then(done).catch(function(){ toast("ダウンロードがキャンセルされました"); });
     } else {
@@ -4522,6 +4531,10 @@
     if(backupBtn) backupBtn.addEventListener("click", function(){ if(!state.isAdmin) return; backupAllData(); });
     var bkRun = document.getElementById("bk-run");
     if(bkRun) bkRun.addEventListener("click", function(){ if(!state.isAdmin) return; backupAllData(document.getElementById("bk-pw").checked); });
+    var fb = document.getElementById("files-backup-btn");
+    if(fb) fb.addEventListener("click", function(){ if(state.isAdmin) backupFilesOnly(null); });
+    var pb = document.getElementById("pf-backup");
+    if(pb) pb.addEventListener("click", function(){ if(state.isAdmin) backupFilesOnly(state.filesProjectId); });
     var bkRunF = document.getElementById("bk-run-files");
     if(bkRunF) bkRunF.addEventListener("click", function(){ if(!state.isAdmin) return; bkRunF.disabled = true; backupAllData(document.getElementById("bk-pw").checked, true); });
     var bkFile = document.getElementById("bk-file");
