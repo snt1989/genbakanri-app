@@ -559,7 +559,7 @@
     {id:"sales", label:"営業案件一覧", icon:iBriefcase},
     {id:"construction", label:"施工案件一覧", icon:iDoc},
     {id:"chat", label:"チャット", icon:iChat},
-    {id:"members", label:"メンバー", icon:iUsers},
+    {id:"members", label:"メンバー管理", icon:iUsers},
     {id:"customers", label:"顧客管理", icon:iBriefcase2},
     {id:"files", label:"写真・ファイル", icon:iImage},
     {id:"settings", label:"設定", icon:iBox}
@@ -1391,7 +1391,7 @@
     var m = state.editingMember;           // null = registering a new member
     var v = function(k){ return esc(m && m[k]!=null ? m[k] : ""); };
     var picked0 = (m && m.roles) || [];
-    var html = crumb("メンバーに戻る", "members");
+    var html = crumb("メンバー管理に戻る", "members");
     html += '<h1 class="pagetitle" style="margin-top:8px">'+(m?"メンバー編集":"自社メンバー登録")+'</h1><div style="height:12px"></div>';
     html += '<div class="form-shell"><div class="form-card">';
     html += formRow("携帯番号 ※仕事用", true, false, '<input type="tel" id="f-mphone" placeholder="例：09012341234" value="'+v("phone")+'">');
@@ -1500,7 +1500,7 @@
       return m.kind===(state.memberSeg==="internal"?"internal":"external");
     });
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">'+
-      '<h1 class="pagetitle">メンバー</h1>'+
+      '<h1 class="pagetitle">メンバー管理</h1>'+
       (state.isAdmin ?
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
           '<button class="btn primary" data-goto-memberform="1">'+iLock()+iPlus()+' 自社メンバー登録</button>'+
