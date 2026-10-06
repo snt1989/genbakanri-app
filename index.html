@@ -2500,7 +2500,7 @@
     var byProject = state.filesView==="project";
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">'+
       '<h1 class="pagetitle">写真・ファイル</h1>'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="files-upload-btn">'+iPlus()+' 写真・ファイルを追加</button>'+(byProject?'':csvToolbar("files"))+(state.isAdmin?'<button class="btn outline" id="files-backup-btn">'+iAdmin()+' ファイルをバックアップ</button>':'')+'</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="files-upload-btn">'+iPlus()+' 写真・ファイルを追加</button>'+(byProject?'':csvToolbar("files"))+(byProject?'':'<button class="btn outline" id="files-dl-btn">'+iDownload()+' ダウンロード（'+list.length+'件）</button>')+(state.isAdmin?'<button class="btn outline" id="files-backup-btn">'+iAdmin()+' ファイルをバックアップ</button>':'')+'</div>'+
       '</div><div style="height:14px"></div>';
     html += '<div class="segmented" style="margin-bottom:16px">'+
       '<div class="segopt'+(byProject?'':' active')+'" data-files-view="all">すべて</div>'+
@@ -2528,6 +2528,61 @@
       html += '<div class="photo-grid">'+list.map(function(x){ return fileThumb(x, true, true); }).join("")+'</div>';
     }
     return html;
+  }
+
+  /* ---- ダウンロード（単体は直接、複数はZIP） ---- */
+  var CRC_T = null;
+  function crc32(u8){
+    if(!CRC_T){ CRC_T = []; for(var n=0;n<256;n++){ var c=n; for(var k=0;k<8;k++) c = c&1 ? (0xEDB88320^(c>>>1)) : (c>>>1); CRC_T[n]=c>>>0; } }
+    var crc = 0xFFFFFFFF; for(var i=0;i<u8.length;i++) crc = CRC_T[(crc^u8[i])&0xFF]^(crc>>>8);
+    return (crc^0xFFFFFFFF)>>>0;
+  }
+  // 無圧縮(store)のZIPを作る。写真は既に圧縮済みなので十分。entries: [{name, data:Uint8Array}]
+  function makeZip(entries){
+    var enc = new TextEncoder(), parts = [], cd = [], off = 0, dt = new Date();
+    var dosT = (dt.getHours()<<11)|(dt.getMinutes()<<5)|(dt.getSeconds()>>1), dosD = ((dt.getFullYear()-1980)<<9)|((dt.getMonth()+1)<<5)|dt.getDate();
+    entries.forEach(function(e){
+      var nm = enc.encode(e.name), crc = crc32(e.data), sz = e.data.length;
+      var lh = new DataView(new ArrayBuffer(30));
+      lh.setUint32(0,0x04034b50,true); lh.setUint16(4,20,true); lh.setUint16(6,0x0800,true); lh.setUint16(8,0,true);
+      lh.setUint16(10,dosT,true); lh.setUint16(12,dosD,true); lh.setUint32(14,crc,true); lh.setUint32(18,sz,true); lh.setUint32(22,sz,true); lh.setUint16(26,nm.length,true); lh.setUint16(28,0,true);
+      parts.push(lh.buffer, nm, e.data);
+      var ch = new DataView(new ArrayBuffer(46));
+      ch.setUint32(0,0x02014b50,true); ch.setUint16(4,20,true); ch.setUint16(6,20,true); ch.setUint16(8,0x0800,true); ch.setUint16(10,0,true);
+      ch.setUint16(12,dosT,true); ch.setUint16(14,dosD,true); ch.setUint32(16,crc,true); ch.setUint32(20,sz,true); ch.setUint32(24,sz,true); ch.setUint16(28,nm.length,true);
+      ch.setUint32(42,off,true);
+      cd.push(ch.buffer, nm);
+      off += 30+nm.length+sz;
+    });
+    var cdSize = 0; cd.forEach(function(x){ cdSize += x.byteLength||x.length; });
+    var end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0,0x06054b50,true); end.setUint16(8,entries.length,true); end.setUint16(10,entries.length,true); end.setUint32(12,cdSize,true); end.setUint32(16,off,true);
+    return new Blob(parts.concat(cd,[end.buffer]), {type:"application/zip"});
+  }
+  function safeName(n){ return String(n||"ファイル").replace(/[\\/:*?"<>|]/g,"_"); }
+  // list: ファイルdoc配列。dirOf(f): ZIP内のフォルダ名（任意）
+  function dir2(d){ return String(d||"").split("/").filter(Boolean).map(safeName).join("/"); }
+  function downloadFiles(list, zipName, dirOf){
+    if(!list.length){ toast("ダウンロードするファイルがありません"); return; }
+    var getBlob = function(f){ return fetch(fileUrl(f)).then(function(r){ if(!r.ok) throw 0; return r.blob(); }); };
+    if(list.length===1){
+      return getBlob(list[0]).then(function(b){ downloadBlob(safeName(list[0].filename), b); toast("ダウンロードしました"); }).catch(function(){ toast("ダウンロードに失敗しました"); });
+    }
+    var entries = [], used = {}, failed = 0, i = 0;
+    var next = function(){
+      if(i>=list.length) return Promise.resolve();
+      var f = list[i++]; toast("ダウンロード準備中… "+i+" / "+list.length);
+      return getBlob(f).then(function(b){ return b.arrayBuffer(); }).then(function(buf){
+        var dir = dirOf ? dir2(dirOf(f)) : "", base = safeName(f.filename), path = (dir?dir+"/":"")+base, k = 1;
+        while(used[path]){ var dot = base.lastIndexOf("."); path = (dir?dir+"/":"")+(dot>0?base.slice(0,dot)+"("+(++k)+")"+base.slice(dot):base+"("+(++k)+")"); }
+        used[path] = true; entries.push({name:path, data:new Uint8Array(buf)});
+      }).catch(function(){ failed++; }).then(next);
+    };
+    return next().then(function(){
+      if(!entries.length){ toast("ダウンロードに失敗しました"); return; }
+      downloadBlob(safeName(zipName)+"-"+todayISO()+".zip", makeZip(entries));
+      toast(entries.length+"件をダウンロードしました"+(failed?"（"+failed+"件は取得できませんでした）":""));
+    });
   }
 
   function fmtSize(n){
@@ -2582,6 +2637,7 @@
       '<label class="btn primary" style="cursor:pointer;border-radius:999px;padding:10px 22px">'+iUpload()+' ファイルをアップロード<input type="file" id="pf-input" multiple style="display:none"></label>'+
       (cur ? '' : '<button class="btn outline" id="pf-newfolder" style="border-radius:999px;padding:10px 22px">新規フォルダ作成</button>')+
       (cur ? '<button class="btn outline" data-pf-edit-folder="'+esc(cur.id)+'" style="border-radius:999px;padding:10px 22px">'+iEdit()+' フォルダを編集</button>' : '')+
+      '<button class="btn outline" id="pf-dl-all" style="border-radius:999px;padding:10px 22px">'+iDownload()+' '+(cur?'このフォルダをダウンロード':'すべてダウンロード')+'</button>'+
       (state.isAdmin ? '<button class="btn outline" id="pf-backup" style="border-radius:999px;padding:10px 22px">'+iAdmin()+' この案件のファイルをバックアップ</button>' : '')+
     '</div>';
     html += '<div class="pf-bar">'+
@@ -2593,7 +2649,7 @@
     if(selIds.length){
       html += '<div class="pf-bulk"><b>'+selIds.length+'件選択中</b><span>フォルダへ移動：</span><select id="pf-bulk-move"><option value="">選択してください</option><option value="__root">フォルダなし</option>'+
         folders.map(function(g){ return '<option value="'+esc(g.id)+'">'+esc(g.name)+'</option>'; }).join("")+'</select>'+
-        '<button class="btn sm" id="pf-bulk-del" style="color:var(--danger)">'+iTrash()+' 削除</button><button class="btn sm" id="pf-bulk-clear">選択解除</button></div>';
+        '<button class="btn sm" id="pf-bulk-dl">'+iDownload()+' ダウンロード</button><button class="btn sm" id="pf-bulk-del" style="color:var(--danger)">'+iTrash()+' 削除</button><button class="btn sm" id="pf-bulk-clear">選択解除</button></div>';
     }
     var tiles = "", rowsHtml = "";
     if(!cur){
@@ -2612,7 +2668,7 @@
       rowsHtml += '<tr class="rowhover"><td style="width:32px"><input type="checkbox" data-pf-chk="'+esc(f.id)+'"'+(on?' checked':'')+'></td>'+
         '<td><div style="display:flex;align-items:center;gap:10px"><span style="flex:none;display:flex;transform:scale(.7);transform-origin:left center;width:28px">'+(isImageFile(f)?'<img src="'+esc(fileUrl(f))+'" style="width:40px;height:40px;object-fit:cover">':iFileKind(f))+'</span><a class="pf-name" style="text-align:left;margin:0;white-space:normal;word-break:break-all" href="'+esc(fileUrl(f))+'" target="_blank" rel="noopener">'+esc(f.filename||"ファイル")+'</a></div></td>'+
         '<td class="num">'+esc(fileDate(f))+'</td><td>'+uploaderHtml(f.uploadedBy)+'</td><td class="num">'+(f.size?fmtSize(f.size):"—")+'</td>'+
-        '<td style="white-space:nowrap"><button class="btn sm" data-pf-edit-file="'+esc(f.id)+'">'+iEdit()+' 編集</button></td></tr>';
+        '<td style="white-space:nowrap"><button class="btn sm" data-pf-dl="'+esc(f.id)+'" title="ダウンロード">'+iDownload()+'</button> <button class="btn sm" data-pf-edit-file="'+esc(f.id)+'">'+iEdit()+' 編集</button></td></tr>';
     });
     if(!tiles){
       html += emptyState(iImage, cur?"このフォルダは空です":"写真・ファイルがありません", "「ファイルをアップロード」から追加できます");
@@ -2633,10 +2689,11 @@
       '<label class="field">ファイル名<input type="text" id="f-fname" value="'+esc(f.filename||"")+'"></label>'+
       '<label class="field">フォルダ<select id="f-fmove"><option value="">フォルダなし</option>'+folders.map(function(g){ return '<option value="'+esc(g.id)+'"'+(f.folderId===g.id?' selected':'')+'>'+esc(g.name)+(g.secret?'（社外秘）':'')+'</option>'; }).join("")+'</select></label>'+
       '<div style="font-size:11.5px;color:var(--ink-faint)">'+esc(fileDate(f))+(f.uploadedBy?" ・ "+esc(f.uploadedBy):"")+(f.size?" ・ "+fmtSize(f.size):"")+'</div>',
-      '<button class="btn" id="f-fdel" style="color:var(--danger);margin-right:auto">'+iTrash()+' 削除</button><button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-fsave">保存する</button>');
+      '<button class="btn" id="f-fdel" style="color:var(--danger);margin-right:auto">'+iTrash()+' 削除</button><button class="btn" id="f-fdl">'+iDownload()+' ダウンロード</button><button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-fsave">保存する</button>');
     document.getElementById("f-fdel").addEventListener("click", function(){
       confirmDelete("このファイルを削除しますか？", function(){ deleteDoc("files", f.id, "削除しました"); });
     });
+    document.getElementById("f-fdl").addEventListener("click", function(){ downloadFiles([f], f.filename); });
     document.getElementById("f-fsave").addEventListener("click", function(){
       var name = document.getElementById("f-fname").value.trim() || f.filename;
       writeDoc("files", f.id, {filename:name, folderId: document.getElementById("f-fmove").value||null}, "ファイルを更新しました");
@@ -4258,6 +4315,33 @@
     if(pfSort) pfSort.addEventListener("change", function(){ state.pfSort = pfSort.value; render(); });
     var pfView = document.getElementById("pf-view");
     if(pfView) pfView.addEventListener("change", function(){ state.pfView = pfView.value; render(); });
+    var dirName = function(f){ var g = state.folders.find(function(x){return x.id===f.folderId;}); return g?g.name:""; };
+    var pfDlAll = document.getElementById("pf-dl-all");
+    if(pfDlAll) pfDlAll.addEventListener("click", function(){
+      var pr = state.projects.find(function(x){return x.id===state.filesProjectId;}); if(!pr) return;
+      var l = filesForProject(pr.id);
+      if(state.pfFolder) l = l.filter(function(x){ return x.folderId===state.pfFolder; });
+      downloadFiles(l, pr.name+(state.pfFolder?"-"+(dirName({folderId:state.pfFolder})||"フォルダ"):""), dirName);
+    });
+    var pfBulkDl = document.getElementById("pf-bulk-dl");
+    if(pfBulkDl) pfBulkDl.addEventListener("click", function(){
+      var pr = state.projects.find(function(x){return x.id===state.filesProjectId;});
+      var l = filesForProject(state.filesProjectId).filter(function(x){ return state.pfSel[x.id]; });
+      downloadFiles(l, (pr?pr.name:"ファイル")+"-選択", dirName);
+    });
+    c.querySelectorAll("[data-pf-dl]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); ev.stopPropagation(); var f=state.files.find(function(x){return x.id===el.getAttribute("data-pf-dl");}); if(f) downloadFiles([f], f.filename); }); });
+    var filesDl = document.getElementById("files-dl-btn");
+    if(filesDl) filesDl.addEventListener("click", function(){
+      var ff = state.filesFilter;
+      var l = state.files.filter(function(x){
+        if(!fileVisible(x) || !projectVisibleId(x.projectId)) return false;
+        if(ff.project!=="all" && x.projectId!==ff.project) return false;
+        if(ff.kind==="image" && !isImageFile(x)) return false;
+        if(ff.kind==="other" && isImageFile(x)) return false;
+        return true;
+      });
+      downloadFiles(l, "写真・ファイル", function(f){ var pr=state.projects.find(function(x){return x.id===f.projectId;}); return (pr?pr.name:f.projectName||"")+(f.folderId?"/"+dirName(f):""); });
+    });
     var pfBulkClear = document.getElementById("pf-bulk-clear");
     if(pfBulkClear) pfBulkClear.addEventListener("click", function(){ state.pfSel={}; render(); });
     var pfBulkMove = document.getElementById("pf-bulk-move");
