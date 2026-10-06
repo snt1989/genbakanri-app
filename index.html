@@ -894,6 +894,7 @@
     db.doc("settings/org").get().then(function(snap){ if(snap.exists){ state.orgSettings = Object.assign({}, state.orgSettings, snap.data()); render(); } }).catch(function(){});
     loadDeletePassword();
     loadSecretDefaults();
+    loadMasters();
   }
 
   // 削除用パスワード: one shared password (set by an admin in 設定 > 管理画面)
@@ -2502,7 +2503,7 @@
   // (admins only: stats, permission/password management, backup).
   function settingsSections(){
     var s = [["company","会社情報"],["personal","個人情報"]];
-    if(state.isAdmin) s.push(["admin","管理画面"]);
+    if(state.isAdmin){ s.push(["admin","管理画面"]); s.push(["master","マスタ管理"]); }
     return s;
   }
   function myMember(){
@@ -2514,10 +2515,11 @@
     if(!sections.some(function(x){return x[0]===state.settingsSeg;})) state.settingsSeg = "company";
     var html = '<h1 class="pagetitle">設定</h1><div style="height:14px"></div>';
     html += '<div class="segmented" style="margin-bottom:16px">'+sections.map(function(x){
-      return '<div class="segopt'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+(x[0]==="admin"?iAdmin():'')+x[1]+'</div>';
+      return '<div class="segopt'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+((x[0]==="admin"||x[0]==="master")?iAdmin():'')+x[1]+'</div>';
     }).join("")+'</div>';
     if(state.settingsSeg==="personal") html += renderSettingsPersonal();
     else if(state.settingsSeg==="admin") html += renderSettingsAdmin();
+    else if(state.settingsSeg==="master") html += renderSettingsMaster();
     else html += renderSettingsCompany();
     return html;
   }
@@ -2573,6 +2575,64 @@
     return html;
   }
 
+  // ---- マスタ管理 ---------------------------------------------------------
+  // 選択肢（案件種類・店舗・職種・物件種類・物件構造）を管理者が編集できる。
+  // 元の配列を“その場で”書き換えるので、画面側のコードは変更不要。保存先: settings/master
+  var MASTERS = [
+    {key:"projectTypes", label:"案件種類", arr:PROJECT_TYPES, note:"案件の登録・編集の「案件種類」に出ます"},
+    {key:"stores", label:"店舗", arr:STORES, note:"案件・メンバーの「店舗」に出ます"},
+    {key:"roles", label:"職種", arr:ROLES, note:"メンバーの「職種」に出ます"},
+    {key:"propertyTypes", label:"物件種類", arr:PROPERTY_TYPES, note:"物件情報の「物件種類」に出ます"},
+    {key:"propertyStructures", label:"物件構造", arr:PROPERTY_STRUCTURES, note:"物件情報の「構造」に出ます"}
+  ];
+  var MASTER_DEFAULTS = {};
+  MASTERS.forEach(function(m){ MASTER_DEFAULTS[m.key] = m.arr.slice(); });
+  function applyMasters(d){
+    MASTERS.forEach(function(m){
+      if(d && Array.isArray(d[m.key]) && d[m.key].length){ m.arr.length = 0; Array.prototype.push.apply(m.arr, d[m.key]); }
+    });
+  }
+  function loadMasters(){
+    if(!db) return;
+    db.doc("settings/master").get().then(function(snap){ if(snap.exists){ applyMasters(snap.data()); render(); } }).catch(function(){});
+  }
+  function masterUsage(m, name){
+    var n = 0;
+    if(m.key==="projectTypes") n = rawStore.projects.filter(function(p){return p.type===name;}).length;
+    else if(m.key==="stores") n = rawStore.projects.filter(function(p){return p.store===name;}).length + state.members.filter(function(x){return x.store===name;}).length;
+    else if(m.key==="roles") n = state.members.filter(function(x){return (x.roles||[]).indexOf(name)!==-1;}).length;
+    else if(m.key==="propertyTypes") n = rawStore.projects.filter(function(p){return p.propertyType===name;}).length;
+    else if(m.key==="propertyStructures") n = rawStore.projects.filter(function(p){return p.propertyStructure===name;}).length;
+    return n;
+  }
+  function renderSettingsMaster(){
+    if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
+    var html = '<div style="font-size:12px;color:var(--ink-faint);line-height:1.7;max-width:760px;margin-bottom:14px">各画面の選択肢を編集します。<b>1行に1項目</b>で入力し、上から順に表示されます。項目名を変えても、すでに登録済みのデータの値は自動では書き換わりません（そのまま残ります）。</div>';
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;max-width:1000px">';
+    MASTERS.forEach(function(m){
+      html += '<div class="card" style="padding:16px 18px;display:flex;flex-direction:column;gap:8px">'+
+        '<h2 style="font-size:13.5px">'+esc(m.label)+'</h2><div style="font-size:11px;color:var(--ink-faint)">'+esc(m.note)+'</div>'+
+        '<textarea data-master-ta="'+m.key+'" style="min-height:170px;font-size:13px;line-height:1.7">'+esc(m.arr.join("\n"))+'</textarea>'+
+        '<div style="font-size:11px;color:var(--ink-faint)">使用中： '+m.arr.map(function(n){ var u=masterUsage(m,n); return u?esc(n)+' '+u+'件':''; }).filter(Boolean).join(" ／ ")+'</div>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-master-save="'+m.key+'">'+iAdmin()+'保存する</button><button class="btn outline" data-master-reset="'+m.key+'">標準に戻す</button></div></div>';
+    });
+    html += '</div>';
+    html += '<div style="font-size:11.5px;color:var(--ink-faint);margin-top:12px">進捗ステータス（現地調査前〜失注）は集計・色分けと連動しているため、ここでは変更できません。</div>';
+    return html;
+  }
+  function saveMaster(key, list, msg){
+    var m = MASTERS.find(function(x){return x.key===key;});
+    if(!state.isAdmin){ toast("マスタの変更は管理者のみ行えます"); return; }
+    var removedInUse = m.arr.filter(function(n){ return list.indexOf(n)===-1 && masterUsage(m,n)>0; });
+    var payload = {}; MASTERS.forEach(function(x){ payload[x.key] = x.key===key ? list : x.arr.slice(); });
+    payload.updatedAt = new Date().toISOString();
+    var done = function(){
+      m.arr.length = 0; Array.prototype.push.apply(m.arr, list);
+      toast(msg + (removedInUse.length ? "（使用中の項目「"+removedInUse.join("・")+"」は既存データに残ります）" : "")); render();
+    };
+    if(db) db.doc("settings/master").set(payload).then(done).catch(function(){ toast("保存に失敗しました"); });
+    else done();
+  }
   function renderSettingsAdmin(){
     if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
     if(!state.loaded.members || !state.loaded.projects) return skeleton();
@@ -2652,7 +2712,7 @@
 
   /* ============ modal / small forms ============ */
   function field(label,inner){ return '<label class="field">'+esc(label)+inner+'</label>'; }
-  function selectHtml(id,options,selected){ return '<select id="'+id+'">'+options.map(function(o){return '<option value="'+esc(o)+'"'+(o===selected?" selected":"")+'>'+esc(o)+'</option>';}).join("")+'</select>'; }
+  function selectHtml(id,options,selected){ if(selected && options.indexOf(selected)===-1) options = options.concat([selected]); return '<select id="'+id+'">'+options.map(function(o){return '<option value="'+esc(o)+'"'+(o===selected?" selected":"")+'>'+esc(o)+'</option>';}).join("")+'</select>'; }
   function openModal(title,bodyHtml,footHtml){
     document.getElementById("modal-box").innerHTML =
       '<div class="modal-head"><h3>'+esc(title)+'</h3><button class="iconbtn" data-close-modal>'+iX()+'</button></div>'+
@@ -3893,6 +3953,16 @@
       if(db) db.doc("settings/secret").set({defaults:list, updatedAt:new Date().toISOString()}).then(done).catch(function(){ toast("保存に失敗しました"); });
       else done();
     };
+    c.querySelectorAll("[data-master-save]").forEach(function(btn){ btn.addEventListener("click", function(){
+      var key = btn.getAttribute("data-master-save"), ta = c.querySelector('[data-master-ta="'+key+'"]');
+      var list = []; ta.value.split(/\r?\n/).forEach(function(x){ x=x.trim(); if(x && list.indexOf(x)===-1) list.push(x); });
+      if(!list.length){ toast("項目を1つ以上入力してください"); return; }
+      if(list.some(function(x){ return x.length>30; })){ toast("1項目は30文字以内にしてください"); return; }
+      saveMaster(key, list, "マスタを保存しました");
+    }); });
+    c.querySelectorAll("[data-master-reset]").forEach(function(btn){ btn.addEventListener("click", function(){
+      var key = btn.getAttribute("data-master-reset"); saveMaster(key, MASTER_DEFAULTS[key].slice(), "標準の項目に戻しました");
+    }); });
     var sdSave = document.getElementById("secret-def-save");
     if(sdSave) sdSave.addEventListener("click", function(){
       var list = Array.prototype.slice.call(c.querySelectorAll("input[data-secret-default]:checked")).map(function(b){ return b.getAttribute("data-secret-default"); });
