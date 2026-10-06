@@ -695,6 +695,26 @@
     orgSettings:{companyName:"株式会社三桜",representative:"阿部 晋太郎",zip:"020-0866",address:"岩手県盛岡市本宮7丁目7番41号",phone:"019-631-2803",fax:"",email:"info@sanoh-ltd.jp",website:""}
   };
 
+  // ---- 案件の表示範囲 ---------------------------------------------------
+  // 管理者は全案件。それ以外（一般・外部）は「自分が案件メンバーに登録されている案件」だけ
+  // 表示する。state.projects / state.tasks は“見える分だけ”を返し、元データは rawStore に持つ。
+  var rawStore = {projects:[], tasks:[]};
+  function rawOf(col){ return rawStore.hasOwnProperty(col) ? rawStore[col] : state[col]; }
+  function setRaw(col,v){ if(rawStore.hasOwnProperty(col)) rawStore[col]=v; else state[col]=v; }
+  function seesAllProjects(){
+    if(!state.myName) return true;
+    var m = state.members.find(function(x){ return x.name===state.myName; });
+    return !!m && memberPermission(m)==="admin";
+  }
+  function isMyProject(p){ return normalizeAssignees(p.assignees).some(function(a){ return a.name===state.myName; }); }
+  function projectVisibleId(id){ return !id || seesAllProjects() || rawStore.projects.some(function(p){ return p.id===id && isMyProject(p); }); }
+  Object.defineProperty(state, "projects", { enumerable:true, configurable:true,
+    get:function(){ return seesAllProjects() ? rawStore.projects : rawStore.projects.filter(isMyProject); },
+    set:function(v){ rawStore.projects = v; } });
+  Object.defineProperty(state, "tasks", { enumerable:true, configurable:true,
+    get:function(){ return seesAllProjects() ? rawStore.tasks : rawStore.tasks.filter(function(t){ return projectVisibleId(t.projectId); }); },
+    set:function(v){ rawStore.tasks = v; } });
+
   var db=null, downloadsCap=null, assetsCap=null;
 
   /* ============ login ============ */
@@ -1206,13 +1226,13 @@
       if(p.startDate && !hiddenFor(p,"p_period")) items.push({group:"project",kind:"project",id:p.id,title:p.name,start:p.startDate,end:(p.endDate&&p.endDate>=p.startDate)?p.endDate:p.startDate,cls:"k-project"});
       if(p.handoverDate && !hiddenFor(p,"p_handover")) items.push({group:"project",kind:"handover",id:p.id,title:"引渡し："+p.name,start:p.handoverDate,end:p.handoverDate,cls:"k-handover"});
     });
-    state.steps.filter(secretVisible).forEach(function(s){
+    state.steps.filter(secretVisible).filter(function(s){ return projectVisibleId(s.projectId); }).forEach(function(s){
       if(s.startDate) items.push({group:"step",kind:"step",id:s.id,title:(s.projectName?s.projectName+"：":"")+(s.name||"工程"),start:s.startDate,end:(s.endDate&&s.endDate>=s.startDate)?s.endDate:s.startDate,cls:"k-step"});
     });
     state.tasks.forEach(function(t){
       if(t.dueDate) items.push({group:"task",kind:"task",id:t.id,title:t.title||"タスク",start:t.dueDate,end:t.dueDate,cls:"k-task"+(t.done?" done":"")});
     });
-    state.events.filter(secretVisible).forEach(function(e){
+    state.events.filter(secretVisible).filter(function(e){ return projectVisibleId(e.projectId); }).forEach(function(e){
       if(e.date) items.push({group:"event",kind:"event",id:e.id,title:e.title||"予定",start:e.date,end:(e.endDate&&e.endDate>=e.date)?e.endDate:e.date,cls:"k-event"});
     });
     return items;
@@ -1809,6 +1829,10 @@
       var statusMap = {}; existingAssignees.forEach(function(a){ statusMap[a.name]=a.status; });
       var assignees = internalPicked.map(function(n){return {name:n, kind:"internal", status:statusMap[n]||"未確認"};})
         .concat(externalPicked.map(function(n){return {name:n, kind:"external", status:statusMap[n]||"未確認"};}));
+      // 自分しか見られない設定でも、新規登録した案件が消えないよう登録者を案件メンバーに加える
+      if(!state.editingProject && !seesAllProjects() && !assignees.some(function(x){ return x.name===state.myName; })){
+        var meM = myMember(); assignees.push({name:state.myName, kind:(meM&&meM.kind)||"internal", status:"確認済"});
+      }
 
       var data = {
         name:name,
@@ -2242,7 +2266,7 @@
     if(!state.loaded.files || !state.loaded.projects) return skeleton();
     var f = state.filesFilter;
     var list = state.files.filter(function(x){
-      if(!fileVisible(x)) return false;
+      if(!fileVisible(x) || !projectVisibleId(x.projectId)) return false;
       if(f.project!=="all" && x.projectId!==f.project) return false;
       if(f.kind==="image" && !isImageFile(x)) return false;
       if(f.kind==="other" && isImageFile(x)) return false;
@@ -2853,7 +2877,7 @@
     }
     data.updatedAt = new Date().toISOString();
     if(!db){
-      var arr = state[col];
+      var arr = rawOf(col);
       if(id){ var idx=arr.findIndex(function(x){return x.id===id;}); if(idx>-1) arr[idx]=Object.assign({},arr[idx],data); }
       else { data.id=uid(); data.createdAt=new Date().toISOString(); arr.unshift(data); }
       closeModal(); toast(msg+"（プレビューのみ）"); render(); if(after) after(id||data.id); return;
@@ -2864,7 +2888,7 @@
   function deleteDoc(col,id,msg,after){
     if(!state.canWrite){ toast("この操作を行う権限がありません"); return; }
     if(col==="members" && !state.isAdmin){ toast("メンバーの削除は管理者のみ行えます"); return; }
-    if(!db){ state[col]=state[col].filter(function(x){return x.id!==id;}); toast(msg+"（プレビューのみ）"); render(); if(after) after(); return; }
+    if(!db){ setRaw(col, rawOf(col).filter(function(x){return x.id!==id;})); toast(msg+"（プレビューのみ）"); render(); if(after) after(); return; }
     db.collection(col).doc(id).delete().then(function(){toast(msg); if(after) after();}).catch(function(){toast("削除に失敗しました");});
   }
 
@@ -3243,7 +3267,7 @@
     var now = new Date().toISOString();
     data = Object.assign({}, data, {updatedAt:now});
     if(!db){
-      var arr = state[col];
+      var arr = rawOf(col);
       if(id){ var i = arr.findIndex(function(x){return x.id===id;}); if(i>-1) arr[i] = Object.assign({}, arr[i], data); }
       else arr.unshift(Object.assign({id:uid(), createdAt:now}, data));
       return Promise.resolve();
@@ -3251,7 +3275,7 @@
     return id ? db.collection(col).doc(id).update(data) : db.collection(col).add(Object.assign({createdAt:now}, data));
   }
   function deleteRaw(col, id){
-    if(!db){ state[col] = state[col].filter(function(x){return x.id!==id;}); return Promise.resolve(); }
+    if(!db){ setRaw(col, rawOf(col).filter(function(x){return x.id!==id;})); return Promise.resolve(); }
     return db.collection(col).doc(id).delete();
   }
   function runBatch(promises, doneLabel){
