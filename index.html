@@ -1365,9 +1365,15 @@
       if(t.dueDate) items.push({group:"task",kind:"task",id:t.id,title:t.title||"タスク",start:t.dueDate,end:t.dueDate,cls:"k-task"+(t.done?" done":"")});
     });
     state.events.filter(secretVisible).filter(function(e){ return projectVisibleId(e.projectId); }).forEach(function(e){
-      if(e.date) items.push({group:"event",kind:"event",id:e.id,title:(e.category?"["+e.category+"] ":"")+(e.title||"予定"),start:e.date,end:(e.endDate&&e.endDate>=e.date)?e.endDate:e.date,cls:"k-event"});
+      if(e.date) items.push({group:"event",kind:"event",id:e.id,title:eventLabel(e),start:e.date,end:(e.endDate&&e.endDate>=e.date)?e.endDate:e.date,cls:"k-event"});
     });
     return items;
+  }
+  // 予定の表示名：種類とタイトルを一緒に表示（例「現地調査：福川邸 下見」）
+  function eventLabel(e){
+    var c = (e.category||"").trim(), t = (e.title||"").trim();
+    if(c && t) return (t===c || t.indexOf(c)===0) ? t : c+"："+t;
+    return c || t || "予定";
   }
   function openScheduleItem(kind,id){
     if(kind==="project"||kind==="handover") goProjectDetail(id);
@@ -1542,7 +1548,7 @@
     if(!rows.length) return emptyState(iCalendar,"予定がありません","「予定を追加」またはCSV入力で登録できます");
     var h = '<div class="summary-line"><span><b>'+rows.length+'</b>件</span></div><div class="tablewrap"><table><thead><tr><th>タイトル</th><th>種類</th><th>開始日</th><th>終了日</th><th>案件</th><th>公開範囲</th><th></th></tr></thead><tbody>';
     h += rows.map(function(e){
-      return '<tr class="rowhover" data-row-id="'+esc(e.id)+'"><td><div class="cell-name">'+esc(e.title||"")+'</div>'+(e.note?'<div class="cell-sub">'+esc(e.note)+'</div>':'')+'</td>'+
+      return '<tr class="rowhover" data-row-id="'+esc(e.id)+'"><td><div class="cell-name">'+esc(eventLabel(e))+'</div>'+(e.note?'<div class="cell-sub">'+esc(e.note)+'</div>':'')+'</td>'+
         '<td>'+esc(e.category||"—")+'</td><td class="num">'+esc(fmtDate(e.date))+'</td><td class="num">'+(e.endDate?esc(fmtDate(e.endDate)):"—")+'</td>'+
         '<td>'+esc(e.projectName||"—")+'</td><td>'+(e.secret?iLock()+' 社外秘':'共有')+'</td>'+
         '<td style="white-space:nowrap"><button class="btn sm" data-cal-item="event:'+esc(e.id)+'">'+iEdit()+' 編集</button> <button class="iconbtn" data-del-event="'+esc(e.id)+'" title="削除">'+iTrash()+'</button></td></tr>';
@@ -1589,7 +1595,7 @@
         badge+' <button class="btn sm" '+attr+'="'+esc(id)+'">'+iEdit()+' 編集</button></div>';
     };
     return block("カレンダー","event","予定を追加","calendar","この案件の予定はまだありません", evs.map(function(x){
-        return row("data-pd-event", x.id, x.secret, x.title||"（無題）", esc(range(x.date,x.endDate))+(x.category?' ・ '+esc(x.category):''), '');
+        return row("data-pd-event", x.id, x.secret, eventLabel(x), esc(range(x.date,x.endDate)), '');
       }))+
       block("工程表","step","工程を追加","schedule","この案件の工程はまだありません", sts.map(function(x){
         return row("data-pd-step", x.id, x.secret, x.name||"（無題）", esc(range(x.startDate,x.endDate))+(x.assignee?' ・ '+esc(x.assignee):''), '<span class="badge line-gray">進捗 '+esc(String(x.progress||0))+'%</span>');
@@ -1599,7 +1605,7 @@
     var e = ev || {date:day||localToday(), projectId:projectId||""};
     openModal(ev?"予定の編集":"予定の追加",
       field("予定の種類",selectHtml("f-ecat", EVENT_TYPES, selVal(e.category, "")))+
-      field("タイトル",'<input type="text" id="f-etitle" maxlength="60" placeholder="例）現地調査、打ち合わせ" value="'+esc(e.title||"")+'">')+
+      field("内容（任意・種類と一緒に表示されます）",'<input type="text" id="f-etitle" maxlength="60" placeholder="例）〇〇邸 下見、午前中" value="'+esc(e.title||"")+'">')+
       '<div class="field-row">'+field("開始日",'<input type="date" id="f-edate" value="'+esc(e.date||"")+'">')+field("終了日（任意）",'<input type="date" id="f-eend" value="'+esc(e.endDate||"")+'">')+'</div>'+
       field("案件（任意）",'<select id="f-eproj">'+projectOptions(e.projectId)+'</select>')+
       field("メモ",'<textarea id="f-enote" style="min-height:60px">'+esc(e.note||"")+'</textarea>')+secretRadio(e.secret),
@@ -1607,11 +1613,11 @@
     if(ev) document.getElementById("f-edel").addEventListener("click", function(){ confirmDelete("この予定を削除しますか？", function(){ deleteDoc("events", ev.id, "予定を削除しました"); }); });
     document.getElementById("f-egcal").addEventListener("click", function(){
       var cat = document.getElementById("f-ecat").value, t = document.getElementById("f-etitle").value.trim();
-      openGcal((cat?"["+cat+"] ":"")+(t||"予定"), document.getElementById("f-edate").value, document.getElementById("f-eend").value, document.getElementById("f-enote").value.trim());
+      openGcal(eventLabel({category:cat,title:t}), document.getElementById("f-edate").value, document.getElementById("f-eend").value, document.getElementById("f-enote").value.trim());
     });
     document.getElementById("f-esave").addEventListener("click", function(){
       var title = document.getElementById("f-etitle").value.trim(), date = document.getElementById("f-edate").value, end = document.getElementById("f-eend").value;
-      if(!title){ toast("タイトルを入力してください"); return; }
+      if(!title && !document.getElementById("f-ecat").value){ toast("予定の種類を選ぶか、内容を入力してください"); return; }
       if(!date){ toast("開始日を入力してください"); return; }
       if(end && end<date){ toast("終了日は開始日以降にしてください"); return; }
       var pid = document.getElementById("f-eproj").value, pr = state.projects.find(function(x){return x.id===pid;});
