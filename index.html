@@ -2202,15 +2202,15 @@
 
   /* ---- guards shared by import / bulk ---- */
   function csvCanWrite(entity){
+    if(!state.isAdmin){ toast("CSV入力・一括編集は管理者のみ行えます"); return false; }
     if(!state.canWrite){ toast("この操作を行う権限がありません"); return false; }
-    if(CSV_ENTITIES[entity].adminOnly && !state.isAdmin){ toast("メンバーの変更は管理者のみ行えます"); return false; }
     return true;
   }
 
   /* ---- export ---- */
   function csvExport(entity){
     var E = CSV_ENTITIES[entity];
-    if(E.adminOnly && !state.isAdmin){ toast("メンバー情報のCSV出力は管理者のみ行えます"); return; }
+    if(!state.isAdmin){ toast("CSV出力は管理者のみ行えます"); return; }
     var rows = filteredList(entity);
     if(!rows.length){ toast("出力するデータがありません"); return; }
     downloadBlob(E.fileLabel()+"_"+todayISO()+".csv", new Blob([buildCsv(entity, rows)], {type:"text/csv"}));
@@ -2421,7 +2421,7 @@
   }
   function csvToolbar(entity, small){
     var E = CSV_ENTITIES[entity];
-    if(E.adminOnly && !state.isAdmin) return "";
+    if(!state.isAdmin) return "";
     var sm = small ? " sm" : "";
     var on = state.bulk.on && state.bulk.entity===entity;
     return (E.importable ? '<button class="btn outline'+sm+'" data-csv-import="'+entity+'">'+iUpload()+' CSV入力</button>' : '')+
@@ -2476,6 +2476,7 @@
 
   function applyBulkUi(){
     if(!state.bulk.on) return;
+    if(!state.isAdmin){ bulkReset(); return; }
     var entity = currentEntity();
     if(state.bulk.entity!==entity){ bulkReset(); return; }
     var c = document.getElementById("content");
