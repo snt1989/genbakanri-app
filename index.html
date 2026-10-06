@@ -1517,7 +1517,7 @@
 
     var filtered = state.projects.filter(function(p){
       if(f.name && (p.name||"").indexOf(f.name)===-1 && propertyAddressOf(p).full.indexOf(f.name)===-1 && (p.address||"").indexOf(f.name)===-1) return false;
-      if(f.status.length && f.status.indexOf(p.status)===-1) return false;
+      if(f.status.length && p.status && f.status.indexOf(p.status)===-1) return false;
       if(f.type!=="all" && p.type!==f.type) return false;
       if(f.store!=="all" && p.store!==f.store) return false;
       if(f.assignees.length){
@@ -1574,7 +1574,7 @@
             '<div class="cell-sub">'+(hiddenFor(p,"pr_addr")?"":esc(propertyAddressOf(p).full))+'</div>'+
             '<div class="tagrow">'+names.map(function(a){return '<span class="tag">'+esc(a)+'</span>';}).join("")+'</div>'+
           '</td>'+
-          '<td>'+(hiddenFor(p,"p_status")?"—":'<span class="badge '+statusStyle(p.status)+'">'+esc(p.status)+'</span>')+'</td>'+
+          '<td>'+(hiddenFor(p,"p_status")?"—":'<span class="badge '+statusStyle(p.status)+'">'+esc(p.status||"未入力")+'</span>')+'</td>'+
           '<td class="num">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.startDate))+'</td>'+
           '<td class="num">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.endDate))+'</td>'+
           '<td class="num">'+(hiddenFor(p,"p_amount")?"—":fmtYen(p.amount))+'</td>'+
@@ -1635,11 +1635,11 @@
     html += '<div class="form-section-title"><span>案件情報</span><span class="lockhint">'+iLock()+' 「社外秘」にチェックした項目は社外に表示されません</span></div>';
     html += '<div class="form-card">';
     html += formRow("案件名", true, false, '<input type="text" id="f-name" value="'+esc(p.name||"")+'" placeholder="例：渋谷区佐藤様邸">');
-    html += formRow("案件種類", false, false, selectHtml("f-type", PROJECT_TYPES, p.type||PROJECT_TYPES[0]), "p_type");
-    html += formRow("案件の進捗", false, false, selectHtml("f-status", STATUS_LIST, p.status||(state.formMode==="construction"?"契約済":"現地調査前")), "p_status");
+    html += formRow("案件種類", false, false, selectHtml("f-type", PROJECT_TYPES, selVal(p.type, PROJECT_TYPES[0])), "p_type");
+    html += formRow("案件の進捗", false, false, selectHtml("f-status", STATUS_LIST, selVal(p.status, state.formMode==="construction"?"契約済":"現地調査前")), "p_status");
     html += formRow("契約金額", false, false, '<div class="inline2" style="max-width:260px"><input type="number" id="f-amount" min="0" step="1000" value="'+(p.amount||0)+'"><span>円</span></div>', "p_amount");
     html += formRow("施工予定", false, false, '<div class="inline2" style="max-width:340px"><input type="date" id="f-start" value="'+(p.startDate||"")+'"><span>〜</span><input type="date" id="f-end" value="'+(p.endDate||"")+'"></div>', "p_period");
-    html += formRow("店舗", false, false, selectHtml("f-store", STORES, p.store||STORES[0]), "p_store");
+    html += formRow("店舗", false, false, selectHtml("f-store", STORES, selVal(p.store, STORES[0])), "p_store");
     html += formRow("施工指示", false, false, '<textarea id="f-instruction" placeholder="例：なになにをやってください">'+esc(p.workInstruction||"")+'</textarea>', "p_instruction");
     html += formRow("引渡し日", false, false, '<input type="date" id="f-handover" value="'+(p.handoverDate||"")+'" style="max-width:200px">', "p_handover");
     html += '</div>';
@@ -1687,6 +1687,7 @@
     var keep = secretSet(p).filter(function(k){ return onScreen.indexOf(k)===-1; });
     return keep.concat(boxes.filter(function(b){ return b.checked; }).map(function(b){ return b.getAttribute("data-secret"); }));
   }
+  function selVal(v, def){ return (v===undefined || v===null) ? def : v; }
   function formRow(label, required, locked, control, skey){
     return '<div class="form-row"><div class="flabel">'+esc(label)+(required?' <span class="req">必須</span>':'')+(skey?secretChk(skey):'')+'</div><div class="fcontrol">'+control+'</div></div>';
   }
@@ -1760,7 +1761,7 @@
   // 物件情報 rows (also used by the 詳細画面's 物件情報 editor).
   function propertyFormRowsHtml(p){
     var html = "";
-    html += formRow("物件種類 / 構造", false, false, '<div class="inline2" style="max-width:360px">'+selectHtml("f-ptype", PROPERTY_TYPES, p.propertyType||PROPERTY_TYPES[0])+selectHtml("f-pstruct", PROPERTY_STRUCTURES, p.propertyStructure||PROPERTY_STRUCTURES[0])+'</div>', "pr_type");
+    html += formRow("物件種類 / 構造", false, false, '<div class="inline2" style="max-width:360px">'+selectHtml("f-ptype", PROPERTY_TYPES, selVal(p.propertyType, PROPERTY_TYPES[0]))+selectHtml("f-pstruct", PROPERTY_STRUCTURES, selVal(p.propertyStructure, PROPERTY_STRUCTURES[0]))+'</div>', "pr_type");
     html += formRow("物件住所区分", false, false, '<div class="radiogroup">'+
       '<label class="radioopt"><input type="radio" name="addrmode" value="same"'+(p.addressMode!=="new"?" checked":"")+'>顧客の住所と同じ場所</label>'+
       '<label class="radioopt"><input type="radio" name="addrmode" value="new"'+(p.addressMode==="new"?" checked":"")+'>新しい住所を入力</label>'+
@@ -2022,7 +2023,7 @@
     };
 
     var rows = '';
-    var badges = (hiddenFor(p,"p_status") ? '' : '<span class="badge '+statusStyle(p.status)+'">'+esc(p.status)+'</span>'+lockTag("p_status")) +
+    var badges = (hiddenFor(p,"p_status") ? '' : '<span class="badge '+statusStyle(p.status)+'">'+esc(p.status||"未入力")+'</span>'+lockTag("p_status")) +
       (hiddenFor(p,"p_amount") ? '' : '<span class="num" style="font-weight:700">'+fmtYen(p.amount)+'</span>'+lockTag("p_amount"));
     rows += '<div class="kv" style="display:flex;align-items:center;gap:14px">'+badges+'<button class="btn sm" style="margin-left:auto" data-edit-project="'+p.id+'">編集</button></div>';
     rows += kvRow("案件名", esc(p.name));
@@ -2331,7 +2332,7 @@
       var imgs = fl.filter(isImageFile).length;
       var last = fl.length ? fl[fl.length-1].uploadedAt : "";
       return '<tr class="rowhover"><td><div class="cell-name"><a href="#" data-open-files="'+esc(p.id)+'" data-files-from="files">'+esc(p.name)+'</a></div><div class="cell-sub">'+esc(propertyAddressOf(p).full)+'</div></td>'+
-        '<td><span class="badge '+statusStyle(p.status)+'">'+esc(p.status)+'</span></td>'+
+        '<td><span class="badge '+statusStyle(p.status)+'">'+esc(p.status||"未入力")+'</span></td>'+
         '<td class="num">'+imgs+'</td><td class="num">'+(fl.length-imgs)+'</td><td class="num">'+(last?fmtDateTime(last):"—")+'</td>'+
         '<td style="white-space:nowrap"><button class="btn sm" data-open-files="'+esc(p.id)+'" data-files-from="files">ファイル管理を開く</button></td></tr>';
     }).join("");
@@ -2632,7 +2633,7 @@
   }
   function renderSettingsMaster(){
     if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
-    var html = '<div style="font-size:12px;color:var(--ink-faint);line-height:1.7;max-width:760px;margin-bottom:14px">各画面の選択肢を編集します。<b>1行に1項目</b>で入力し、上から順に表示されます。項目名を変えても、すでに登録済みのデータの値は自動では書き換わりません（そのまま残ります）。</div>';
+    var html = '<div style="font-size:12px;color:var(--ink-faint);line-height:1.7;max-width:760px;margin-bottom:14px">各画面の選択肢を編集します。<b>1行に1項目</b>で入力し、上から順に表示されます。<b>項目を削除（または名前を変更）すると、その項目を使っている登録済みのデータは「未入力」に変わります。</b>使用中の件数は各項目の下で確認できます。</div>';
     if(!MASTER_TABS.some(function(t){return t[0]===state.masterTab;})) state.masterTab = "project";
     html += '<div class="segmented" style="margin-bottom:16px">'+MASTER_TABS.map(function(t){
       return '<div class="segopt'+(state.masterTab===t[0]?' active':'')+'" data-master-tab="'+t[0]+'">'+t[1]+'画面</div>';
@@ -2650,19 +2651,46 @@
     html += '<div style="font-size:11.5px;color:var(--ink-faint);margin-top:12px">進捗ステータス（現地調査前〜失注）は集計・色分けと連動しているため、ここでは変更できません。</div>';
     return html;
   }
+  // マスタから項目を削除すると、その項目を使っていた登録済みデータは「未入力」に変わる。
+  var MASTER_FIELDS = {
+    statuses:[["projects","status"]], projectTypes:[["projects","type"]],
+    stores:[["projects","store"],["members","store"]],
+    propertyTypes:[["projects","propertyType"]], propertyStructures:[["projects","propertyStructure"]],
+    roles:[["members","roles"]]
+  };
+  function masterAffected(key, removed){
+    var out = [];
+    (MASTER_FIELDS[key]||[]).forEach(function(cf){
+      var col = cf[0], fld = cf[1], rows = col==="projects" ? rawStore.projects : state[col];
+      rows.forEach(function(r){
+        if(fld==="roles"){
+          var cur = r.roles||[]; var next = cur.filter(function(x){ return removed.indexOf(x)===-1; });
+          if(next.length!==cur.length){ out.push({col:col,id:r.id,data:{roles:next}}); }
+        }else if(removed.indexOf(r[fld])!==-1){ var d2={}; d2[fld]=""; out.push({col:col,id:r.id,data:d2}); }
+      });
+    });
+    return out;
+  }
   function saveMaster(key, list, msg){
     var m = MASTERS.find(function(x){return x.key===key;});
     if(!state.isAdmin){ toast("マスタの変更は管理者のみ行えます"); return; }
-    var removedInUse = m.arr.filter(function(n){ return list.indexOf(n)===-1 && masterUsage(m,n)>0; });
+    var removed = m.arr.filter(function(n){ return list.indexOf(n)===-1; });
+    var affected = masterAffected(key, removed);
     var payload = {}; MASTERS.forEach(function(x){ payload[x.key] = x.key===key ? list : x.arr.slice(); });
     payload.updatedAt = new Date().toISOString();
-    var done = function(){
-      m.arr.length = 0; Array.prototype.push.apply(m.arr, list);
-      if(key==="statuses") syncStatusFilters();
-      toast(msg + (removedInUse.length ? "（使用中の項目「"+removedInUse.join("・")+"」は既存データに残ります）" : "")); render();
+    var run = function(){
+      var finish = function(){
+        m.arr.length = 0; Array.prototype.push.apply(m.arr, list);
+        if(key==="statuses") syncStatusFilters();
+        toast(msg + (affected.length ? "（"+affected.length+"件のデータを「未入力」に変更しました）" : "")); render();
+      };
+      var writes = affected.map(function(a){ return saveRaw(a.col, a.id, a.data); });
+      var saveDoc = db ? db.doc("settings/master").set(payload) : Promise.resolve();
+      Promise.all(writes.concat([saveDoc])).then(finish).catch(function(){ toast("保存に失敗しました"); });
     };
-    if(db) db.doc("settings/master").set(payload).then(done).catch(function(){ toast("保存に失敗しました"); });
-    else done();
+    if(affected.length){
+      confirmDelete("「"+removed.filter(function(n){ return masterAffected(key,[n]).length; }).join("」「")+"」を削除します。使用中の登録済みデータ "+affected.length+"件 は「未入力」に変わります。", run);
+    }else run();
   }
   function renderSettingsAdmin(){
     if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
@@ -2743,7 +2771,7 @@
 
   /* ============ modal / small forms ============ */
   function field(label,inner){ return '<label class="field">'+esc(label)+inner+'</label>'; }
-  function selectHtml(id,options,selected){ if(selected && options.indexOf(selected)===-1) options = options.concat([selected]); return '<select id="'+id+'">'+options.map(function(o){return '<option value="'+esc(o)+'"'+(o===selected?" selected":"")+'>'+esc(o)+'</option>';}).join("")+'</select>'; }
+  function selectHtml(id,options,selected){ if(selected && options.indexOf(selected)===-1) options = options.concat([selected]); if(selected==="") options = [""].concat(options); return '<select id="'+id+'">'+options.map(function(o){return '<option value="'+esc(o)+'"'+(o===selected?" selected":"")+'>'+(o===""?"（未入力）":esc(o))+'</option>';}).join("")+'</select>'; }
   function openModal(title,bodyHtml,footHtml){
     document.getElementById("modal-box").innerHTML =
       '<div class="modal-head"><h3>'+esc(title)+'</h3><button class="iconbtn" data-close-modal>'+iX()+'</button></div>'+
@@ -3164,7 +3192,7 @@
     var f = mode==="sales" ? state.salesFilter : state.constFilter;
     return state.projects.filter(function(p){
       if(f.name && (p.name||"").indexOf(f.name)===-1 && propertyAddressOf(p).full.indexOf(f.name)===-1 && (p.address||"").indexOf(f.name)===-1) return false;
-      if(f.status.length && f.status.indexOf(p.status)===-1) return false;
+      if(f.status.length && p.status && f.status.indexOf(p.status)===-1) return false;
       if(f.type!=="all" && p.type!==f.type) return false;
       if(f.store!=="all" && p.store!==f.store) return false;
       if(f.assignees.length){
