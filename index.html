@@ -3318,7 +3318,7 @@
   // 個人情報 (each person edits only their own record), and 管理画面
   // (admins only: stats, permission/password management, backup).
   function settingsSections(){
-    var s = [["company","会社情報"],["personal","個人情報"]];
+    var s = state.isAdmin ? [["company","会社情報"],["personal","個人情報"]] : [["personal","個人情報"]];   // 会社情報は管理者のみ
     if(state.isAdmin){ s.push(["admin","管理画面"]); s.push(["master","マスタ管理"]); s.push(["trash","ゴミ箱"]); }
     if(worksAvailable()) s.push(["works","LINE WORKS"]);
     if(state.isAdmin){ s.push(["freee","freee連携"]); s.push(["backup","バックアップ"]); }
@@ -3330,11 +3330,11 @@
   }
   function renderSettings(){
     var sections = settingsSections();
-    if(!sections.some(function(x){return x[0]===state.settingsSeg;})) state.settingsSeg = "company";
+    if(!sections.some(function(x){return x[0]===state.settingsSeg;})) state.settingsSeg = sections[0][0];
     if(state.settingsSeg!=="admin") state.navDraft = null;
     var html = '<h1 class="pagetitle">設定</h1><div style="height:14px"></div>';
     html += '<div class="segmented" style="margin-bottom:16px">'+sections.map(function(x){
-      return '<div class="segopt'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+((x[0]==="admin"||x[0]==="freee"||x[0]==="master"||x[0]==="trash"||x[0]==="backup")?iAdmin():'')+x[1]+'</div>';
+      return '<div class="segopt'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+((x[0]==="company"||x[0]==="admin"||x[0]==="freee"||x[0]==="master"||x[0]==="trash"||x[0]==="backup")?iAdmin():'')+x[1]+'</div>';
     }).join("")+'</div>';
     if(state.settingsSeg==="personal") html += renderSettingsPersonal();
     else if(state.settingsSeg==="admin") html += renderSettingsAdmin();
@@ -3348,8 +3348,9 @@
   }
 
   function renderSettingsCompany(){
+    if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
     var s = state.orgSettings;
-    var ro = state.isAdmin ? "" : " disabled";
+    var ro = "";
     var html = '<div class="card" style="padding:20px;max-width:520px;display:flex;flex-direction:column;gap:14px">';
     html += '<h2 style="font-size:13.5px;margin-bottom:4px">会社情報</h2>';
     if(!state.isAdmin) html += '<div style="font-size:11.5px;color:var(--ink-faint)">会社情報の編集は管理者のみ行えます</div>';
