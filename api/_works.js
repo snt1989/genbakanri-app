@@ -114,6 +114,8 @@ async function createDoc(col, data){
   var fields = {}; Object.keys(data).forEach(function(k){ fields[k] = enc(data[k]); });
   var r = await fetch(fsBase() + "/" + col + "?" + keyQ(), {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({fields: fields})});
   if(!r.ok) throw httpErr(502, "firestore " + r.status);
+  var j = await r.json().catch(function(){ return {}; });
+  return String(j.name || "").split("/").pop();
 }
 
 /* ---- 設定・連携ひも付け ---- */
