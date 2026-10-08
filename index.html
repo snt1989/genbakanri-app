@@ -496,6 +496,87 @@
   .login-error.show{display:block;}
   .login-hint{font-size:11px;color:var(--accent);background:var(--accent-soft);padding:9px 11px;border-radius:8px;margin-bottom:16px;display:none;line-height:1.5;}
   .login-hint.show{display:block;}
+
+  .flt-more>summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--accent);list-style:none;padding:2px 0;}
+  .flt-more>summary::-webkit-details-marker{display:none;}
+  .flt-more>summary::before{content:'▸ ';}
+  .flt-more[open]>summary::before{content:'▾ ';}
+  /* ---- Mobile ---- */
+  .chat-backbar{display:none;}
+  .chat-back{display:none;border:none;background:transparent;color:var(--accent);font-weight:700;font-size:12.5px;padding:4px 8px 4px 0;margin-right:6px;cursor:pointer;align-items:center;gap:3px;}
+  @media (max-width:640px){
+    body{font-size:14px;}
+    select,input[type=text],input[type=date],input[type=time],input[type=number],input[type=tel],input[type=email],input[type=search],textarea,.login-field input{font-size:16px;padding:10px 12px;}
+    .btn{padding:10px 16px;font-size:13px;min-height:40px;justify-content:center;}
+    .btn.sm{padding:8px 14px;font-size:12.5px;min-height:36px;}
+    .iconbtn{width:40px;height:40px;}
+    .navbtn{padding:13px 14px;font-size:14px;}
+    .content{padding:12px 12px 24px;}
+    #main{padding-bottom:calc(24px + env(safe-area-inset-bottom,0px));}
+    header.topbar{padding:8px 12px;}
+    .topbar-user{gap:6px;font-size:12px;min-width:0;}
+    #user-name{max-width:42vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    h1.pagetitle{font-size:20px;}
+    /* page header: title on its own line, action buttons full width */
+    .content > div:first-child[style*="justify-content:space-between"]{flex-direction:column;align-items:stretch !important;}
+    .content > div:first-child[style*="justify-content:space-between"] > div[style*="display:flex"]{width:100%;}
+    .content > div:first-child[style*="justify-content:space-between"] > div[style*="display:flex"] .btn{flex:1 1 calc(50% - 4px);}
+    .filter-card{padding:12px;}
+    .filter-line{gap:10px;}
+    .filter-line .fitem{min-width:0 !important;flex:1 1 100%;}
+    .filter-line .btn{flex:1 1 100%;}
+    .checkgroup{gap:6px 14px;}
+    .checkopt{font-size:13px;padding:3px 0;}
+    .chip-toggle{padding:8px 14px;font-size:12.5px;}
+    .summary-line{gap:8px 16px;}
+    .summary-pager{margin-left:0;}
+    .segmented{display:flex;width:100%;}
+    .segopt{flex:1;text-align:center;padding:11px 6px;}
+    .pagebtn{width:38px;height:38px;}
+    /* tables become stacked cards */
+    .tablewrap{border:none;background:transparent;overflow:visible;border-radius:0;}
+    .tablewrap table,.tablewrap thead,.tablewrap tbody,.tablewrap tr,.tablewrap td{display:block;width:100%;}
+    .tablewrap thead{display:none;}
+    .tablewrap tr{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;padding:10px 14px;}
+    .tablewrap td{border:none;padding:5px 0;display:flex;justify-content:space-between;align-items:flex-start;gap:14px;text-align:right;}
+    .tablewrap td[data-label]::before{content:attr(data-label);flex:none;color:var(--ink-faint);font-size:11.5px;font-weight:600;text-align:left;padding-top:2px;}
+    .tablewrap td.cell-main{display:block;text-align:left;padding:2px 0 8px;border-bottom:1px dashed var(--border);margin-bottom:4px;padding-right:30px;}
+    .tablewrap td.cell-actions{justify-content:flex-end;border-top:1px dashed var(--border);margin-top:6px;padding-top:10px;}
+    .tablewrap td.bulk-cell{position:absolute;top:10px;right:10px;width:auto;padding:0;display:block;}
+    .tablewrap td.bulk-cell input{width:22px;height:22px;}
+    .tablewrap .perm-select{width:auto;min-width:110px;}
+    .bulk-float{width:22px;height:22px;}
+    .bulk-bar{padding:10px 12px;}
+    .bulk-bar select,.bulk-bar input:not([type=checkbox]){flex:1 1 40%;min-width:0;font-size:16px;}
+    .bulk-bar .btn{flex:1 1 auto;}
+    /* home */
+    .todo-row{grid-template-columns:84px 1fr;gap:10px;}
+    .card[style*="padding:6px 18px"]{padding:6px 12px 2px !important;}
+    /* photos */
+    .photo-grid{grid-template-columns:repeat(2,1fr);}
+    /* forms */
+    .form-row{padding:14px 14px;gap:8px;}
+    .radiogroup{gap:12px;}
+    .inline2{flex-wrap:wrap;}
+    .formfoot .btn{width:100%;}
+    /* modal as bottom sheet */
+    .modal-box{margin:0;position:absolute;left:0;right:0;bottom:0;max-width:none;border-radius:16px 16px 0 0;max-height:92vh;}
+    .modal-foot{flex-wrap:wrap;padding-bottom:calc(14px + env(safe-area-inset-bottom,0px));}
+    .modal-foot .btn{flex:1;}
+    /* chat: list first, tap to open the conversation */
+    .chat-top{padding:10px 12px;gap:10px;}
+    .chat-top h1{font-size:20px;}
+    .chat-shell{flex-direction:column;min-height:calc(100dvh - 120px);}
+    .chat-list{width:100%;border-right:none;}
+    .chat-item{padding:14px 16px;}
+    .chat-pane{display:none;}
+    .chat-shell.show-pane .chat-list{display:none;}
+    .chat-shell.show-pane .chat-pane{display:flex;min-height:calc(100dvh - 120px);}
+    .chat-backbar{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--surface-2);font-weight:700;font-size:14px;}
+    .chat-back{display:inline-flex;}
+    /* login */
+    .login-card{padding:24px 20px;}
+  }
 </style>
 
 <div id="app">
@@ -784,6 +865,8 @@
   var MEMBER_STATUS = ["未確認","確認済"];
 
   var state = {
+    fltMoreOpen:false,
+    chatPaneOpen:false,
     tab:"home", returnTab:"sales",
     projects:[], customers:[], members:[], tasks:[], chats:[], files:[], folders:[], events:[], steps:[], trash:[], reports:[],
     loaded:{projects:false,customers:false,members:false,tasks:false,chats:false,files:false,folders:false,events:false,steps:false,trash:false,reports:false},
@@ -2024,12 +2107,15 @@
       '<label class="checkopt" style="align-self:flex-end;padding-bottom:8px"><input type="checkbox" id="flt-nosched"'+(f.noSched?" checked":"")+'>工程表・カレンダー未作成のみ</label>'+
       '<button class="btn primary" id="flt-search">'+iSearch()+' 検索する</button>'+
     '</div>';
+    var isPhone = window.matchMedia && window.matchMedia("(max-width:640px)").matches;
+    html += '<details class="flt-more"'+((!isPhone||state.fltMoreOpen)?' open':'')+'><summary>進捗・担当者で絞り込み</summary><div style="display:flex;flex-direction:column;gap:12px;margin-top:10px">';
     html += '<div class="fitem"><span>案件の進捗</span><div class="checkgroup">'+STATUS_LIST.map(function(s){
       return '<label class="checkopt"><input type="checkbox" class="flt-status" value="'+esc(s)+'"'+(f.status.indexOf(s)!==-1?" checked":"")+'>'+esc(s)+'</label>';
     }).join("")+'</div></div>';
     html += '<div class="fitem"><span>担当者で絞り込み</span><div class="checkgroup">'+state.members.map(function(m){
       return '<span class="chip-toggle'+(f.assignees.indexOf(m.name)!==-1?" on":"")+'" data-assignee-chip="'+esc(m.name)+'">'+esc(m.name)+'</span>';
     }).join("")+'</div></div>';
+    html += '</div></details>';
     html += '</div>';
 
     html += '<div class="summary-line">'+
@@ -2045,18 +2131,18 @@
       html += '<div class="tablewrap"><table><thead><tr><th>案件名 / 物件住所</th><th>進捗</th><th>工程・予定・報告</th><th>施工開始日</th><th>施工完了予定日</th><th>金額</th><th>作成日</th><th></th></tr></thead><tbody>';
       html += pageItems.map(function(p){
         var names = normalizeAssignees(p.assignees).map(function(a){return a.name;});
-        return '<tr class="rowhover" data-row-id="'+esc(p.id)+'"><td>'+
+        return '<tr class="rowhover" data-row-id="'+esc(p.id)+'"><td class="cell-main">'+
             '<div class="cell-name"><a href="#" data-open-project="'+p.id+'">'+esc(p.name)+'</a></div>'+
             '<div class="cell-sub">'+(hiddenFor(p,"pr_addr")?"":esc(propertyAddressOf(p).full))+'</div>'+
             '<div class="tagrow">'+names.map(function(a){return '<span class="tag">'+esc(a)+'</span>';}).join("")+'</div>'+
           '</td>'+
-          '<td>'+(hiddenFor(p,"p_status")?"—":statusBadge(p))+'</td>'+
-          '<td>'+workChips(p)+'</td>'+
-          '<td class="num">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.startDate))+'</td>'+
-          '<td class="num">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.endDate))+'</td>'+
-          '<td class="num">'+(hiddenFor(p,"p_amount")?"—":fmtYen(p.amount))+'</td>'+
-          '<td class="num">'+fmtDate((p.createdAt||"").slice(0,10))+'</td>'+
-          '<td style="white-space:nowrap"><button class="btn sm" data-edit-project="'+p.id+'">編集</button> <button class="iconbtn" data-del-project="'+p.id+'">'+iTrash()+'</button></td>'+
+          '<td data-label="進捗">'+(hiddenFor(p,"p_status")?"—":statusBadge(p))+'</td>'+
+          '<td data-label="作業">'+workChips(p)+'</td>'+
+          '<td class="num" data-label="施工開始日">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.startDate))+'</td>'+
+          '<td class="num" data-label="施工完了予定日">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.endDate))+'</td>'+
+          '<td class="num" data-label="金額">'+(hiddenFor(p,"p_amount")?"—":fmtYen(p.amount))+'</td>'+
+          '<td class="num" data-label="作成日">'+fmtDate((p.createdAt||"").slice(0,10))+'</td>'+
+          '<td class="cell-actions" style="white-space:nowrap"><button class="btn sm" data-edit-project="'+p.id+'">編集</button> <button class="iconbtn" data-del-project="'+p.id+'">'+iTrash()+'</button></td>'+
         '</tr>';
       }).join("");
       html += '</tbody></table></div>';
@@ -2709,12 +2795,12 @@
             return '<option value="'+p[0]+'"'+(p[0]===perm?" selected":"")+'>'+p[1]+'</option>';
           }).join("")+'</select>' :
           '<span class="tag'+(perm==="admin"?"":" muted")+'" style="'+(perm==="admin"?'background:var(--sidebar-active);color:#fff':'')+'">'+esc(permissionLabel(perm))+'</span>';
-        return '<tr class="rowhover" data-row-id="'+esc(m.id)+'"><td><div class="member-name"><span class="mini-avatar" style="background:'+avaColor(m.name)+'">'+esc(initials(m.name))+'</span>'+esc(m.name)+'</div></td>'+
-          '<td>'+esc(m.company||"—")+'</td><td>'+esc(m.store||"—")+'</td>'+
-          '<td><div class="tagrow">'+(m.roles||[]).map(function(r){return '<span class="tag muted">'+esc(r)+'</span>';}).join("")+'</div></td>'+
-          '<td>'+permCell+'</td>'+
+        return '<tr class="rowhover" data-row-id="'+esc(m.id)+'"><td class="cell-main"><div class="member-name"><span class="mini-avatar" style="background:'+avaColor(m.name)+'">'+esc(initials(m.name))+'</span>'+esc(m.name)+'</div></td>'+
+          '<td data-label="所属会社">'+esc(m.company||"—")+'</td><td data-label="店舗">'+esc(m.store||"—")+'</td>'+
+          '<td data-label="職種"><div class="tagrow" style="margin-top:0">'+(m.roles||[]).map(function(r){return '<span class="tag muted">'+esc(r)+'</span>';}).join("")+'</div></td>'+
+          '<td data-label="権限">'+permCell+'</td>'+
           (state.isAdmin ?
-            '<td style="white-space:nowrap"><div style="display:flex;gap:6px;align-items:center"><button class="btn sm" data-edit-member="'+m.id+'">'+iAdmin()+'編集</button><button class="iconbtn" data-del-member="'+m.id+'" title="削除（管理者のみ）">'+iTrash()+'</button></div></td>'
+            '<td class="cell-actions" style="white-space:nowrap"><div style="display:flex;gap:6px;align-items:center"><button class="btn sm" data-edit-member="'+m.id+'">'+iAdmin()+'編集</button><button class="iconbtn" data-del-member="'+m.id+'" title="削除（管理者のみ）">'+iTrash()+'</button></div></td>'
             : ''
           )+'</tr>';
       }).join("");
@@ -2746,9 +2832,9 @@
     }else{
       html += '<div class="tablewrap"><table><thead><tr><th>顧客名</th><th>住所</th><th>電話番号</th><th>登録日</th><th></th></tr></thead><tbody>';
       html += list.map(function(c){
-        return '<tr class="rowhover" data-row-id="'+esc(c.id)+'"><td class="cell-name">'+esc(c.name)+'</td><td>'+esc(c.address||"—")+'</td>'+
-          '<td class="num">'+esc(c.phone||"—")+'</td><td class="num">'+fmtDate(c.registeredDate)+'</td>'+
-          '<td style="white-space:nowrap"><button class="btn sm" data-edit-customer="'+c.id+'">'+iEdit()+' 編集</button> <button class="iconbtn" data-del-customer="'+c.id+'">'+iTrash()+'</button></td></tr>';
+        return '<tr class="rowhover" data-row-id="'+esc(c.id)+'"><td class="cell-name cell-main">'+esc(c.name)+'</td><td data-label="住所">'+esc(c.address||"—")+'</td>'+
+          '<td class="num" data-label="電話番号">'+(c.phone?'<a href="tel:'+esc(c.phone)+'">'+esc(c.phone)+'</a>':"—")+'</td><td class="num" data-label="登録日">'+fmtDate(c.registeredDate)+'</td>'+
+          '<td class="cell-actions" style="white-space:nowrap"><button class="btn sm" data-edit-customer="'+c.id+'">'+iEdit()+' 編集</button> <button class="iconbtn" data-del-customer="'+c.id+'">'+iTrash()+'</button></td></tr>';
       }).join("");
       html += '</tbody></table></div>';
     }
@@ -3035,7 +3121,7 @@
     var act = visibleChats.find(function(c){return c.id===state.activeChat;});
     if(!act || !inKind(act)) state.activeChat = listChats.length ? listChats[0].id : null;
     var chat = visibleChats.find(function(c){return c.id===state.activeChat;});
-    var html = '<div class="chat-page"><div class="chat-top"><h1>チャット</h1><button class="pill" data-open="chat-form">グループチャットを作成</button></div><div class="chat-shell">';
+    var html = '<div class="chat-page"><div class="chat-top"><h1>チャット</h1><button class="pill" data-open="chat-form">グループチャットを作成</button></div><div class="chat-shell'+(state.chatPaneOpen&&chat?' show-pane':'')+'">';
     var cnt = function(f){ return visibleChats.filter(function(c){ return !isHidden(c) && f(c); }).length; };
     var kindBar = '<div class="chat-kinds">'+[["all","すべて",cnt(function(){return true;})],["pinned","ピン留め",cnt(isPinned)],["project","案件",cnt(function(c){return c.kind!=="group";})],["group","グループ",cnt(function(c){return c.kind==="group";})],["hidden","非表示",visibleChats.filter(isHidden).length]].map(function(k){
       return '<button data-chat-kind="'+k[0]+'" class="'+(kindTab===k[0]?"on":"")+'">'+k[1]+'<i>'+k[2]+'</i></button>'; }).join("")+'</div>';
@@ -3060,6 +3146,7 @@
     if(!chat){
       html += '<div class="chat-empty">左のリストからチャットを選択してください</div></div>';
     }else{
+      html += '<div class="chat-backbar"><button class="chat-back" data-chat-back="1">'+iBack()+' 一覧</button><span>'+esc(chat.name)+'</span></div>';
       html += '<div class="chat-msgs" id="chat-msgs">';
       var msgs = state.chatMsgs[chat.id] || [];
       if(msgs.length===0){ html += '<div style="color:var(--ink-faint);font-size:12px;text-align:center;margin-top:20px">まだメッセージはありません</div>'; }
@@ -5007,7 +5094,7 @@
 
     c.querySelectorAll("[data-seg]").forEach(function(el){ el.addEventListener("click", function(){ state.memberSeg = el.getAttribute("data-seg"); render(); }); });
 
-    c.querySelectorAll("[data-select-chat]").forEach(function(el){ el.addEventListener("click", function(){ state.activeChat = el.getAttribute("data-select-chat"); state.chatPop=""; render(); }); });
+    c.querySelectorAll("[data-select-chat]").forEach(function(el){ el.addEventListener("click", function(){ state.activeChat = el.getAttribute("data-select-chat"); state.chatPop=""; state.chatPaneOpen = true; render(); }); });
     c.querySelectorAll("[data-chat-kind]").forEach(function(el){ el.addEventListener("click", function(){ state.chatKind = el.getAttribute("data-chat-kind"); render(); }); });
     c.querySelectorAll("[data-chat-hide]").forEach(function(el){ el.addEventListener("click", function(ev){
       ev.stopPropagation();
@@ -5032,6 +5119,8 @@
       document.getElementById("chat-qbtn").addEventListener("click", doSearch);
       chatQ.addEventListener("keydown", function(e){ if(e.key==="Enter") doSearch(); });
     }
+    c.querySelectorAll("[data-chat-back]").forEach(function(el){ el.addEventListener("click", function(){ state.chatPaneOpen = false; render(); }); });
+    c.querySelectorAll("details.flt-more").forEach(function(el){ el.addEventListener("toggle", function(){ if(window.matchMedia && window.matchMedia("(max-width:640px)").matches) state.fltMoreOpen = el.open; }); });
     var sendBtn = document.getElementById("chat-send");
     if(sendBtn){
       state.chatDraft = state.chatDraft || {};
