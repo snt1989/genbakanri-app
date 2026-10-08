@@ -4054,6 +4054,10 @@
       '<div style="font-size:11.5px;color:var(--ink-faint);line-height:1.6">LINE WORKS Developer Console の Bot 設定の「Callback URL」に次を登録します。</div>'+
       '<code style="word-break:break-all;font-size:12px;user-select:all">'+esc(st.callbackUrl||"")+'</code></div>'+
       '<div class="card" style="padding:16px 18px;max-width:600px;margin-bottom:14px;display:flex;flex-direction:column;gap:6px">'+
+      '<h2 style="font-size:13.5px">Botの受信状況（直近1件）</h2>'+
+      '<div style="font-size:12px;line-height:1.7">'+(st.debug?esc(fmtDateTime(st.debug.at))+'<br>'+esc(st.debug.msg):'<span style="color:var(--ink-faint)">まだ受信していません（Botに話しかけると、ここに結果が出ます）</span>')+'</div>'+
+      '<div><button class="btn sm" id="wk-reload">最新の状況に更新</button></div></div>'+
+      '<div class="card" style="padding:16px 18px;max-width:600px;margin-bottom:14px;display:flex;flex-direction:column;gap:6px">'+
       '<h2 style="font-size:13.5px">本人確認が済んでいるメンバー（'+(st.linked||[]).length+'人）</h2>'+
       '<div style="font-size:12px;line-height:1.7">'+((st.linked||[]).length?(st.linked||[]).map(function(n){ return esc(n); }).join("、"):'<span style="color:var(--ink-faint)">まだいません</span>')+'</div></div>';
   }

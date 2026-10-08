@@ -44,6 +44,8 @@ async function run(b, me, req){
         out.cronSecretSet = !!W.env("CRON_SECRET");
         out.callbackUrl = "https://" + host(req) + "/api/works-callback";
         out.linked = linked;
+        var dbg = await W.getDoc("settings/worksDebug");
+        out.debug = dbg.at ? {at: dbg.at, msg: dbg.msg || ""} : null;
       }
       return out;
     }

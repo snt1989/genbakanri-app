@@ -30,6 +30,11 @@ var HELP = [
   "・報告 案件名 内容 … 日報を登録(例: 報告 福川 本日は除草を完了)"
 ].join("\n");
 
+// 受信の状況を1件だけ記録（管理者が設定画面で確認できる。原因調査用）
+async function note(msg){
+  try{ await W.patchDoc("settings/worksDebug", {at: new Date().toISOString(), msg: String(msg).slice(0, 300)}); }catch(e){}
+}
+
 var DONE_STATUS = ["清算済", "失注"];
 function dateLabel(d){ return d ? d.slice(5).replace("-", "/") : "未定"; }
 
@@ -116,10 +121,14 @@ async function handleText(src, text){
 module.exports = async function handler(req, res){
   if(req.method !== "POST") return res.status(405).end();
   var raw = await rawBody(req);
-  if(!validSig(raw, req.headers["x-works-signature"])) return res.status(401).end();
+  if(!validSig(raw, req.headers["x-works-signature"])){
+    await note(W.env("WORKS_BOT_SECRET") ? "署名が一致しません（WORKS_BOT_SECRET が Bot の Secret と違う可能性）" : "WORKS_BOT_SECRET が未設定です");
+    return res.status(401).end();
+  }
   try{
     var ev = JSON.parse(raw.toString("utf8"));
     var src = ev.source || {};
+    await note("受信 type=" + ev.type + (ev.content && ev.content.text ? " 「" + String(ev.content.text).slice(0, 30) + "」" : ""));
     if(ev.type === "join" && src.channelId){
       var s = await W.getSettings();
       if(!s.channelId){
@@ -129,7 +138,8 @@ module.exports = async function handler(req, res){
     }else if(ev.type === "message" && ev.content && ev.content.type === "text"){
       await handleText(src, ev.content.text);
     }
-  }catch(e){ console.error("works callback", e.message); }
+    await note("処理OK type=" + ev.type);
+  }catch(e){ console.error("works callback", e.message); await note("処理エラー: " + e.message); }
   res.status(200).end();   // 処理が終わってから応答（サーバーレスでは応答後の処理が止まるため）。失敗はログに残す
 };
 module.exports.config = {api: {bodyParser: false}};
