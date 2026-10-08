@@ -547,8 +547,9 @@
     .chip-toggle{padding:8px 14px;font-size:12.5px;}
     .summary-line{gap:8px 16px;}
     .summary-pager{margin-left:0;}
-    .segmented{display:flex;width:100%;}
-    .segopt{flex:1;text-align:center;padding:11px 6px;}
+    .segmented{position:relative;display:flex;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+    .segmented::-webkit-scrollbar{display:none;}
+    .segopt{flex:1 0 auto;text-align:center;padding:11px 12px;white-space:nowrap;}
     .pagebtn{width:38px;height:38px;}
     /* tables become stacked cards */
     .tablewrap{border:none;background:transparent;overflow:visible;border-radius:0;}
@@ -1457,6 +1458,8 @@
     else if(state.tab==="member-form") c.innerHTML = banner+renderMemberForm();
     bindEvents();
     applyBulkUi();
+    // 横に長いタブ（設定など）は、選択中のタブが見える位置までスクロールしておく
+    document.querySelectorAll("#content .segmented").forEach(function(sg){ var on = sg.querySelector(".segopt.active"); if(on && sg.scrollWidth>sg.clientWidth) sg.scrollLeft = Math.max(0, on.offsetLeft - (sg.clientWidth-on.offsetWidth)/2); });
     if(state.tab==="chat") scrollChatToBottom();
   }
 
@@ -3795,7 +3798,7 @@
     var html = '<h2 style="font-size:13.5px;margin:4px 0 10px">バックアップ</h2>';
     html += '<div class="card" style="padding:16px 18px;max-width:560px;display:flex;flex-direction:column;gap:12px">';
     html += '<div class="side-stat" style="padding:0;border:none">最後のバックアップ<b style="font-size:12.5px">'+(last?esc(last.slice(0,10)+" "+last.slice(11,16))+"（"+days+"日前）":"まだありません")+'</b></div>';
-    if(days===null || days>=7) html += '<div class="badge" style="background:#fff4e5;color:#a55b00;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.5">'+(days===null?'バックアップがまだ取られていません。':'最後のバックアップから'+days+'日経っています。')+'定期的に保存しておくと安心です。</div>';
+    if(days===null || days>=7) html += '<div class="badge" style="background:#fff4e5;color:#a55b00;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.5;white-space:normal;display:block;height:auto">'+(days===null?'バックアップがまだ取られていません。':'最後のバックアップから'+days+'日経っています。')+'定期的に保存しておくと安心です。</div>';
     html += '<div style="font-size:12px;color:var(--ink-3);line-height:1.6">案件・顧客・メンバー・タスク・チャット・ファイル情報・フォルダ・予定・工程・ゴミ箱と、会社情報・社外秘の初期設定・マスタを1つのJSONに保存します。ファイル本体（写真・資料）は下の「写真・ファイルも含めて」を使ったときだけ含まれます。</div>';
     html += '<label style="font-size:12px;display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="bk-pw"> ログインパスワードも含める（取り扱い注意）</label>';
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="bk-run">'+iAdmin()+'今すぐバックアップ（JSON）</button><button class="btn outline" id="bk-run-files">'+iAdmin()+'写真・ファイルも含めてバックアップ</button></div>';
@@ -4525,6 +4528,7 @@
         s.split(CSV_LIST_SEP).forEach(function(part){
           part = part.trim(); if(!part) return;
           var nm = csvResolveMemberName(part);
+          if(!nm && existing){ var keep = normalizeAssignees(existing[c.key]).find(function(x){ return csvSpaceless(x.name)===csvSpaceless(part); }); if(keep) nm = keep.name; }   // その案件に既にいる担当者は（メンバー一覧に無くても）そのまま許可
           if(!nm) bad.push(part); else if(names.indexOf(nm)===-1) names.push(nm);
         });
         if(bad.length) return {error:"「"+c.label+"」に未登録のメンバーがいます（"+bad.join("、")+"）"};
