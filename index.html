@@ -876,7 +876,7 @@
   // 集計・一覧の絞り込みで名前を使っている進捗（削除不可）
   var STATUS_REQUIRED = ["契約済","施工中","施工完了","清算済","失注"];
   var PROJECT_TYPES = ["原状回復工事","除草・草刈作業","植栽維持管理","建物・敷地清掃","排水管清掃","解体工事","その他"];
-  var ROLES = ["営業","現場監督","内装","解体","塗装","防虫","電気","設備","ハウスクリーニング"];
+  var ROLES = ["社長","営業","コーディネーター","施工管理","現場監督","設計","管理部門","事務","大工","塗装","屋根/外装","電気","内装","設備","ガス","水道","とび","外構","ハウスクリーニング","解体","左官","板金","サッシ","基礎","建具/家具","空調","防虫"];
   var PROPERTY_TYPES = ["アパート","戸建て","マンション","店舗","事務所","土地","その他"];
   var PROPERTY_STRUCTURES = ["木造","鉄骨造","RC造","SRC造","その他"];
   var PREFS = ["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
@@ -3471,8 +3471,14 @@
   var MASTER_DEFAULTS = {};
   MASTERS.forEach(function(m){ MASTER_DEFAULTS[m.key] = m.arr.slice(); });
   function applyMasters(d){
+    var rolesDefault = MASTER_DEFAULTS.roles || [];
     MASTERS.forEach(function(m){
-      if(d && Array.isArray(d[m.key]) && d[m.key].length){ m.arr.length = 0; Array.prototype.push.apply(m.arr, d[m.key]); }
+      if(d && Array.isArray(d[m.key]) && d[m.key].length){
+        var list = d[m.key].slice();
+        // 職種を増やした版: 保存済みのマスタに、新しい職種を一度だけ追加する（以後は管理者の編集どおり）
+        if(m.key==="roles" && d.rolesMerged!==1) rolesDefault.forEach(function(r){ if(list.indexOf(r)===-1) list.push(r); });
+        m.arr.length = 0; Array.prototype.push.apply(m.arr, list);
+      }
     });
     syncStatusFilters();
   }
@@ -3564,6 +3570,7 @@
     var affected = masterAffected(key, removed);
     var payload = {}; MASTERS.forEach(function(x){ payload[x.key] = x.key===key ? list : x.arr.slice(); });
     payload.updatedAt = new Date().toISOString();
+    payload.rolesMerged = 1;
     var run = function(){
       var finish = function(){
         m.arr.length = 0; Array.prototype.push.apply(m.arr, list);
