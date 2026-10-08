@@ -3498,6 +3498,7 @@
     html += field("新しいパスワード（確認）", '<input type="password" id="me-pw-new2" autocomplete="new-password">');
     html += '<div><button class="btn" id="me-pw-save">パスワードを変更する</button></div>';
     html += '</div>';
+    html += pushCardHtml();
     return html;
   }
 
@@ -4280,6 +4281,104 @@
       worksCall("share", {text:text}).then(function(){ closeModal(); toast("LINE WORKSに送信しました"); }, function(e){ btn.disabled = false; toast("送信できませんでした："+e.message); });
     });
   }
+  /* ============ スマホ通知（Web Push） ============ */
+  var PUSH_API = "/api/push";
+  state.push = {status:null, loading:false, failed:false, sub:null, busy:false, keys:null, msg:""};
+  function pushSupported(){ return !!(db && !window.claude && !state.offlineMode && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window && /^https?:$/.test(location.protocol)); }
+  function pushCall(action, extra){
+    var me = myMember();
+    if(!me) return Promise.reject(new Error("ログイン情報を確認できません"));
+    return fetch(PUSH_API, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(Object.assign({auth:{name:me.name, password:me.password||""}, action:action}, extra||{}))})
+      .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if(!r.ok) throw new Error(j.error || ("サーバーエラー（"+r.status+"）")); return j; }); });
+  }
+  function pushLoad(){
+    var p = state.push;
+    if(!pushSupported() || p.loading || p.status || p.failed || !myMember()) return;
+    p.loading = true;
+    pushCall("status").then(function(j){ p.status = j; }, function(){ p.failed = true; })
+      .then(function(){ return navigator.serviceWorker.getRegistration().then(function(reg){ return reg && reg.pushManager.getSubscription(); }); })
+      .then(function(sub){ p.sub = sub || null; }, function(){})
+      .then(function(){ p.loading = false; if(state.tab==="settings" && state.settingsSeg==="personal") render(); });
+  }
+  function pushNotify(chatId, text){
+    if(!pushSupported() || !chatId) return;
+    pushCall("notify", {chatId:chatId, text:text||""}).catch(function(){});
+  }
+  function pushCardHtml(){
+    if(!pushSupported()){
+      return '<div class="card" style="padding:20px;max-width:520px;display:flex;flex-direction:column;gap:10px;margin-top:16px"><h2 style="font-size:13.5px">スマホ通知</h2><div style="font-size:12px;color:var(--ink-faint)">この環境では通知を利用できません。Webアプリ版（Vercel）をスマホのホーム画面に追加してお使いください。</div></div>';
+    }
+    pushLoad();
+    var p = state.push, st = p.status;
+    var h = '<div class="card" style="padding:20px;max-width:520px;display:flex;flex-direction:column;gap:12px;margin-top:16px"><h2 style="font-size:13.5px">スマホ通知</h2>';
+    if(!st){ return h + '<div style="font-size:12px;color:var(--ink-faint)">'+(p.failed?"通知の状態を取得できませんでした。":"読み込み中…")+'</div></div>'; }
+    if(!st.configured){
+      h += '<div style="font-size:12px;color:var(--ink-soft);line-height:1.7">チャットが届いたときのスマホ通知は、まだ準備ができていません。'+(st.admin?'管理者の設定が必要です。下のボタンで通知用のキーを作成し、Vercelの環境変数に登録してください。':'管理者に設定を依頼してください。')+'</div>';
+      if(st.admin){
+        if(p.keys){
+          h += '<div style="font-size:11.5px;line-height:1.7;background:var(--bg-alt,#f4f6f5);padding:10px;border-radius:8px">Vercel の Settings → Environment Variables に次の2つを登録し、Redeploy してください。<br>※ 秘密鍵は他人に見せないでください。この画面を閉じると再表示されません。</div>'+
+            field('VAPID_PUBLIC_KEY','<input type="text" readonly id="pk-pub" value="'+esc(p.keys.publicKey)+'">')+
+            field('VAPID_PRIVATE_KEY','<input type="text" readonly id="pk-priv" value="'+esc(p.keys.privateKey)+'">')+
+            '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-push="copy-pub">公開キーをコピー</button><button class="btn" data-push="copy-priv">秘密キーをコピー</button></div>';
+        } else {
+          h += '<div><button class="btn primary" data-push="genkeys"'+(p.busy?" disabled":"")+'>通知用のキーを作成する</button></div>';
+        }
+      }
+      return h + '</div>';
+    }
+    var on = !!p.sub, denied = (typeof Notification!=="undefined" && Notification.permission==="denied");
+    h += '<div style="font-size:12px;color:var(--ink-soft);line-height:1.7">自分が参加しているチャットに新着があると、この端末に通知します。（iPhoneは「共有 → ホーム画面に追加」したアプリから設定してください）</div>';
+    h += '<div style="font-size:12.5px;font-weight:700">この端末の通知：<span class="tag'+(on?"":" muted")+'">'+(on?"オン":"オフ")+'</span></div>';
+    if(denied) h += '<div style="font-size:11.5px;color:var(--danger,#c0392b)">ブラウザの設定で通知がブロックされています。端末・ブラウザの設定から許可してください。</div>';
+    h += '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+      (on ? '<button class="btn" data-push="off"'+(p.busy?" disabled":"")+'>通知をオフにする</button><button class="btn" data-push="test"'+(p.busy?" disabled":"")+'>テスト通知</button>'
+          : '<button class="btn primary" data-push="on"'+(p.busy||denied?" disabled":"")+'>この端末で通知を受け取る</button>')+'</div>';
+    if(p.msg) h += '<div style="font-size:11.5px;color:var(--ink-faint)">'+esc(p.msg)+'</div>';
+    return h + '</div>';
+  }
+  function pushKeyBytes(b64){ var s=(b64+"====".slice(b64.length%4||4)).replace(/-/g,"+").replace(/_/g,"/"); var raw=atob(s), a=new Uint8Array(raw.length); for(var i=0;i<raw.length;i++) a[i]=raw.charCodeAt(i); return a; }
+  function bindPushEvents(c){
+    c.querySelectorAll("[data-push]").forEach(function(el){ el.addEventListener("click", function(){
+      var k = el.getAttribute("data-push"), p = state.push;
+      if(k==="copy-pub"||k==="copy-priv"){ var inp=document.getElementById(k==="copy-pub"?"pk-pub":"pk-priv"); if(inp){ inp.select(); try{ navigator.clipboard.writeText(inp.value); }catch(e){ document.execCommand("copy"); } toast("コピーしました"); } return; }
+      if(k==="genkeys"){ p.busy=true; render(); pushCall("genkeys").then(function(j){ p.keys=j; }, function(e){ p.msg=e.message; }).then(function(){ p.busy=false; render(); }); return; }
+      if(k==="on"){
+        p.busy=true; p.msg=""; render();
+        Notification.requestPermission().then(function(perm){
+          if(perm!=="granted") throw new Error("通知が許可されませんでした");
+          return navigator.serviceWorker.ready;
+        }).then(function(reg){
+          return reg.pushManager.getSubscription().then(function(old){ return old || reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey: pushKeyBytes(p.status.publicKey)}); });
+        }).then(function(sub){ p.sub=sub; return pushCall("subscribe", {subscription: sub.toJSON()}); })
+          .then(function(){ p.msg="通知をオンにしました。"; }, function(e){ p.msg="設定できませんでした："+e.message; })
+          .then(function(){ p.busy=false; render(); });
+        return;
+      }
+      if(k==="off"){
+        p.busy=true; render();
+        var sub=p.sub, ep=sub && sub.endpoint;
+        Promise.resolve(sub && sub.unsubscribe()).then(function(){ return ep && pushCall("unsubscribe", {endpoint:ep}); })
+          .then(function(){ p.sub=null; p.msg="通知をオフにしました。"; }, function(e){ p.msg=e.message; })
+          .then(function(){ p.busy=false; render(); });
+        return;
+      }
+      if(k==="test"){
+        navigator.serviceWorker.ready.then(function(reg){ return reg.showNotification("現場管理", {body:"テスト通知です。この表示が出れば設定できています。", icon:"icons/icon-192.png"}); })
+          .then(function(){ toast("テスト通知を出しました"); }, function(){ toast("通知を表示できませんでした"); });
+      }
+    }); });
+  }
+  // 通知をタップして開いたとき、該当のチャットを表示する
+  function openChatFromPush(id){
+    if(!id) return;
+    state.activeChat = id; state.tab = "chat"; state.viewingProjectId = null;
+    try{ render(); }catch(e){}
+  }
+  try{
+    if("serviceWorker" in navigator){ navigator.serviceWorker.addEventListener("message", function(e){ if(e.data && e.data.type==="open-chat") openChatFromPush(e.data.chatId); }); }
+    var qc = new URLSearchParams(location.search).get("chat"); if(qc) setTimeout(function(){ openChatFromPush(qc); }, 1500);
+  }catch(e){}
+
   function bindWorksEvents(c){
     var on = function(id, fn){ var el = document.getElementById(id); if(el) el.addEventListener("click", function(){ fn(el); }); };
     var admin = function(fn){ return function(el){ if(!state.isAdmin){ toast("管理者のみ行えます"); return; } fn(el); }; };
@@ -5867,6 +5966,7 @@
         if(!db){ state.chatMsgs[cid] = (state.chatMsgs[cid]||[]).concat([msg]); var ch=state.chats.find(function(x){return x.id===cid;}); if(ch) ch.updatedAt=msg.ts; if(done) done(); render(); return; }
         db.collection("chats").doc(cid).collection("messages").add(msg).then(function(){
           db.collection("chats").doc(cid).update({updatedAt:msg.ts}).catch(function(){});
+          pushNotify(cid, msg.text || (msg.attachment ? "（添付: "+(msg.attachment.filename||"ファイル")+"）" : (msg.location ? "📍 現在地" : "")));
           if(done) done();
         }).catch(function(){ toast("送信に失敗しました"); });
       };
@@ -5973,6 +6073,7 @@
 
     bindFreeeEvents(c);
     bindWorksEvents(c);
+    bindPushEvents(c);
     bindNavEvents(c);
     bindListDefEvents(c);
     c.querySelectorAll("[data-setseg]").forEach(function(el){ el.addEventListener("click", function(){ state.settingsSeg = el.getAttribute("data-setseg"); render(); }); });
