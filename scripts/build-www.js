@@ -11,7 +11,7 @@ var base = process.env.APP_API_BASE;
 if(base){
   var h = fs.readFileSync(path.join(out,"index.html"),"utf8");
   var n = 0;
-  ["config","freee","works"].forEach(function(k){
+  ["config","freee","works","invite"].forEach(function(k){
     n += h.split('"/api/'+k).length - 1;
     h = h.split('"/api/'+k).join('"'+base.replace(/\/$/,"")+'/api/'+k);
   });

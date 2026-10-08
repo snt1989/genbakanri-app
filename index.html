@@ -1109,6 +1109,7 @@
   async function boot(){
     bindLoginAndTopbarEvents();
     renderShell(); render();
+    showInviteScreen();
     startLoadWatchdog();
 
     if(window.claude){
@@ -2923,7 +2924,7 @@
       (state.isAdmin ?
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
           '<button class="btn primary" data-goto-memberform="1">'+iAdmin()+iPlus()+' 自社メンバー登録</button>'+
-          '<button class="btn outline" data-open="member-invite">'+iAdmin()+iPlus()+' 社外メンバー招待</button>'+
+          '<button class="btn outline" data-open="member-invite">'+iAdmin()+iPlus()+' 社外メンバーの登録URLを発行</button>'+
           csvToolbar("members")+
         '</div>' : ''
       )+'</div><div style="height:14px"></div>';
@@ -4430,17 +4431,88 @@
     pw.focus();
   }
 
+  // 社外メンバーの登録URLを発行する（管理者）。URLは7日間・1回だけ使えます。
+  var INVITE_API = "/api/invite";
+  function inviteAvailable(){ return !!db && !window.claude && !state.offlineMode; }
   function openMemberInvite(){
-    var body = '<div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:2px">つながりたい方の携帯番号をご入力ください</div>'+
-      field("携帯番号", '<input type="tel" id="f-iphone" placeholder="例：09012341234">');
-    openModal("社外メンバー招待", body, '<button class="btn primary" id="f-invite" style="width:100%;justify-content:center">招待する</button>');
-    document.getElementById("f-invite").onclick = function(){
-      var phone = document.getElementById("f-iphone").value.trim();
-      if(!phone){ toast("携帯番号を入力してください"); return; }
-      if(phoneTaken(phone, null)){ toast("この携帯番号は既に登録されています"); return; }
-      var data = Object.assign({name:"招待中（"+phone+"）", phone:phone, company:"", roles:[]}, permissionFields("external"));
-      writeDoc("members", null, data, "招待を送信しました");
-    };
+    if(!state.isAdmin){ toast("管理者のみ行えます"); return; }
+    var intro = '<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.7">社外の方に送る「登録URL」を発行します。相手がそのURLを開いて、氏名・携帯番号・所属会社・パスワードを自分で入力すると、<b>社外メンバー</b>として登録されます。</div>'+
+      '<div style="font-size:11.5px;color:var(--ink-faint);line-height:1.7;margin-top:6px">・URLは発行から7日間、1回だけ使えます。<br>・社外メンバーは、担当に入れた案件だけが見えます。社外秘にした項目は見えません。<br>・URLを知っている人は登録できるので、相手以外には共有しないでください。</div>';
+    if(!inviteAvailable()){
+      openModal("社外メンバーの登録URL", intro+'<div style="margin-top:12px;font-size:12.5px;color:var(--danger)">この機能は、Vercelで公開しているアプリ（Firebase接続）でのみ使えます。</div>', '<button class="btn" data-close-modal>閉じる</button>');
+      return;
+    }
+    openModal("社外メンバーの登録URL", intro+'<div id="inv-result" style="margin-top:14px"></div>', '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="inv-make">'+iAdmin()+'登録URLを発行する</button>');
+    document.getElementById("inv-make").addEventListener("click", function(){
+      var btn = this, me = myMember(); if(!me) return;
+      btn.disabled = true;
+      fetch(INVITE_API, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({action:"create", auth:{name:me.name, password:me.password||""}})})
+        .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if(!r.ok) throw new Error(j.error||("サーバーエラー（"+r.status+"）")); return j; }); })
+        .then(function(j){
+          btn.disabled = false; btn.textContent = "もう一度発行する";
+          var until = new Date(j.expiresAt); var untilTxt = (until.getMonth()+1)+"月"+until.getDate()+"日 "+("0"+until.getHours()).slice(-2)+":"+("0"+until.getMinutes()).slice(-2);
+          document.getElementById("inv-result").innerHTML = '<div style="font-size:12px;font-weight:700;margin-bottom:6px">発行しました（'+esc(untilTxt)+'まで有効）</div>'+
+            '<input type="text" id="inv-url" readonly value="'+esc(j.url)+'" style="width:100%;font-size:12px" onclick="this.select()">'+
+            '<div style="margin-top:8px"><button class="btn sm" id="inv-copy">URLをコピー</button></div>';
+          document.getElementById("inv-copy").addEventListener("click", function(){
+            var el = document.getElementById("inv-url"); el.select();
+            var done = function(){ toast("URLをコピーしました"); };
+            if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(el.value).then(done, function(){ try{ document.execCommand("copy"); done(); }catch(e){ toast("URLを選択してコピーしてください"); } });
+            else { try{ document.execCommand("copy"); done(); }catch(e){ toast("URLを選択してコピーしてください"); } }
+          });
+        }, function(e){ btn.disabled = false; toast("発行できませんでした："+e.message); });
+    });
+  }
+
+  // 登録URL（?invite=…）から開いたときの、社外メンバー本人の登録画面
+  var INVITE_TOKEN = (function(){ try{ return new URLSearchParams(location.search).get("invite") || ""; }catch(e){ return ""; } })();
+  function inviteCall(body){
+    return fetch(INVITE_API, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)})
+      .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if(!r.ok) throw new Error(j.error||("サーバーエラー（"+r.status+"）")); return j; }); });
+  }
+  function showInviteScreen(){
+    if(!INVITE_TOKEN) return;
+    var box = document.createElement("div");
+    box.id = "invite-screen";
+    box.style.cssText = "position:fixed;inset:0;z-index:9999;background:var(--bg,#f6f4ef);overflow:auto;display:flex;justify-content:center;padding:24px 16px";
+    document.body.appendChild(box);
+    var card = function(inner){ box.innerHTML = '<div class="card" style="width:100%;max-width:460px;height:max-content;padding:24px 22px;display:flex;flex-direction:column;gap:14px"><h1 style="font-size:17px">社外メンバー登録</h1>'+inner+'</div>'; };
+    var home = function(){ location.href = location.pathname; };
+    card('<div style="font-size:13px;color:var(--ink-faint)">確認しています…</div>');
+    inviteCall({action:"check", token:INVITE_TOKEN}).then(function(j){
+      if(j.configured===false || !j.valid){
+        card('<div style="font-size:13px;line-height:1.7">この登録URLは無効か、有効期限が切れています。<br>招待した方に、新しいURLを発行してもらってください。</div><div><button class="btn" id="inv-home">ログイン画面へ</button></div>');
+        document.getElementById("inv-home").addEventListener("click", home);
+        return;
+      }
+      card('<div style="font-size:12px;color:var(--ink-faint);line-height:1.7">下の内容を入力して登録してください。登録すると、携帯番号（または氏名）とパスワードでログインできます。</div>'+
+        field("氏名 *", '<input type="text" id="iv-name" placeholder="例：山田 武史" autocomplete="name">')+
+        field("ふりがな", '<input type="text" id="iv-kana" placeholder="例：ヤマダ タケシ">')+
+        field("携帯番号 *（ログインに使います）", '<input type="tel" id="iv-phone" placeholder="例：09012341234" autocomplete="tel">')+
+        field("所属会社 *", '<input type="text" id="iv-company" placeholder="例：有限会社○○塗装" autocomplete="organization">')+
+        field("メールアドレス", '<input type="email" id="iv-email" autocomplete="email">')+
+        '<div><div style="font-size:12px;margin-bottom:6px">職種（当てはまるもの）</div><div class="assignee-pick" id="iv-roles">'+ROLES.map(function(r){ return '<span class="chip-toggle" data-iv-role="'+esc(r)+'">'+esc(r)+'</span>'; }).join("")+'</div></div>'+
+        field("パスワード *（4文字以上）", '<input type="password" id="iv-pw" autocomplete="new-password">')+
+        field("パスワード（確認） *", '<input type="password" id="iv-pw2" autocomplete="new-password">')+
+        '<div id="iv-err" style="font-size:12px;color:var(--danger);min-height:16px"></div>'+
+        '<div><button class="btn primary" id="iv-submit" style="width:100%;justify-content:center;padding:11px">登録する</button></div>');
+      box.querySelectorAll("[data-iv-role]").forEach(function(el){ el.addEventListener("click", function(){ el.classList.toggle("on"); }); });
+      document.getElementById("iv-submit").addEventListener("click", function(){
+        var v = function(id){ return document.getElementById(id).value; }, err = document.getElementById("iv-err"), btn = this;
+        err.textContent = "";
+        if(!v("iv-name").trim() || !v("iv-phone").trim() || !v("iv-company").trim() || !v("iv-pw")){ err.textContent = "氏名・携帯番号・所属会社・パスワードは必須です"; return; }
+        if(v("iv-pw")!==v("iv-pw2")){ err.textContent = "パスワードが一致しません"; return; }
+        btn.disabled = true;
+        inviteCall({action:"register", token:INVITE_TOKEN, name:v("iv-name"), kana:v("iv-kana"), phone:v("iv-phone"), company:v("iv-company"), email:v("iv-email"), password:v("iv-pw"),
+          roles:Array.prototype.slice.call(box.querySelectorAll("[data-iv-role].on")).map(function(x){ return x.getAttribute("data-iv-role"); })})
+          .then(function(){
+            card('<div style="font-size:13px;line-height:1.8">登録が完了しました。<br>ログイン画面から、携帯番号（または氏名）とパスワードでログインしてください。<br><span style="font-size:11.5px;color:var(--ink-faint)">見られる案件は、管理者があなたを担当に入れたものです。</span></div><div><button class="btn primary" id="inv-home">ログイン画面へ</button></div>');
+            document.getElementById("inv-home").addEventListener("click", home);
+          }, function(e){ btn.disabled = false; err.textContent = e.message; });
+      });
+    }, function(){
+      card('<div style="font-size:13px;line-height:1.7;color:var(--danger)">接続できませんでした。通信状況を確認して、もう一度開いてください。</div>');
+    });
   }
 
   function openFilesUploadModal(){
