@@ -3260,8 +3260,9 @@
   // (admins only: stats, permission/password management, backup).
   function settingsSections(){
     var s = [["company","会社情報"],["personal","個人情報"]];
+    if(state.isAdmin){ s.push(["admin","管理画面"]); s.push(["master","マスタ管理"]); s.push(["trash","ゴミ箱"]); }
     if(worksAvailable()) s.push(["works","LINE WORKS"]);
-    if(state.isAdmin){ s.push(["admin","管理画面"]); s.push(["freee","freee連携"]); s.push(["master","マスタ管理"]); s.push(["trash","ゴミ箱"]); s.push(["backup","バックアップ"]); }
+    if(state.isAdmin){ s.push(["freee","freee連携"]); s.push(["backup","バックアップ"]); }
     return s;
   }
   function myMember(){
