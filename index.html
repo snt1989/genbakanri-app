@@ -3816,15 +3816,55 @@
   }
   function freeePushCustomers(){
     var all = freeeCustomersToPush();
-    freeePicker("取引先として登録する顧客", "freee会計に登録する顧客を選んでください。同じ名前の取引先がfreeeにすでにある場合は、新規登録せずに紐づけだけを行います。",
+    freeePicker("取引先として登録する顧客", "freee会計に登録する顧客を選んでください。freeeにすでにある取引先と名前が近い場合は、次の画面で確認します。",
       all.map(function(c){ return {id:c.id, label:c.name, sub:[customerPostal(c), (c.prefecture||"")+(c.address||"")+(c.building?" "+c.building:""), c.phone].filter(Boolean).join("　")}; }),
-      "選択した顧客を登録する", function(ids){
+      "次へ（名前の確認）", function(ids){
       var list = all.filter(function(c){ return ids.indexOf(c.id)!==-1; });
-      state.freee.busy = true;
-      freeeChunks(list, 20, function(part){
+      state.freee.busy = true; toast("freeeの取引先と照合中…");
+      freeeCall("partners.check", {customers: list.map(function(c){ return {id:c.id, name:c.name}; })}).then(function(j){
+        state.freee.busy = false;
+        var cands = {}; (j.results||[]).forEach(function(r){ if(r.candidates && r.candidates.length) cands[r.id] = r.candidates; });
+        var ask = list.filter(function(c){ return cands[c.id]; });
+        if(!ask.length){ freeeRunCustomers(list, {}); return; }
+        freeeResolveNames(list, ask, cands);
+      }, function(e){ state.freee.busy = false; toast("照合できませんでした："+e.message); });
+    });
+  }
+  // 名前が近い取引先が見つかった顧客ごとに、紐づける／新規登録／今回は登録しない を選ばせる
+  function freeeResolveNames(list, ask, cands){
+    var rows = ask.map(function(c){
+      var cs = cands[c.id], exact = cs.some(function(x){ return x.exact; });
+      var radios = cs.map(function(x, i){
+        return '<label style="display:flex;gap:8px;align-items:flex-start;margin:4px 0;font-size:12.5px;cursor:pointer"><input type="radio" name="frn-'+esc(c.id)+'" value="link:'+esc(x.id)+'"'+(exact&&i===0?' checked':'')+' style="margin-top:3px"><span>freeeの「<b>'+esc(x.name)+'</b>」と同じ取引先として紐づける <span class="badge '+(x.exact?'soft-success':'soft-warning')+'">'+(x.exact?'完全一致':'名前が近い')+'</span></span></label>';
+      }).join("");
+      return '<div style="padding:10px 4px;border-bottom:1px solid var(--border)"><div style="font-size:12.5px;margin-bottom:2px">アプリの顧客：<b>'+esc(c.name)+'</b></div><div style="font-size:11px;color:var(--ink-faint);margin-bottom:4px">'+esc([(c.prefecture||"")+(c.address||""), c.phone].filter(Boolean).join("　"))+'</div>'+radios+
+        '<label style="display:flex;gap:8px;align-items:center;margin:4px 0;font-size:12.5px;cursor:pointer"><input type="radio" name="frn-'+esc(c.id)+'" value="new">別の取引先として新規登録する</label>'+
+        '<label style="display:flex;gap:8px;align-items:center;margin:4px 0;font-size:12.5px;cursor:pointer"><input type="radio" name="frn-'+esc(c.id)+'" value="skip">今回は登録しない</label></div>';
+    }).join("");
+    var rest = list.length - ask.length;
+    openModal("名前が近い取引先があります", '<div style="font-size:12.5px;line-height:1.7;margin-bottom:6px">freeeにすでにある取引先と、名前が同じか近い顧客が'+ask.length+'件あります。同じ相手なら「紐づける」を選ぶと、二重登録を防げます。'+(rest?'（ほかの'+rest+'件は近い名前がないため、そのまま新規登録します）':'')+'</div><div style="max-height:52vh;overflow:auto;border-top:1px solid var(--border)">'+rows+'</div>',
+      '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="frn-run" disabled>この内容で登録する</button>');
+    var box = document.getElementById("modal-box");
+    var refresh = function(){ var ok = ask.every(function(c){ return box.querySelector('input[name="frn-'+c.id+'"]:checked'); }); document.getElementById("frn-run").disabled = !ok; };
+    box.querySelectorAll("input[type=radio]").forEach(function(r){ r.addEventListener("change", refresh); });
+    refresh();
+    document.getElementById("frn-run").onclick = function(){
+      var dec = {};
+      ask.forEach(function(c){ dec[c.id] = box.querySelector('input[name="frn-'+c.id+'"]:checked').value; });
+      closeModal(); freeeRunCustomers(list, dec);
+    };
+  }
+  // dec[id]: "link:<freeeのID>" | "new" | "skip"（未指定は新規登録）
+  function freeeRunCustomers(list, dec){
+    var links = list.filter(function(c){ return /^link:/.test(dec[c.id]||""); });
+    var creates = list.filter(function(c){ return !dec[c.id] || dec[c.id]==="new"; });
+    state.freee.busy = true;
+    var linked = Promise.all(links.map(function(c){ return saveRaw("customers", c.id, {freeePartnerId:Number(dec[c.id].slice(5))}); }));
+    linked.then(function(){
+      return freeeChunks(creates, 20, function(part){
         return freeeCall("partners.push", {customers: part.map(function(c){
           var pi = PREFS.indexOf(c.prefecture);
-          return {id:c.id, name:c.name, kana:c.kana, email:c.email, phone:c.phone, postalCode:customerPostal(c), prefectureCode: pi>=0?pi:"", street1:c.address, street2:c.building};
+          return {id:c.id, name:c.name, kana:c.kana, email:c.email, phone:c.phone, postalCode:customerPostal(c), prefectureCode: pi>=0?pi:"", street1:c.address, street2:c.building, force:true};
         })}).then(function(j){
           var ok = 0, fail = [], jobs = [];
           (j.results||[]).forEach(function(x){
@@ -3834,8 +3874,13 @@
           });
           return Promise.all(jobs).then(function(){ return {ok:ok, fail:fail}; });
         });
-      }, "取引先を登録中").then(function(r){ freeeReport("登録", r); }, function(e){ state.freee.busy = false; toast("失敗しました："+e.message); render(); });
-    });
+      }, "取引先を登録中");
+    }).then(function(r){
+      r.ok += links.length;
+      var skipped = list.filter(function(c){ return dec[c.id]==="skip"; }).length;
+      freeeReport("登録", r);
+      if(skipped) setTimeout(function(){ toast("（"+skipped+"件は登録せず、そのままにしました）"); }, 2500);
+    }, function(e){ state.freee.busy = false; toast("失敗しました："+e.message); render(); });
   }
   function freeePushDeals(){
     var all = freeeProjectsToPush(), s = freeeSet();

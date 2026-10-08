@@ -6,6 +6,25 @@ function readBody(req){
   if(req.body && typeof req.body === "object") return req.body;
   try{ return JSON.parse(req.body || "{}"); }catch(e){ return {}; }
 }
+// 取引先名の「近さ」を判定する（株式会社・(株)・敬称・空白・全角半角の違いを無視）
+function norm(s){
+  return String(s || "").normalize("NFKC").toLowerCase()
+    .replace(/株式会社|有限会社|合同会社|一般社団法人|\(株\)|\(有\)|\(合\)|㈱|㈲/g, "")
+    .replace(/御中|様|殿|さん/g, "")
+    .replace(/[\s\u3000・･\-ー_.,、。()（）「」『』]/g, "");
+}
+function bigrams(s){ var o = {}; for(var i = 0; i < s.length - 1; i++) o[s.substr(i, 2)] = (o[s.substr(i, 2)] || 0) + 1; return o; }
+function similarity(a, b){
+  if(!a || !b) return 0;
+  if(a === b) return 1;
+  var short = a.length < b.length ? a : b, long = a.length < b.length ? b : a;
+  if(short.length >= 2 && long.indexOf(short) !== -1) return Math.max(0.8, short.length / long.length);
+  if(a.length < 2 || b.length < 2) return 0;
+  var x = bigrams(a), y = bigrams(b), inter = 0, nx = 0, ny = 0;
+  Object.keys(x).forEach(function(k){ nx += x[k]; if(y[k]) inter += Math.min(x[k], y[k]); });
+  Object.keys(y).forEach(function(k){ ny += y[k]; });
+  return (2 * inter) / (nx + ny);
+}
 function isoDate(s){ return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "")) ? s : ""; }
 
 module.exports = async function handler(req, res){
@@ -48,6 +67,25 @@ async function run(b, req){
       };
     }
 
+    case "partners.check": {
+      t = await need(); cid = t.companyId;
+      var all = [], off = 0;
+      for(var pg = 0; pg < 10; pg++){
+        var page = await F.freee("GET", "/api/1/partners", {query: {company_id: cid, limit: 3000, offset: off}});
+        var arr = page.partners || []; all = all.concat(arr);
+        if(arr.length < 3000) break; off += 3000;
+      }
+      var idx = all.map(function(p){ return {id: p.id, name: p.name, n: norm(p.name)}; });
+      var out = (b.customers || []).slice(0, 100).map(function(c){
+        var cn = norm(c.name), raw = String(c.name || "").trim();
+        var cands = idx.map(function(p){ return {id: p.id, name: p.name, score: p.name === raw ? 1 : similarity(cn, p.n), exact: p.name === raw}; })
+          .filter(function(x){ return x.score >= 0.6; })
+          .sort(function(a, b){ return b.score - a.score; }).slice(0, 3);
+        return {id: c.id, candidates: cands};
+      });
+      return {results: out, total: all.length};
+    }
+
     case "partners.push": {
       t = await need(); cid = t.companyId;
       var list = (b.customers || []).slice(0, 40), results = [];
@@ -56,8 +94,9 @@ async function run(b, req){
         try{
           var name = String(c.name || "").trim();
           if(!name) throw new Error("名前が空です");
-          // 同名の取引先があればそれに紐づける
-          var found = await F.freee("GET", "/api/1/partners", {query: {company_id: cid, keyword: name, limit: 50}});
+          // 確認済み（force）でなければ、同名の取引先があればそれに紐づける
+          var found = c.force ? {partners: []} : null;
+          if(!found) found = await F.freee("GET", "/api/1/partners", {query: {company_id: cid, keyword: name, limit: 50}});
           var same = (found.partners || []).find(function(p){ return p.name === name; });
           if(same){ results.push({id: c.id, partnerId: same.id, status: "linked"}); continue; }
           var body = {company_id: cid, name: name};
