@@ -3815,8 +3815,11 @@
     render();
   }
   function freeePushCustomers(){
-    var list = freeeCustomersToPush();
-    freeeConfirm("取引先の登録", "freee会計に、取引先を最大"+list.length+"件登録します（同名の取引先は紐づけのみ）。よろしいですか？", function(){
+    var all = freeeCustomersToPush();
+    freeePicker("取引先として登録する顧客", "freee会計に登録する顧客を選んでください。同じ名前の取引先がfreeeにすでにある場合は、新規登録せずに紐づけだけを行います。",
+      all.map(function(c){ return {id:c.id, label:c.name, sub:[customerPostal(c), (c.prefecture||"")+(c.address||"")+(c.building?" "+c.building:""), c.phone].filter(Boolean).join("　")}; }),
+      "選択した顧客を登録する", function(ids){
+      var list = all.filter(function(c){ return ids.indexOf(c.id)!==-1; });
       state.freee.busy = true;
       freeeChunks(list, 20, function(part){
         return freeeCall("partners.push", {customers: part.map(function(c){
@@ -3835,9 +3838,13 @@
     });
   }
   function freeePushDeals(){
-    var list = freeeProjectsToPush(), s = freeeSet();
-    var noPartner = list.filter(function(p){ var c = state.customers.find(function(x){ return x.id===p.customerId; }); return !(c && c.freeePartnerId); }).length;
-    freeeConfirm("売上取引の登録", "freee会計に、売上取引（未決済・収入）を最大"+list.length+"件登録します。"+(noPartner?"うち"+noPartner+"件は取引先が未連携のため、取引先なしで登録されます。先に取引先を登録することをおすすめします。":"")+"登録した取引はfreee側で確認・修正してください。よろしいですか？", function(){
+    var all = freeeProjectsToPush(), s = freeeSet();
+    var partnerOf = function(p){ var c = state.customers.find(function(x){ return x.id===p.customerId; }); return c && c.freeePartnerId; };
+    var noPartner = all.filter(function(p){ return !partnerOf(p); }).length;
+    freeePicker("売上取引として登録する案件", "freee会計に、未決済の収入取引として登録する案件を選んでください。"+(noPartner?"「取引先未連携」の"+noPartner+"件は、取引先なしで登録されます（先に取引先を登録することをおすすめします）。":"")+"登録後はfreee側で内容を確認してください。",
+      all.map(function(p){ return {id:p.id, label:p.name, sub:[p.status, (p.startDate||(p.createdAt||"").slice(0,10))+"発生", p.customerName||"顧客なし", partnerOf(p)?"":"取引先未連携"].filter(Boolean).join("　"), right:fmtYen(p.amount)}; }),
+      "選択した案件を登録する", function(ids){
+      var list = all.filter(function(p){ return ids.indexOf(p.id)!==-1; });
       state.freee.busy = true;
       freeeChunks(list, 20, function(part){
         return freeeCall("deals.push", {settings:{accountItemId:s.accountItemId, taxCode:s.taxCode}, projects: part.map(function(p){
@@ -3869,6 +3876,31 @@
         return Promise.all(jobs).then(function(){ return {ok:ok, fail:fail}; });
       });
     }, "入金状況を取得中").then(function(r){ freeeReport("更新", r); }, function(e){ state.freee.busy = false; toast("失敗しました："+e.message); render(); });
+  }
+  // 登録前に対象の一覧を出し、チェックを付けたものだけを実行する
+  function freeePicker(title, intro, items, runLabel, onRun){
+    if(state.freee.busy){ toast("処理中です。完了までお待ちください"); return; }
+    var rows = items.map(function(it){
+      return '<label style="display:flex;gap:10px;align-items:flex-start;padding:9px 4px;border-bottom:1px solid var(--border);margin:0;cursor:pointer"><input type="checkbox" data-fr-pick="'+esc(it.id)+'" checked style="margin-top:3px">'+
+        '<span style="flex:1;min-width:0"><span style="display:block;font-weight:700;font-size:12.5px;word-break:break-all">'+esc(it.label)+'</span>'+(it.sub?'<span style="display:block;font-size:11px;color:var(--ink-faint);line-height:1.5">'+esc(it.sub)+'</span>':'')+'</span>'+
+        (it.right?'<span class="num" style="font-size:12px;white-space:nowrap">'+esc(it.right)+'</span>':'')+'</label>';
+    }).join("");
+    openModal(title, '<div style="font-size:12.5px;line-height:1.7;margin-bottom:8px">'+esc(intro)+'</div>'+
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><button class="btn sm" id="fr-pick-all">すべて選択</button><button class="btn sm" id="fr-pick-none">すべて解除</button><span id="fr-pick-count" style="font-size:12px;margin-left:auto"></span></div>'+
+      '<div id="fr-pick-list" style="max-height:48vh;overflow:auto;border-top:1px solid var(--border)">'+rows+'</div>',
+      '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="fr-pick-run">'+esc(runLabel)+'</button>');
+    var box = document.getElementById("modal-box");
+    var checks = function(){ return Array.prototype.slice.call(box.querySelectorAll("input[data-fr-pick]")); };
+    var refresh = function(){ var n = checks().filter(function(c){ return c.checked; }).length; document.getElementById("fr-pick-count").textContent = n+" / "+items.length+"件を選択中"; document.getElementById("fr-pick-run").disabled = n===0; };
+    checks().forEach(function(c){ c.addEventListener("change", refresh); });
+    document.getElementById("fr-pick-all").onclick = function(){ checks().forEach(function(c){ c.checked = true; }); refresh(); };
+    document.getElementById("fr-pick-none").onclick = function(){ checks().forEach(function(c){ c.checked = false; }); refresh(); };
+    document.getElementById("fr-pick-run").onclick = function(){
+      var ids = checks().filter(function(c){ return c.checked; }).map(function(c){ return c.getAttribute("data-fr-pick"); });
+      if(!ids.length) return;
+      closeModal(); onRun(ids);
+    };
+    refresh();
   }
   function freeeConfirm(title, msg, onYes){
     if(state.freee.busy){ toast("処理中です。完了までお待ちください"); return; }
