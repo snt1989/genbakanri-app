@@ -10,8 +10,11 @@ fs.cpSync(path.join(root,"icons"), path.join(out,"icons"), {recursive:true});
 var base = process.env.APP_API_BASE;
 if(base){
   var h = fs.readFileSync(path.join(out,"index.html"),"utf8");
-  var n = h.split('"/api/config').length - 1;
-  h = h.split('"/api/config').join('"'+base.replace(/\/$/,"")+'/api/config');
+  var n = 0;
+  ["config","freee"].forEach(function(k){
+    n += h.split('"/api/'+k).length - 1;
+    h = h.split('"/api/'+k).join('"'+base.replace(/\/$/,"")+'/api/'+k);
+  });
   fs.writeFileSync(path.join(out,"index.html"), h);
   console.log("api/config を "+base+" に向けました（"+n+"か所）");
 }

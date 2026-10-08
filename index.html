@@ -899,6 +899,7 @@
     memberSeg:"all",
     bulk:{on:false,entity:null,selected:{},field:"",value:""},
     settingsSeg:"company",
+    freee:{settings:{}, status:null, master:null, loading:false, busy:false, error:""},
     editingMember:null,
     activeChat:null,
     chatMsgs:{},
@@ -1130,6 +1131,7 @@
     loadDeletePassword();
     loadSecretDefaults();
     loadMasters();
+    loadFreeeSettings();
   }
 
   // 削除用パスワード: one shared password (set by an admin in 設定 > 管理画面)
@@ -1428,6 +1430,12 @@
   }
 
   function render(){
+    if(FREEE_RETURN && state.myName){
+      var fr = FREEE_RETURN; FREEE_RETURN = "";
+      try{ history.replaceState(null, "", location.pathname); }catch(e){}
+      if(state.isAdmin){ state.tab = "settings"; state.settingsSeg = "freee"; state.freee.status = null; }
+      setTimeout(function(){ toast(fr==="ok" ? "freeeと連携しました" : (fr==="denied" ? "freeeの許可がキャンセルされました" : "freeeとの連携に失敗しました。もう一度お試しください")); }, 300);
+    }
     renderShell();
     var c = document.getElementById("content");
     c.className = "content";
@@ -2166,7 +2174,7 @@
             '<div class="cell-sub">'+(hiddenFor(p,"pr_addr")?"":esc(propertyAddressOf(p).full))+'</div>'+
             '<div class="tagrow">'+names.map(function(a){return '<span class="tag">'+esc(a)+'</span>';}).join("")+'</div>'+
           '</td>'+
-          '<td data-label="進捗">'+(hiddenFor(p,"p_status")?"—":statusBadge(p))+'</td>'+
+          '<td data-label="進捗">'+(hiddenFor(p,"p_status")?"—":statusBadge(p))+(freeeBadge(p)?'<div style="margin-top:4px">'+freeeBadge(p)+'</div>':'')+'</td>'+
           '<td data-label="作業">'+workChips(p)+'</td>'+
           '<td class="num" data-label="施工開始日">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.startDate))+'</td>'+
           '<td class="num" data-label="施工完了予定日">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.endDate))+'</td>'+
@@ -2623,7 +2631,7 @@
     };
 
     var rows = '';
-    var badges = (hiddenFor(p,"p_status") ? '' : statusBadge(p)+lockTag("p_status")) +
+    var badges = (hiddenFor(p,"p_status") ? '' : statusBadge(p)+lockTag("p_status")) + freeeBadge(p) +
       (hiddenFor(p,"p_amount") ? '' : '<span class="num" style="font-weight:700">'+fmtYen(p.amount)+'</span>'+lockTag("p_amount"));
     rows += '<div class="kv" style="display:flex;align-items:center;gap:14px">'+badges+'<button class="btn sm" style="margin-left:auto" data-edit-project="'+p.id+'">編集</button></div>';
     rows += kvRow("案件名", esc(p.name));
@@ -3250,7 +3258,7 @@
   // (admins only: stats, permission/password management, backup).
   function settingsSections(){
     var s = [["company","会社情報"],["personal","個人情報"]];
-    if(state.isAdmin){ s.push(["admin","管理画面"]); s.push(["master","マスタ管理"]); s.push(["trash","ゴミ箱"]); s.push(["backup","バックアップ"]); }
+    if(state.isAdmin){ s.push(["admin","管理画面"]); s.push(["freee","freee連携"]); s.push(["master","マスタ管理"]); s.push(["trash","ゴミ箱"]); s.push(["backup","バックアップ"]); }
     return s;
   }
   function myMember(){
@@ -3262,10 +3270,11 @@
     if(!sections.some(function(x){return x[0]===state.settingsSeg;})) state.settingsSeg = "company";
     var html = '<h1 class="pagetitle">設定</h1><div style="height:14px"></div>';
     html += '<div class="segmented" style="margin-bottom:16px">'+sections.map(function(x){
-      return '<div class="segopt'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+((x[0]==="admin"||x[0]==="master"||x[0]==="trash"||x[0]==="backup")?iAdmin():'')+x[1]+'</div>';
+      return '<div class="segopt'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+((x[0]==="admin"||x[0]==="freee"||x[0]==="master"||x[0]==="trash"||x[0]==="backup")?iAdmin():'')+x[1]+'</div>';
     }).join("")+'</div>';
     if(state.settingsSeg==="personal") html += renderSettingsPersonal();
     else if(state.settingsSeg==="admin") html += renderSettingsAdmin();
+    else if(state.settingsSeg==="freee") html += renderSettingsFreee();
     else if(state.settingsSeg==="master") html += renderSettingsMaster();
     else if(state.settingsSeg==="trash") html += renderSettingsTrash();
     else if(state.settingsSeg==="backup") html += renderSettingsBackup();
@@ -3678,6 +3687,224 @@
         downloadBlob(safeName(r.title||"報告書")+"-"+(r.date||todayISO())+".html", new Blob([reportHtml(r, function(f){ return map[f.id]||fileUrl(f); })], {type:"text/html;charset=utf-8"}));
         toast("保存しました（ブラウザの印刷でPDFにもできます）");
       });
+    });
+  }
+
+  /* ============ freee会計 連携 ============ */
+  // 連携はVercel版（/api/freee）でのみ動きます。freeeのトークンはサーバー側に暗号化して保存され、
+  // この画面は「管理者の氏名＋パスワード」を毎回サーバーへ送って本人確認します。
+  var FREEE_API = "/api/freee";
+  var FREEE_RETURN = (function(){ try{ return new URLSearchParams(location.search).get("freee") || ""; }catch(e){ return ""; } })();
+  var FREEE_DEAL_STATUSES = ["契約済","施工中","施工完了","清算済"];   // 売上として取引登録する進捗
+  function freeeAvailable(){ return !!db && !window.claude && !state.offlineMode; }
+  function freeeSet(){ return state.freee.settings || {}; }
+  function loadFreeeSettings(){
+    if(!db) return;
+    db.doc("settings/freee").get().then(function(snap){ if(snap.exists){ state.freee.settings = snap.data() || {}; if(state.tab==="settings") render(); } }).catch(function(){});
+  }
+  function freeeCall(action, extra){
+    var me = myMember();
+    if(!me){ return Promise.reject(new Error("ログイン情報を確認できません")); }
+    return fetch(FREEE_API, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(Object.assign({auth:{name:me.name, password:me.password||""}, action:action}, extra||{}))})
+      .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if(!r.ok) throw new Error(j.error || ("サーバーエラー（"+r.status+"）")); return j; }); });
+  }
+  function freeeLoadStatus(force){
+    if(state.freee.loading || (state.freee.status && !force)) return;
+    state.freee.loading = true;
+    freeeCall("status").then(function(j){ state.freee.status = j; state.freee.error = ""; }, function(e){ state.freee.status = null; state.freee.error = e.message; })
+      .then(function(){ state.freee.loading = false; if(state.tab==="settings" && state.settingsSeg==="freee") render(); });
+  }
+  function freeeCustomersToPush(){ return state.customers.filter(function(c){ return !c.freeePartnerId && (c.name||"").trim(); }); }
+  function freeeProjectsToPush(){ return state.projects.filter(function(p){ return !p.freeeDealId && p.amount>0 && FREEE_DEAL_STATUSES.indexOf(p.status)!==-1; }); }
+  function freeeProjectsToCheck(){ return state.projects.filter(function(p){ return !!p.freeeDealId; }); }
+  function freeeBadge(p){
+    if(!p || !p.freeeDealId || isExternalViewer()) return "";
+    if(p.freeeStatus==="settled") return '<span class="badge soft-success" title="freeeの取引は決済済みです">freee 入金済</span>';
+    if(p.freeeStatus==="unsettled") return '<span class="badge soft-warning" title="freeeの取引は未決済です">freee 未入金'+(p.freeeDue>0?' '+esc(fmtYen(p.freeeDue)):'')+'</span>';
+    return '<span class="badge line-gray" title="入金状況は未取得です（設定 > freee連携 で更新）">freee 登録済</span>';
+  }
+  function freeeSettingsHtml(){
+    var s = freeeSet(), m = state.freee.master;
+    var accOpts = m ? m.accountItems.filter(function(x){ return /売上|収益|収入/.test(x.category+x.name); }) : [];
+    if(m && !accOpts.length) accOpts = m.accountItems;
+    var sel = function(id, opts, cur, valKey, nameKey, ph){
+      var list = opts.slice(); if(cur && !list.some(function(o){ return String(o[valKey])===String(cur); })) list.unshift({[valKey]:cur, [nameKey]:"（設定済み）"});
+      return '<select id="'+id+'"><option value="">'+ph+'</option>'+list.map(function(o){ return '<option value="'+esc(o[valKey])+'"'+(String(o[valKey])===String(cur)?" selected":"")+'>'+esc(o[nameKey])+'</option>'; }).join("")+'</select>';
+    };
+    return '<div class="card" style="padding:16px 18px;max-width:560px;display:flex;flex-direction:column;gap:10px;margin-bottom:14px">'+
+      '<h2 style="font-size:13.5px">取引登録の設定</h2>'+
+      '<div style="font-size:11.5px;color:var(--ink-faint);line-height:1.6">案件を売上取引として登録するときに使う勘定科目と税区分です。「freeeから読み込む」で選択肢を取得します。</div>'+
+      field("勘定科目（売上）", sel("fr-acc", accOpts, s.accountItemId, "id", "name", "選択してください"))+
+      field("税区分", sel("fr-tax", m ? m.taxes : [], s.taxCode, "code", "name", "選択してください"))+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn outline" id="fr-master">freeeから読み込む</button><button class="btn primary" id="fr-save">'+iAdmin()+'設定を保存する</button></div></div>';
+  }
+  function freeeCsvBuild(list){
+    var s = freeeSet();
+    var head = ["収支区分","管理番号","発生日","決済期日","取引先","勘定科目","税区分","金額","備考"];
+    var safe = function(v){ v = v==null ? "" : String(v); return /^[=+\-@]/.test(v) ? "'"+v : v; };
+    var rows = list.map(function(p){
+      return ["収入", String(p.id||"").slice(0,20), p.startDate||(p.createdAt||"").slice(0,10)||todayISO(), p.endDate||"", p.customerName||"", s.accountItemName||"売上高", s.taxName||"課税売上10%", Math.round(p.amount||0), p.name||""].map(safe);
+    });
+    return "﻿"+[head].concat(rows).map(function(r){ return r.map(csvEscape).join(","); }).join("\r\n");
+  }
+  function renderSettingsFreee(){
+    if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
+    var csvList = state.projects.filter(function(p){ return p.amount>0 && FREEE_DEAL_STATUSES.indexOf(p.status)!==-1; });
+    var csvCard = '<div class="card" style="padding:16px 18px;max-width:560px;display:flex;flex-direction:column;gap:10px;margin-bottom:14px">'+
+      '<h2 style="font-size:13.5px">freee取込用CSV</h2>'+
+      '<div style="font-size:11.5px;color:var(--ink-faint);line-height:1.6">契約済・施工中・施工完了・清算済で金額のある案件（'+csvList.length+'件）を、freeeの「取引のインポート」用の列で出力します。API連携を使わない場合や、取り込み前の確認用に使えます。列名はfreeeのインポート画面のテンプレートと照らして確認してください。</div>'+
+      '<div><button class="btn outline" id="fr-csv">'+iAdmin()+iDownload()+' freee取込用CSVを出力</button></div></div>';
+    var head = '<div style="font-size:12px;color:var(--ink-faint);line-height:1.7;max-width:760px;margin-bottom:14px">freee会計に、顧客を取引先として、案件を売上取引として登録し、入金状況を案件に表示します。<b>freeeの帳簿に書き込む操作は、実行前に必ず確認が出ます。</b></div>';
+    if(!freeeAvailable()) return head+'<div class="card" style="padding:16px 18px;max-width:560px;margin-bottom:14px;font-size:12.5px;line-height:1.7">freeeとのAPI連携は、Vercelで公開しているアプリ（Firebase接続）でのみ利用できます。この環境では下のCSV出力をご利用ください。</div>'+csvCard;
+    var st = state.freee.status;
+    if(!st){
+      if(state.freee.error) return head+'<div class="card" style="padding:16px 18px;max-width:560px;margin-bottom:14px;font-size:12.5px;color:var(--danger)">'+esc(state.freee.error)+'<div style="margin-top:10px"><button class="btn sm" id="fr-reload">再読み込み</button></div></div>'+csvCard;
+      freeeLoadStatus(); return head+skeleton();
+    }
+    if(!st.configured){
+      return head+'<div class="card" style="padding:16px 18px;max-width:640px;margin-bottom:14px;font-size:12.5px;line-height:1.8">'+
+        '<h2 style="font-size:13.5px;margin-bottom:6px">連携の準備（最初の1回だけ）</h2>'+
+        '<ol style="margin:0 0 0 18px;padding:0">'+
+        '<li>freeeアプリストアの開発者ページで「アプリ」を作成し、コールバックURLに <b>'+esc(location.origin+"/api/"+"freee-callback")+'</b> を登録します。</li>'+
+        '<li>Vercelの Settings → Environment Variables に次の3つを登録し、再デプロイします。<br><code>FREEE_CLIENT_ID</code>（アプリの Client ID）<br><code>FREEE_CLIENT_SECRET</code>（アプリの Client Secret）<br><code>FREEE_TOKEN_KEY</code>（自分で決めた長いランダム文字列）</li>'+
+        '<li>この画面を開き直して「freeeと連携する」を押します。</li></ol>'+
+        '<div style="margin-top:10px"><button class="btn sm" id="fr-reload">もう一度確認する</button></div></div>'+csvCard;
+    }
+    if(!st.connected){
+      return head+'<div class="card" style="padding:16px 18px;max-width:560px;margin-bottom:14px;display:flex;flex-direction:column;gap:10px"><h2 style="font-size:13.5px">freeeと連携する</h2>'+
+        '<div style="font-size:12px;color:var(--ink-faint);line-height:1.6">freeeの画面で事業所を選んで許可すると、このアプリから取引先・取引を登録できるようになります。</div>'+
+        '<div><button class="btn primary" id="fr-connect">'+iAdmin()+'freeeと連携する</button></div></div>'+csvCard;
+    }
+    var s = freeeSet(), ready = !!(s.accountItemId && s.taxCode!=null && s.taxCode!=="");
+    var nC = freeeCustomersToPush().length, nP = freeeProjectsToPush().length, nS = freeeProjectsToCheck().length;
+    var act = function(title, desc, id, label, n, disabled){
+      return '<div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--border)"><div style="flex:1;min-width:200px"><div style="font-weight:700;font-size:12.5px">'+title+'</div><div style="font-size:11.5px;color:var(--ink-faint);line-height:1.5">'+desc+'</div></div>'+
+        '<button class="btn primary" id="'+id+'"'+((disabled||!n)?' disabled':'')+'>'+iAdmin()+label+'（'+n+'件）</button></div>';
+    };
+    return head+
+      '<div class="card" style="padding:16px 18px;max-width:560px;margin-bottom:14px;display:flex;flex-direction:column;gap:8px">'+
+        '<div class="side-stat" style="padding:0;border:none">連携先の事業所<b style="font-size:12.5px">'+esc(st.companyName||"（名称なし）")+'</b></div>'+
+        '<div class="side-stat" style="padding:0;border:none">連携した日時<b style="font-size:12.5px">'+esc(st.connectedAt?fmtDateTime(st.connectedAt):"—")+'</b></div>'+
+        '<div><button class="btn outline sm" id="fr-disconnect">連携を解除する</button></div></div>'+
+      freeeSettingsHtml()+
+      '<div class="card" style="padding:6px 18px 10px;max-width:560px;margin-bottom:14px"><h2 style="font-size:13.5px;margin:10px 0 4px">freeeへ登録・更新</h2>'+
+        act("顧客を取引先として登録","まだfreeeと紐づいていない顧客を登録します（同じ名前の取引先があれば紐づけるだけです）","fr-push-customers","取引先を登録",nC,false)+
+        act("案件を売上取引として登録","契約済・施工中・施工完了・清算済で金額のある案件を、未決済の収入取引として登録します"+(ready?"":"（先に上の設定を保存してください）"),"fr-push-deals","売上取引を登録",nP,!ready)+
+        act("入金状況を更新","登録済みの案件について、freeeの取引の決済状況を取得して案件に表示します","fr-sync-status","入金状況を更新",nS,false)+
+      '</div>'+csvCard;
+  }
+  function freeeBusy(msg){ state.freee.busy = !!msg; if(msg) toast(msg); }
+  // 100件単位の処理を、進捗を出しながら順に実行する
+  function freeeChunks(items, size, fn, label){
+    var done = 0, ok = 0, fail = [], i = 0;
+    var next = function(){
+      if(i>=items.length) return Promise.resolve();
+      var part = items.slice(i, i+size); i += size;
+      return fn(part).then(function(r){ ok += r.ok; fail = fail.concat(r.fail); done += part.length; toast(label+"… "+done+" / "+items.length); }).then(next);
+    };
+    return next().then(function(){ return {ok:ok, fail:fail}; });
+  }
+  function freeeReport(label, r){
+    state.freee.busy = false;
+    var msg = r.ok+"件を"+label+"しました";
+    if(r.fail.length){ msg += "（"+r.fail.length+"件は失敗）"; }
+    toast(msg);
+    if(r.fail.length){
+      openModal(label+"できなかった項目", '<div style="font-size:12.5px;line-height:1.7;max-height:50vh;overflow:auto">'+r.fail.slice(0,50).map(function(f){ return '<div>'+esc(f.name)+'：<span style="color:var(--danger)">'+esc(f.msg)+'</span></div>'; }).join("")+(r.fail.length>50?'<div>…ほか'+(r.fail.length-50)+'件</div>':'')+'</div>', '<button class="btn" data-close-modal>閉じる</button>');
+    }
+    render();
+  }
+  function freeePushCustomers(){
+    var list = freeeCustomersToPush();
+    freeeConfirm("取引先の登録", "freee会計に、取引先を最大"+list.length+"件登録します（同名の取引先は紐づけのみ）。よろしいですか？", function(){
+      state.freee.busy = true;
+      freeeChunks(list, 20, function(part){
+        return freeeCall("partners.push", {customers: part.map(function(c){
+          var pi = PREFS.indexOf(c.prefecture);
+          return {id:c.id, name:c.name, kana:c.kana, email:c.email, phone:c.phone, postalCode:customerPostal(c), prefectureCode: pi>=0?pi:"", street1:c.address, street2:c.building};
+        })}).then(function(j){
+          var ok = 0, fail = [], jobs = [];
+          (j.results||[]).forEach(function(x){
+            var c = part.find(function(y){ return y.id===x.id; });
+            if(x.error){ fail.push({name:c?c.name:x.id, msg:x.error}); return; }
+            ok++; jobs.push(saveRaw("customers", x.id, {freeePartnerId:x.partnerId}));
+          });
+          return Promise.all(jobs).then(function(){ return {ok:ok, fail:fail}; });
+        });
+      }, "取引先を登録中").then(function(r){ freeeReport("登録", r); }, function(e){ state.freee.busy = false; toast("失敗しました："+e.message); render(); });
+    });
+  }
+  function freeePushDeals(){
+    var list = freeeProjectsToPush(), s = freeeSet();
+    var noPartner = list.filter(function(p){ var c = state.customers.find(function(x){ return x.id===p.customerId; }); return !(c && c.freeePartnerId); }).length;
+    freeeConfirm("売上取引の登録", "freee会計に、売上取引（未決済・収入）を最大"+list.length+"件登録します。"+(noPartner?"うち"+noPartner+"件は取引先が未連携のため、取引先なしで登録されます。先に取引先を登録することをおすすめします。":"")+"登録した取引はfreee側で確認・修正してください。よろしいですか？", function(){
+      state.freee.busy = true;
+      freeeChunks(list, 20, function(part){
+        return freeeCall("deals.push", {settings:{accountItemId:s.accountItemId, taxCode:s.taxCode}, projects: part.map(function(p){
+          var c = state.customers.find(function(x){ return x.id===p.customerId; });
+          return {id:p.id, name:p.name, amount:p.amount, issueDate:p.startDate||(p.createdAt||"").slice(0,10)||todayISO(), dueDate:p.endDate||"", partnerId:c&&c.freeePartnerId||"", ref:""};
+        })}).then(function(j){
+          var ok = 0, fail = [], jobs = [];
+          (j.results||[]).forEach(function(x){
+            var p = part.find(function(y){ return y.id===x.id; });
+            if(x.error){ fail.push({name:p?p.name:x.id, msg:x.error}); return; }
+            ok++; jobs.push(saveRaw("projects", x.id, {freeeDealId:x.dealId, freeeStatus:"unsettled", freeeSyncedAt:new Date().toISOString()}));
+          });
+          return Promise.all(jobs).then(function(){ return {ok:ok, fail:fail}; });
+        });
+      }, "売上取引を登録中").then(function(r){ freeeReport("登録", r); }, function(e){ state.freee.busy = false; toast("失敗しました："+e.message); render(); });
+    });
+  }
+  function freeeSyncStatus(){
+    var list = freeeProjectsToCheck();
+    state.freee.busy = true;
+    freeeChunks(list, 30, function(part){
+      return freeeCall("deals.status", {deals: part.map(function(p){ return {id:p.id, dealId:p.freeeDealId}; })}).then(function(j){
+        var ok = 0, fail = [], jobs = [];
+        (j.results||[]).forEach(function(x){
+          var p = part.find(function(y){ return y.id===x.id; });
+          if(x.error){ fail.push({name:p?p.name:x.id, msg:x.error}); return; }
+          ok++; jobs.push(saveRaw("projects", x.id, {freeeStatus:x.status, freeeDue:x.dueAmount||0, freeeSyncedAt:new Date().toISOString()}));
+        });
+        return Promise.all(jobs).then(function(){ return {ok:ok, fail:fail}; });
+      });
+    }, "入金状況を取得中").then(function(r){ freeeReport("更新", r); }, function(e){ state.freee.busy = false; toast("失敗しました："+e.message); render(); });
+  }
+  function freeeConfirm(title, msg, onYes){
+    if(state.freee.busy){ toast("処理中です。完了までお待ちください"); return; }
+    openModal(title, '<div style="font-size:13px;line-height:1.7">'+esc(msg)+'</div>', '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="fr-yes">実行する</button>');
+    document.getElementById("fr-yes").onclick = function(){ closeModal(); onYes(); };
+  }
+  function bindFreeeEvents(c){
+    var on = function(id, fn){ var el = document.getElementById(id); if(el) el.addEventListener("click", function(){ if(!state.isAdmin){ toast("管理者のみ行えます"); return; } fn(el); }); };
+    on("fr-reload", function(){ state.freee.error = ""; freeeLoadStatus(true); render(); });
+    on("fr-connect", function(){
+      freeeCall("connect").then(function(j){ if(j.url) location.href = j.url; }, function(e){ toast("開始できませんでした："+e.message); });
+    });
+    on("fr-disconnect", function(){
+      freeeConfirm("連携の解除", "freeeとの連携を解除します（freee側のデータは消えません）。よろしいですか？", function(){
+        freeeCall("disconnect").then(function(){ state.freee.status = null; state.freee.master = null; toast("連携を解除しました"); render(); }, function(e){ toast("失敗しました："+e.message); });
+      });
+    });
+    on("fr-master", function(){
+      freeeCall("master").then(function(j){ state.freee.master = j; toast("freeeから選択肢を読み込みました"); render(); }, function(e){ toast("読み込めませんでした："+e.message); });
+    });
+    on("fr-save", function(){
+      var acc = document.getElementById("fr-acc").value, tax = document.getElementById("fr-tax").value;
+      if(!acc || tax===""){ toast("勘定科目と税区分を選択してください"); return; }
+      var m = state.freee.master, accO = m && m.accountItems.find(function(x){ return String(x.id)===acc; }), taxO = m && m.taxes.find(function(x){ return String(x.code)===tax; });
+      var prev = freeeSet();
+      var data = {accountItemId:Number(acc), accountItemName: accO?accO.name:(String(prev.accountItemId)===acc?prev.accountItemName:""), taxCode:Number(tax), taxName: taxO?taxO.name:(String(prev.taxCode)===tax?prev.taxName:""), updatedAt:new Date().toISOString()};
+      db.doc("settings/freee").set(data).then(function(){ state.freee.settings = data; toast("設定を保存しました"); render(); }).catch(function(){ toast("保存に失敗しました"); });
+    });
+    on("fr-push-customers", freeePushCustomers);
+    on("fr-push-deals", freeePushDeals);
+    on("fr-sync-status", freeeSyncStatus);
+    on("fr-csv", function(){
+      var list = state.projects.filter(function(p){ return p.amount>0 && FREEE_DEAL_STATUSES.indexOf(p.status)!==-1; });
+      if(!list.length){ toast("出力する案件がありません"); return; }
+      downloadBlob("freee取込用_売上取引_"+todayISO()+".csv", new Blob([freeeCsvBuild(list)], {type:"text/csv"}));
+      toast(list.length+"件をCSV出力しました");
     });
   }
 
@@ -5252,6 +5479,7 @@
       });
     });
 
+    bindFreeeEvents(c);
     c.querySelectorAll("[data-setseg]").forEach(function(el){ el.addEventListener("click", function(){ state.settingsSeg = el.getAttribute("data-setseg"); render(); }); });
 
     var setSave = document.getElementById("set-save");
