@@ -3325,11 +3325,13 @@
           if(day && day!==lastDay){ out += '<div class="cdate">'+esc(day)+'</div>'; lastDay = day; }
           if(m.system) return out+'<div class="csys">'+esc(chatTime(m.ts))+'<br>'+esc(m.text)+'</div>';
           var mine = state.myName && m.author===state.myName;
+          var loc = (m.location && isFinite(m.location.lat) && isFinite(m.location.lng)) ?
+            '<br><a class="cfile" href="https://www.google.com/maps?q='+encodeURIComponent(Number(m.location.lat)+","+Number(m.location.lng))+'" target="_blank" rel="noopener noreferrer">'+iPin(false)+' 地図で開く（'+Number(m.location.lat).toFixed(5)+', '+Number(m.location.lng).toFixed(5)+(m.location.accuracy>0?' ／ 誤差 約'+Math.round(m.location.accuracy)+'m':'')+'）</a>' : '';
           var att = m.attachment ? (String(m.attachment.contentType||"").indexOf("image/")===0 ?
               '<a href="'+esc(m.attachment.url)+'" target="_blank" rel="noopener"><img class="catt" src="'+esc(m.attachment.url)+'" alt=""></a>' :
               '<br><a class="cfile" href="'+esc(m.attachment.url)+'" target="_blank" rel="noopener">'+iDoc()+esc(m.attachment.filename||"ファイル")+'</a>') : '';
           return out+'<div class="cm'+(mine?" me":"")+'" id="cm-'+esc(m.id||"")+'">'+(mine?'':'<div class="cav" style="background:'+avaColor(m.author)+'">'+esc(initials(m.author))+'</div>')+
-            '<div class="cbody">'+(mine?'':'<div class="cname">'+esc(m.author)+'</div>')+'<div class="crow"><div class="cbub">'+(m.replyTo?'<div class="cquote" data-chat-jump="'+esc(m.replyTo.id||"")+'"><b>'+esc(m.replyTo.author||"")+'</b><span>'+esc(m.replyTo.text||"")+'</span></div>':'')+chatText(m.text)+att+'</div><div class="ctime">'+esc(chatTime(m.ts))+(m.edited?'<span class="cedited">編集済み</span>':'')+'</div>'+
+            '<div class="cbody">'+(mine?'':'<div class="cname">'+esc(m.author)+'</div>')+'<div class="crow"><div class="cbub">'+(m.replyTo?'<div class="cquote" data-chat-jump="'+esc(m.replyTo.id||"")+'"><b>'+esc(m.replyTo.author||"")+'</b><span>'+esc(m.replyTo.text||"")+'</span></div>':'')+chatText(m.text)+att+loc+'</div><div class="ctime">'+esc(chatTime(m.ts))+(m.edited?'<span class="cedited">編集済み</span>':'')+'</div>'+
             (m.id ? '<div class="cact"><button data-chat-reply="'+esc(m.id)+'" title="返信">'+iReply()+'</button>'+(mine?'<button data-chat-medit="'+esc(m.id)+'" title="編集">'+iEdit()+'</button>':'')+((mine||state.isAdmin)?'<button class="del" data-chat-mdel="'+esc(m.id)+'" title="削除">'+iTrash()+'</button>':'')+'</div>' : '')+
             '</div></div></div>';
         }).join("");
@@ -3345,6 +3347,7 @@
         '<button type="button" data-chat-tool="emoji" title="絵文字"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c1 1.3 2.2 2 3.5 2s2.5-.7 3.5-2"/><path d="M9 9.5h.01M15 9.5h.01"/></svg></button>'+
         '<button type="button" data-chat-tool="mention" title="メンションする">@</button>'+
         '<button type="button" data-chat-tool="file" title="ファイルを添付"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 2h8l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm7 1.5V8h4.5L13 3.5z"/></svg></button>'+
+        '<button type="button" data-chat-tool="location" title="位置情報を送る">'+iPin(false)+'</button>'+
         '<button type="button" data-chat-tool="image" title="写真を添付"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4 18 5-5 4 4 3-3 4 4"/></svg></button>'+
         '<input type="file" id="chat-file" style="display:none"><input type="file" id="chat-image" accept="image/*" style="display:none"></div>'+
         '<div class="chat-input-row"><textarea id="chat-input" placeholder="メッセージ">'+esc(draft)+'</textarea><button class="chat-send'+(draft.trim()?' ready':'')+'" id="chat-send">送信</button></div>'+
@@ -5845,11 +5848,27 @@
         postMsg(m0, null);
         if(db){ input.value=""; sendBtn.classList.remove("ready"); }
       };
+      // 現在地を取得して、確認してからチャットに送る（このチャットのメンバー全員に見える）
+      var shareLocation = function(){
+        if(!navigator.geolocation){ toast("この端末では位置情報を取得できません"); return; }
+        toast("現在地を取得しています…");
+        navigator.geolocation.getCurrentPosition(function(pos){
+          var lat = pos.coords.latitude, lng = pos.coords.longitude, acc = pos.coords.accuracy;
+          var url = "https://www.google.com/maps?q="+encodeURIComponent(lat+","+lng);
+          openModal("現在地を送信", '<div style="font-size:12.5px;line-height:1.8">緯度 '+lat.toFixed(5)+'／経度 '+lng.toFixed(5)+(acc>0?'<br>誤差 約'+Math.round(acc)+'m':'')+'<br><a href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">地図で確認する</a></div>'+
+            '<div style="font-size:11.5px;color:var(--ink-faint);margin-top:8px;line-height:1.6">このチャットのメンバー全員に、現在地が見えます。</div>',
+            '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="loc-send">送信する</button>');
+          document.getElementById("loc-send").addEventListener("click", function(){ closeModal(); postMsg({text:"📍 現在地", location:{lat:lat, lng:lng, accuracy:Math.round(acc||0)}}, null); });
+        }, function(err){
+          toast(err && err.code===1 ? "位置情報の利用が許可されていません。ブラウザ（端末）の設定で許可してください" : "現在地を取得できませんでした。電波の良い場所で、もう一度お試しください");
+        }, {enableHighAccuracy:true, timeout:15000, maximumAge:0});
+      };
       sendBtn.addEventListener("click", doSend);
       input.addEventListener("input", function(){ state.chatDraft[state.activeChat] = input.value; sendBtn.classList.toggle("ready", !!input.value.trim()); });
       input.addEventListener("keydown", function(e){ if(e.key==="Enter" && (e.ctrlKey||e.metaKey)){ e.preventDefault(); doSend(); } });
       c.querySelectorAll("[data-chat-tool]").forEach(function(el){ el.addEventListener("click", function(){
         var k = el.getAttribute("data-chat-tool");
+        if(k==="location"){ shareLocation(); return; }
         if(k==="file"||k==="image"){
           if(!assetsCap){ toast("この環境ではファイルを添付できません"); return; }
           document.getElementById(k==="file"?"chat-file":"chat-image").click(); return;
