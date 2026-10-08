@@ -2812,20 +2812,22 @@
     var v = function(k){ return esc(m && m[k]!=null ? m[k] : ""); };
     var picked0 = (m && m.roles) || [];
     var html = crumb("メンバー管理に戻る", "members");
-    html += '<h1 class="pagetitle" style="margin-top:8px">'+(m?"メンバー編集":"自社メンバー登録")+'</h1><div style="height:12px"></div>';
+    var isExt = !!m && memberPermission(m)==="external";
+    html += '<h1 class="pagetitle" style="margin-top:8px" id="f-mtitle">'+(m?"メンバー編集":(isExt?"社外メンバー登録":"自社メンバー登録"))+'</h1><div style="height:12px"></div>';
+    html += '<div class="segmented" style="margin-bottom:14px;max-width:360px" id="f-mkind"><div class="segopt'+(isExt?"":" active")+'" data-mkind="internal">自社メンバー</div><div class="segopt'+(isExt?" active":"")+'" data-mkind="external">社外メンバー</div></div>';
     html += '<div class="form-shell"><div class="form-card">';
     html += formRow("携帯番号 ※仕事用", true, false, '<input type="tel" id="f-mphone" placeholder="例：09012341234" value="'+v("phone")+'">');
     html += formRow("氏名", true, false, '<input type="text" id="f-mname" placeholder="例：山田 武史" value="'+v("name")+'">');
     html += formRow("氏名(カナ)", false, false, '<input type="text" id="f-mkana" placeholder="例：ヤマダ タケシ" value="'+v("kana")+'">');
     html += formRow("メールアドレス", false, false, '<input type="email" id="f-memail" placeholder="例：abcdeft@mail.com" value="'+v("email")+'">');
-    if(m) html += formRow("所属会社", false, false, '<input type="text" id="f-mcompany" value="'+v("company")+'">');
-    else html += formRow("所属会社", false, false, '<div style="font-size:12.5px;padding:8px 0">'+esc(state.orgSettings.companyName)+'</div>');
-    html += formRow("事業部", false, false, selectHtml("f-mdivision", ["未選択"].concat(DIVISIONS), (m && m.division) || "未選択"));
+    html += formRow("所属会社", false, false, '<input type="text" id="f-mcompany" value="'+v("company")+'"'+((m||isExt)?'':' style="display:none"')+'>'+
+      (m ? '' : '<div id="f-mcompany-static" style="font-size:12.5px;padding:8px 0">'+esc(state.orgSettings.companyName)+'</div>'));
+    html += '<div id="f-row-division"'+(isExt?' style="display:none"':'')+'>'+formRow("事業部", false, false, selectHtml("f-mdivision", ["未選択"].concat(DIVISIONS), (m && m.division) || "未選択"))+'</div>';
     html += formRow("職種", true, false, '<div class="assignee-pick" id="f-mroles">'+ROLES.map(function(r){return '<span class="chip-toggle'+(picked0.indexOf(r)!==-1?" on":"")+'" data-role-pick="'+esc(r)+'">'+esc(r)+'</span>';}).join("")+'</div>');
     html += formRow("ログインパスワード", true, true, '<div class="pw-wrap" style="max-width:280px"><input type="password" id="f-mpassword" placeholder="アプリへのログインに使用します" value="'+v("password")+'"><button type="button" class="pw-toggle" id="f-mpassword-toggle" tabindex="-1" title="パスワードを表示">'+iEye()+'</button></div>');
     var curPerm = m ? memberPermission(m) : "general";
     html += formRow("権限", true, false, '<select id="f-mpermission">'+
-      PERMISSION_LEVELS.filter(function(p){return m || p[0]!=="external";}).map(function(p){
+      PERMISSION_LEVELS.filter(function(p){ return isExt ? p[0]==="external" : p[0]!=="external"; }).map(function(p){
         return '<option value="'+p[0]+'"'+(p[0]===curPerm?" selected":"")+'>'+p[1]+'</option>';
       }).join("")+'</select>');
     html += '</div>';
@@ -2845,6 +2847,22 @@
     }
     ["f-mphone","f-mname","f-mpassword"].forEach(function(id){ var el=document.getElementById(id); if(el) el.addEventListener("input", refreshEnabled); });
     bindPwToggle("f-mpassword-toggle", "f-mpassword");
+    // 自社メンバー / 社外メンバーの切り替え（権限の選択肢・事業部・所属会社の入力欄が切り替わる）
+    var mkind = (editing && memberPermission(editing)==="external") ? "external" : "internal";
+    var applyKind = function(){
+      var ext = mkind==="external", sel = document.getElementById("f-mpermission");
+      document.querySelectorAll("#f-mkind [data-mkind]").forEach(function(o){ o.classList.toggle("active", o.getAttribute("data-mkind")===mkind); });
+      document.getElementById("f-mtitle").textContent = editing ? "メンバー編集" : (ext ? "社外メンバー登録" : "自社メンバー登録");
+      document.getElementById("f-row-division").style.display = ext ? "none" : "";
+      var comp = document.getElementById("f-mcompany"), st = document.getElementById("f-mcompany-static");
+      if(comp) comp.style.display = (ext || editing) ? "" : "none";
+      if(st) st.style.display = ext ? "none" : "";
+      var list = PERMISSION_LEVELS.filter(function(x){ return ext ? x[0]==="external" : x[0]!=="external"; });
+      var keep = sel.value;
+      sel.innerHTML = list.map(function(x){ return '<option value="'+x[0]+'">'+x[1]+'</option>'; }).join("");
+      sel.value = list.some(function(x){ return x[0]===keep; }) ? keep : (ext ? "external" : (editing && memberPermission(editing)!=="external" ? memberPermission(editing) : "general"));
+    };
+    document.querySelectorAll("#f-mkind [data-mkind]").forEach(function(o){ o.addEventListener("click", function(){ mkind = o.getAttribute("data-mkind"); applyKind(); }); });
     var rolesWrap = document.getElementById("f-mroles");
     if(rolesWrap) rolesWrap.querySelectorAll(".chip-toggle").forEach(function(chip){
       chip.addEventListener("click", function(){
@@ -2859,12 +2877,13 @@
       var password = document.getElementById("f-mpassword").value.trim();
       if(!name||!phone||!password||picked.length===0){ toast("携帯番号・氏名・職種・パスワードは必須です"); return; }
       if(phoneTaken(phone, state.editingMember ? (state.editingMember.id||state.editingMember) : null)){ toast("この携帯番号は他のメンバーに登録されています（ログインに使うため重複できません）"); return; }
-      var perm = document.getElementById("f-mpermission").value;
+      var perm = mkind==="external" ? "external" : document.getElementById("f-mpermission").value;
+      if(perm==="external" && mkind!=="external") perm = "general";
       var data = Object.assign({
         name:name, phone:phone, kana:document.getElementById("f-mkana").value.trim(),
         email:document.getElementById("f-memail").value.trim(),
-        company: editing ? document.getElementById("f-mcompany").value.trim() : state.orgSettings.companyName,
-        division: document.getElementById("f-mdivision").value==="未選択" ? "" : document.getElementById("f-mdivision").value, roles:picked, password:password
+        company: (editing || mkind==="external") ? document.getElementById("f-mcompany").value.trim() : state.orgSettings.companyName,
+        division: (mkind==="external" || document.getElementById("f-mdivision").value==="未選択") ? "" : document.getElementById("f-mdivision").value, roles:picked, password:password
       }, permissionFields(perm));
       if(!editing){
         writeDoc("members", null, data, "メンバーを登録しました", function(){ setTab("members"); });
