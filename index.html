@@ -900,6 +900,7 @@
     bulk:{on:false,entity:null,selected:{},field:"",value:""},
     settingsSeg:"company",
     freee:{settings:{}, status:null, master:null, loading:false, busy:false, error:""},
+    works:{status:null, loading:false, error:"", code:null},
     editingMember:null,
     activeChat:null,
     chatMsgs:{},
@@ -2579,7 +2580,8 @@
     var pfiles = filesForProject(p.id);
 
     var html = crumb(state.returnTab==="sales"?"営業案件一覧に戻る":"施工案件一覧に戻る", state.returnTab);
-    html += '<div class="detail-head"><h1>'+esc(p.name)+'</h1><div class="updated">最終更新日時：'+fmtDateTime(p.updatedAt||p.createdAt)+'</div></div>';
+    html += '<div class="detail-head"><h1>'+esc(p.name)+'</h1><div class="updated">最終更新日時：'+fmtDateTime(p.updatedAt||p.createdAt)+'</div>'+
+      (worksAvailable() ? (worksLoadStatus(), worksReady() ? '<button class="btn sm outline" data-works-share="'+esc(p.id)+'" style="margin-top:6px">LINE WORKSで共有</button>' : '') : '')+'</div>';
 
     html += '<div class="detail-grid">';
     html += '<div>';
@@ -3258,6 +3260,7 @@
   // (admins only: stats, permission/password management, backup).
   function settingsSections(){
     var s = [["company","会社情報"],["personal","個人情報"]];
+    if(worksAvailable()) s.push(["works","LINE WORKS"]);
     if(state.isAdmin){ s.push(["admin","管理画面"]); s.push(["freee","freee連携"]); s.push(["master","マスタ管理"]); s.push(["trash","ゴミ箱"]); s.push(["backup","バックアップ"]); }
     return s;
   }
@@ -3275,6 +3278,7 @@
     if(state.settingsSeg==="personal") html += renderSettingsPersonal();
     else if(state.settingsSeg==="admin") html += renderSettingsAdmin();
     else if(state.settingsSeg==="freee") html += renderSettingsFreee();
+    else if(state.settingsSeg==="works") html += renderSettingsWorks();
     else if(state.settingsSeg==="master") html += renderSettingsMaster();
     else if(state.settingsSeg==="trash") html += renderSettingsTrash();
     else if(state.settingsSeg==="backup") html += renderSettingsBackup();
@@ -3985,6 +3989,152 @@
     });
   }
 
+  /* ============ LINE WORKS 連携 ============ */
+  // 連携はVercel版（/api/works）でのみ動きます。通知先は「Botを追加したグループトークルーム」です。
+  // この画面は「ログイン中メンバーの氏名＋パスワード」を毎回サーバーへ送って本人確認します。
+  var WORKS_API = "/api/works";
+  function worksAvailable(){ return !!db && !window.claude && !state.offlineMode; }
+  function worksCall(action, extra){
+    var me = myMember();
+    if(!me) return Promise.reject(new Error("ログイン情報を確認できません"));
+    return fetch(WORKS_API, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(Object.assign({auth:{name:me.name, password:me.password||""}, action:action}, extra||{}))})
+      .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if(!r.ok) throw new Error(j.error || ("サーバーエラー（"+r.status+"）")); return j; }); });
+  }
+  // 状態を一度だけ取得（連携が有効かどうかの判定にも使う）
+  function worksLoadStatus(force){
+    var w = state.works;
+    if(!worksAvailable() || w.loading || (w.status && !force) || (w.failed && !force) || !myMember()) return Promise.resolve(w.status);
+    w.loading = true;
+    return worksCall("status").then(function(j){ w.status = j; w.error = ""; w.failed = false; }, function(e){ w.status = null; w.error = e.message; w.failed = true; })
+      .then(function(){ w.loading = false; if((state.tab==="settings" && state.settingsSeg==="works") || state.viewingProjectId) render(); return w.status; });
+  }
+  function worksReady(){ var s = state.works.status; return !!(s && s.configured); }
+  // 画面での登録・更新に合わせて、トークルームへ通知する（失敗しても画面の操作は妨げない）
+  function worksNotifyAfterWrite(col, id, data, old){
+    if(!worksAvailable()) return;
+    var ev = "", text = "";
+    var proj = function(pid, nm){ return nm || ((state.projects.find(function(x){return x.id===pid;})||{}).name) || ""; };
+    if(col==="projects"){
+      var name = data.name || (old && old.name) || proj(id);
+      if(!old){ ev = "status"; text = "【案件登録】"+name+(data.status?"（"+data.status+"）":""); }
+      else if(data.status!==undefined && data.status!==old.status){ ev = "status"; text = "【進捗変更】"+name+"\n"+(old.status||"未入力")+" → "+(data.status||"未入力"); }
+    }else if(col==="reports"){
+      var prev = old ? (old.status||"下書き") : "";
+      if(data.status==="提出済" && prev!=="提出済"){
+        ev = "report";
+        text = "【報告書】"+(data.type||"")+" "+(data.title||"")+"\n案件: "+(data.projectName||"—")+"　作成者: "+(data.author||"—")+(data.content?"\n"+String(data.content).slice(0,300):"");
+      }
+    }else if(col==="tasks"){
+      if(!old){ ev = "task"; text = "【タスク追加】"+(data.title||"")+"\n期限: "+(data.dueDate||"—")+(data.assignee?"　担当: "+data.assignee:"")+(data.projectName?"\n案件: "+data.projectName:""); }
+    }
+    if(!ev) return;
+    worksLoadStatus().then(function(st){
+      if(st && st.configured) worksCall("notify", {event:ev, text:text}).catch(function(){});
+    });
+  }
+  function worksSettingsHtml(st){
+    var f = st.flags || {};
+    var chk = function(id, label, hint){ return '<label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;line-height:1.5"><input type="checkbox" id="'+id+'"'+(f[id.replace("wk-","")]!==false?" checked":"")+' style="margin-top:3px"><span><b>'+label+'</b><br><span style="color:var(--ink-faint);font-size:11.5px">'+hint+'</span></span></label>'; };
+    var warn = [];
+    if(!st.channelId) warn.push("通知先のトークルームが未設定です。LINE WORKSでBotをグループトークルームに追加すると自動で設定されます（下のチャンネルIDに直接入力することもできます）。");
+    if(!st.botSecretSet) warn.push("WORKS_BOT_SECRET が未設定のため、LINE WORKSからの登録・照会（Botへの話しかけ）は使えません。");
+    if(!st.cronSecretSet) warn.push("CRON_SECRET が未設定のため、毎朝の自動通知は動きません。");
+    return '<div class="card" style="padding:16px 18px;max-width:600px;margin-bottom:14px;display:flex;flex-direction:column;gap:10px">'+
+      '<h2 style="font-size:13.5px">通知の設定</h2>'+
+      (warn.length?'<div style="font-size:11.5px;line-height:1.6;color:var(--warn,#a15c00);background:var(--surface-2,#f6f4ef);border-radius:8px;padding:8px 10px">'+warn.map(function(w){ return '・'+esc(w); }).join("<br>")+'</div>':'')+
+      field("通知先トークルームのチャンネルID", '<input type="text" id="wk-channel" value="'+esc(st.channelId||"")+'" placeholder="（Botの追加で自動設定されます）">')+
+      chk("wk-notifyStatus","案件の登録・進捗の変更","案件を登録したときと、進捗（契約済・施工中など）を変えたときに通知します")+
+      chk("wk-notifyReport","報告書の提出","報告書の状態が「提出済」になったとき（LINE WORKSからの日報登録を含む）に通知します")+
+      chk("wk-notifyTask","タスクの追加","タスクを新しく追加したときに通知します")+
+      chk("wk-notifyDigest","毎朝8時の確認","期限が今日・明日・超過のタスクと、工期の終了が3日以内の案件をまとめて通知します")+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="wk-save">'+iAdmin()+'設定を保存する</button><button class="btn outline" id="wk-test">'+iAdmin()+'テスト送信</button></div></div>'+
+      '<div class="card" style="padding:16px 18px;max-width:600px;margin-bottom:14px;display:flex;flex-direction:column;gap:8px">'+
+      '<h2 style="font-size:13.5px">Bot の Callback URL</h2>'+
+      '<div style="font-size:11.5px;color:var(--ink-faint);line-height:1.6">LINE WORKS Developer Console の Bot 設定の「Callback URL」に次を登録します。</div>'+
+      '<code style="word-break:break-all;font-size:12px;user-select:all">'+esc(st.callbackUrl||"")+'</code></div>'+
+      '<div class="card" style="padding:16px 18px;max-width:600px;margin-bottom:14px;display:flex;flex-direction:column;gap:6px">'+
+      '<h2 style="font-size:13.5px">本人確認が済んでいるメンバー（'+(st.linked||[]).length+'人）</h2>'+
+      '<div style="font-size:12px;line-height:1.7">'+((st.linked||[]).length?(st.linked||[]).map(function(n){ return esc(n); }).join("、"):'<span style="color:var(--ink-faint)">まだいません</span>')+'</div></div>';
+  }
+  function renderSettingsWorks(){
+    var w = state.works;
+    var head = '<div style="font-size:12px;color:var(--ink-faint);line-height:1.7;max-width:760px;margin-bottom:14px">LINE WORKSのグループトークルームに、案件・報告書・タスクの動きを通知します。また、Botに話しかけて案件やタスクを確認したり、日報を登録できます。</div>';
+    if(!worksAvailable()) return head+'<div class="card" style="padding:16px 18px;max-width:560px;font-size:12.5px;line-height:1.7">LINE WORKSとの連携は、Vercelで公開しているアプリ（Firebase接続）でのみ利用できます。</div>';
+    var st = w.status;
+    if(!st){
+      if(w.error) return head+'<div class="card" style="padding:16px 18px;max-width:560px;font-size:12.5px;color:var(--danger)">'+esc(w.error)+'<div style="margin-top:10px"><button class="btn sm" id="wk-reload">再読み込み</button></div></div>';
+      worksLoadStatus(); return head+skeleton();
+    }
+    if(!st.configured){
+      if(!state.isAdmin) return head+'<div class="card" style="padding:16px 18px;max-width:560px;font-size:12.5px;line-height:1.7">LINE WORKS連携は、まだ管理者の設定が済んでいません。</div>';
+      return head+'<div class="card" style="padding:16px 18px;max-width:680px;margin-bottom:14px;font-size:12.5px;line-height:1.8">'+
+        '<h2 style="font-size:13.5px;margin-bottom:6px">連携の準備（最初の1回だけ）</h2>'+
+        '<ol style="margin:0 0 0 18px;padding:0">'+
+        '<li>LINE WORKS Developer Console で「アプリ」を作成し、<b>Client ID / Client Secret</b> を控えます。OAuth Scopes に <b>bot</b> を追加し、<b>Service Account</b> を発行して <b>Private Key</b> をダウンロードします。</li>'+
+        '<li>同じ画面で「Bot」を作成し、<b>Bot ID</b> と<b>署名用の Secret</b> を控えます。Callback URL には、準備が済んだ後にこの画面に出る URL（<code>'+esc(location.origin+"/api/"+"works-callback")+'</code>）を登録します。</li>'+
+        '<li>Vercelの Settings → Environment Variables に次を登録し、再デプロイします。<br>'+
+        '<code>WORKS_CLIENT_ID</code> / <code>WORKS_CLIENT_SECRET</code> / <code>WORKS_SERVICE_ACCOUNT</code> / <code>WORKS_PRIVATE_KEY</code>（PEMの中身）/ <code>WORKS_BOT_ID</code> / <code>WORKS_BOT_SECRET</code> / <code>CRON_SECRET</code>（自分で決めた長いランダム文字列）</li>'+
+        '<li>LINE WORKSで、Botを通知先にしたいグループトークルームに追加します。</li></ol>'+
+        '<div style="margin-top:10px;font-size:11.5px;color:var(--ink-faint)">値は画面やチャットに貼らず、Vercelの環境変数にだけ登録してください。詳しい手順は LINEWORKS.md にもあります。</div>'+
+        '<div style="margin-top:10px"><button class="btn sm" id="wk-reload">もう一度確認する</button></div></div>';
+    }
+    var mine = '<div class="card" style="padding:16px 18px;max-width:600px;margin-bottom:14px;display:flex;flex-direction:column;gap:10px">'+
+      '<h2 style="font-size:13.5px">あなたのLINE WORKS連携</h2>'+
+      (st.myLinked
+        ? '<div style="font-size:12.5px;line-height:1.7">連携済みです。LINE WORKSでBotに「ヘルプ」と送ると使い方が出ます。</div><div><button class="btn outline sm" id="wk-unlink">連携を解除する</button></div>'
+        : '<div style="font-size:12px;color:var(--ink-faint);line-height:1.7">Botから案件の確認や日報の登録をするには、最初に本人確認をします。下のボタンで6桁のコードを出し、LINE WORKSのBotに <b>連携 123456</b> のように送ってください。コードは10分間有効です。</div>'+
+          (w.code?'<div style="font-size:26px;font-weight:700;letter-spacing:.2em;padding:6px 0">'+esc(w.code)+'</div>':'')+
+          '<div><button class="btn primary" id="wk-code">'+(w.code?"コードを再発行":"連携コードを発行")+'</button></div>')+
+      '</div>';
+    return head+mine+(state.isAdmin?worksSettingsHtml(st):"");
+  }
+  function openWorksShare(p){
+    var lines = ["【"+p.name+"】", "進捗: "+(p.status||"未入力")+(p.type?" ／ "+p.type:""), "工期: "+(p.startDate||"未定")+" 〜 "+(p.endDate||"未定")];
+    var addr = [p.prefecture, p.address].filter(Boolean).join(""); if(addr) lines.push("住所: "+addr);
+    var names = normalizeAssignees(p.assignees).map(function(a){ return a.name; }); if(names.length) lines.push("担当: "+names.join("、"));
+    openModal("LINE WORKSで共有", '<div style="font-size:12px;color:var(--ink-faint);margin-bottom:8px">通知先のグループトークルームに送ります。内容は自由に書き換えられます。</div>'+
+      '<textarea id="wk-share-text" rows="8" style="width:100%">'+esc(lines.join("\n"))+'</textarea>',
+      '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="wk-share-send">送信する</button>');
+    document.getElementById("wk-share-send").addEventListener("click", function(){
+      var text = document.getElementById("wk-share-text").value.trim();
+      if(!text){ toast("メッセージを入力してください"); return; }
+      var btn = this; btn.disabled = true;
+      worksCall("share", {text:text}).then(function(){ closeModal(); toast("LINE WORKSに送信しました"); }, function(e){ btn.disabled = false; toast("送信できませんでした："+e.message); });
+    });
+  }
+  function bindWorksEvents(c){
+    var on = function(id, fn){ var el = document.getElementById(id); if(el) el.addEventListener("click", function(){ fn(el); }); };
+    var admin = function(fn){ return function(el){ if(!state.isAdmin){ toast("管理者のみ行えます"); return; } fn(el); }; };
+    on("wk-reload", function(){ state.works.error = ""; state.works.failed = false; worksLoadStatus(true); render(); });
+    on("wk-code", function(el){
+      el.disabled = true;
+      worksCall("pairCode").then(function(j){ state.works.code = j.code; render(); }, function(e){ el.disabled = false; toast("発行できませんでした："+e.message); });
+    });
+    on("wk-unlink", function(){
+      confirmDelete("LINE WORKSとの連携を解除しますか？（Botから案件の確認などができなくなります）", function(){
+        worksCall("unlink").then(function(){ state.works.status = null; state.works.code = null; toast("連携を解除しました"); worksLoadStatus(true); render(); }, function(e){ toast("失敗しました："+e.message); });
+      });
+    });
+    var collect = function(){
+      var d = {channelId: document.getElementById("wk-channel").value.trim()};
+      ["notifyStatus","notifyReport","notifyTask","notifyDigest"].forEach(function(k){ d[k] = document.getElementById("wk-"+k).checked; });
+      return d;
+    };
+    on("wk-save", admin(function(el){
+      el.disabled = true;
+      worksCall("saveSettings", collect()).then(function(){ toast("設定を保存しました"); state.works.status = null; worksLoadStatus(true); render(); }, function(e){ el.disabled = false; toast("保存できませんでした："+e.message); });
+    }));
+    on("wk-test", admin(function(el){
+      el.disabled = true;
+      worksCall("saveSettings", collect()).then(function(){ return worksCall("test"); })
+        .then(function(){ el.disabled = false; toast("テスト送信しました。トークルームを確認してください"); }, function(e){ el.disabled = false; toast("送信できませんでした："+e.message); });
+    }));
+    c.querySelectorAll("[data-works-share]").forEach(function(el){ el.addEventListener("click", function(){
+      var p = state.projects.find(function(x){ return x.id===el.getAttribute("data-works-share"); });
+      if(p) openWorksShare(p);
+    }); });
+  }
+
   /* ============ バックアップ / 復元 ============ */
   var BACKUP_COLS = [["projects","案件"],["customers","顧客"],["members","メンバー"],["tasks","タスク"],["chats","チャット"],["files","ファイル"],["folders","フォルダ"],["events","予定"],["steps","工程"],["reports","報告書"],["trash","ゴミ箱"]];
   function lastBackupAt(){ try{ return localStorage.getItem("genba_last_backup")||state.lastBackup||""; }catch(e){ return state.lastBackup||""; } }
@@ -4362,14 +4512,15 @@
       if(!selfOk){ toast("メンバーの変更は管理者のみ行えます"); return; }
     }
     data.updatedAt = new Date().toISOString();
+    var oldRec = id ? (rawOf(col).find(function(x){ return x.id===id; }) || null) : null;
     if(!db){
       var arr = rawOf(col);
       if(id){ var idx=arr.findIndex(function(x){return x.id===id;}); if(idx>-1) arr[idx]=Object.assign({},arr[idx],data); }
       else { data.id=uid(); data.createdAt=new Date().toISOString(); arr.unshift(data); }
-      closeModal(); toast(msg+"（プレビューのみ）"); render(); if(after) after(id||data.id); return;
+      closeModal(); toast(msg+"（プレビューのみ）"); render(); try{ worksNotifyAfterWrite(col, id||data.id, data, oldRec); }catch(e){} if(after) after(id||data.id); return;
     }
     var p = id ? db.collection(col).doc(id).update(data) : db.collection(col).add(Object.assign({createdAt:new Date().toISOString()},data));
-    p.then(function(ref){ closeModal(); toast(msg); if(after) after(id||(ref&&ref.id)); }).catch(function(e){ toast("保存に失敗しました"); });
+    p.then(function(ref){ closeModal(); toast(msg); try{ worksNotifyAfterWrite(col, id||(ref&&ref.id), data, oldRec); }catch(e){} if(after) after(id||(ref&&ref.id)); }).catch(function(e){ toast("保存に失敗しました"); });
   }
   // ---- ゴミ箱: 削除したデータは trash コレクションに控えを残し、管理画面から復元できる ----
   var TRASH_TYPES = {reports:"報告書",projects:"案件",customers:"顧客",members:"メンバー",tasks:"タスク",files:"ファイル",events:"予定",steps:"工程",folders:"フォルダ"};
@@ -5557,6 +5708,7 @@
     });
 
     bindFreeeEvents(c);
+    bindWorksEvents(c);
     c.querySelectorAll("[data-setseg]").forEach(function(el){ el.addEventListener("click", function(){ state.settingsSeg = el.getAttribute("data-setseg"); render(); }); });
 
     var setSave = document.getElementById("set-save");

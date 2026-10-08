@@ -87,14 +87,16 @@ async function listMembers(){
   }
   return out;
 }
-// 管理者の氏名とログインパスワードを照合する
-async function verifyAdmin(name, password){
-  if(!name || !password) return false;
+// メンバーの氏名とログインパスワードを照合する（一致すればメンバー情報、なければnull）
+async function verifyMember(name, password){
+  if(!name || !password) return null;
   var strip = function(s){ return String(s || "").replace(/[\s　]+/g, ""); };
   var list = await listMembers();
-  var m = list.find(function(x){ return strip(x.name) === strip(name) && x.password != null && safeEq(x.password, password); });
-  return !!(m && (m.permission === "admin" || (!m.permission && m.isAdmin === true)));
+  return list.find(function(x){ return strip(x.name) === strip(name) && x.password != null && safeEq(x.password, password); }) || null;
 }
+function isAdminMember(m){ return !!(m && (m.permission === "admin" || (!m.permission && m.isAdmin === true))); }
+// 管理者の氏名とログインパスワードを照合する
+async function verifyAdmin(name, password){ return isAdminMember(await verifyMember(name, password)); }
 
 /* ---- freee トークン ---- */
 async function tokenRequest(params){
@@ -139,4 +141,4 @@ async function freee(method, path, opts){
 }
 
 module.exports = {configured: configured, redirectUri: redirectUri, AUTH_BASE: AUTH_BASE, env: env, makeState: makeState, checkState: checkState,
-  verifyAdmin: verifyAdmin, exchangeCode: exchangeCode, saveTokens: saveTokens, loadTokens: loadTokens, fsDelete: fsDelete, freee: freee, httpErr: httpErr};
+  verifyAdmin: verifyAdmin, verifyMember: verifyMember, isAdminMember: isAdminMember, safeEq: safeEq, exchangeCode: exchangeCode, saveTokens: saveTokens, loadTokens: loadTokens, fsDelete: fsDelete, freee: freee, httpErr: httpErr};
