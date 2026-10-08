@@ -4203,9 +4203,29 @@
       if(!old){ ev = "task"; text = "【タスク追加】"+(data.title||"")+"\n期限: "+(data.dueDate||"—")+(data.assignee?"　担当: "+data.assignee:"")+(data.projectName?"\n案件: "+data.projectName:""); }
     }
     if(!ev) return;
+    try{ pushEventAfterWrite(col, id, data, old); }catch(e){}
     worksLoadStatus().then(function(st){
       if(st && st.configured) worksCall("notify", {event:ev, text:text}).catch(function(){});
     });
+  }
+  // スマホ通知（案件・報告書・タスクの新着）。通知を受けるかは各端末の設定（PUSH_KINDS）で選べる。
+  function pushEventAfterWrite(col, id, data, old){
+    var kind="", title="", body="", names=[];
+    var projOf=function(pid, nm){ return state.projects.find(function(x){return x.id===pid;}) || state.projects.find(function(x){return nm && x.name===nm;}) || null; };
+    var asg=function(p){ return p ? normalizeAssignees(p.assignees).map(function(a){return a.name;}) : []; };
+    if(col==="projects"){
+      var nm = data.name || (old && old.name) || ((projOf(id)||{}).name) || "";
+      names = normalizeAssignees(data.assignees || (old && old.assignees) || (projOf(id)||{}).assignees).map(function(a){return a.name;});
+      if(!old){ kind="projectNew"; title="新しい案件が登録されました"; body=nm+(data.status?"（"+data.status+"）":""); }
+      else if(data.status!==undefined && data.status!==old.status){ kind="projectStatus"; title="案件の進捗が変わりました"; body=nm+"：" +(old.status||"未入力")+" → "+(data.status||"未入力"); }
+    }else if(col==="reports"){
+      var prev = old ? (old.status||"下書き") : "";
+      if(data.status==="提出済" && prev!=="提出済"){ kind="report"; title="報告書が提出されました"; body=(data.type||"")+" "+(data.title||"")+"（"+(data.projectName||"—")+"）"; names=asg(projOf(data.projectId, data.projectName)); }
+    }else if(col==="tasks"){
+      if(!old){ kind="task"; title="タスクが追加されました"; body=(data.title||"")+(data.dueDate?"（期限 "+data.dueDate+"）":""); names=[data.assignee].filter(Boolean); }
+    }
+    if(!kind) return;
+    pushCall("event", {kind:kind, title:title, text:body, names:names}).catch(function(){});
   }
   function worksSettingsHtml(st){
     var f = st.flags || {};
@@ -4283,7 +4303,8 @@
   }
   /* ============ スマホ通知（Web Push） ============ */
   var PUSH_API = "/api/push";
-  state.push = {status:null, loading:false, failed:false, sub:null, busy:false, keys:null, msg:""};
+  state.push = {status:null, loading:false, failed:false, sub:null, busy:false, keys:null, msg:"", prefs:null};
+  var PUSH_KINDS = [["chat","チャットの新着","参加しているチャットに投稿があったとき"],["projectNew","新しい案件の登録","案件が新しく登録されたとき（担当者・管理者）"],["projectStatus","案件の進捗の変更","進捗（契約済・施工中など）が変わったとき（担当者・管理者）"],["report","報告書の提出","報告書が「提出済」になったとき（担当者・管理者）"],["task","タスクの追加","自分が担当のタスクが追加されたとき"]];
   function pushSupported(){ return !!(db && !window.claude && !state.offlineMode && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window && /^https?:$/.test(location.protocol)); }
   function pushCall(action, extra){
     var me = myMember();
@@ -4295,9 +4316,9 @@
     var p = state.push;
     if(!pushSupported() || p.loading || p.status || p.failed || !myMember()) return;
     p.loading = true;
-    pushCall("status").then(function(j){ p.status = j; }, function(){ p.failed = true; })
-      .then(function(){ return navigator.serviceWorker.getRegistration().then(function(reg){ return reg && reg.pushManager.getSubscription(); }); })
-      .then(function(sub){ p.sub = sub || null; }, function(){})
+    navigator.serviceWorker.getRegistration().then(function(reg){ return reg && reg.pushManager.getSubscription(); }).catch(function(){ return null; })
+      .then(function(sub){ p.sub = sub || null; return pushCall("status", {endpoint: sub ? sub.endpoint : ""}); })
+      .then(function(j){ p.status = j; p.prefs = j.prefs || null; }, function(){ p.failed = true; })
       .then(function(){ p.loading = false; if(state.tab==="settings" && state.settingsSeg==="personal") render(); });
   }
   function pushNotify(chatId, text){
@@ -4333,11 +4354,24 @@
     h += '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
       (on ? '<button class="btn" data-push="off"'+(p.busy?" disabled":"")+'>通知をオフにする</button><button class="btn" data-push="test"'+(p.busy?" disabled":"")+'>テスト通知</button>'
           : '<button class="btn primary" data-push="on"'+(p.busy||denied?" disabled":"")+'>この端末で通知を受け取る</button>')+'</div>';
+    if(on){
+      var pr = p.prefs || {};
+      h += '<div style="font-size:12.5px;font-weight:700;margin-top:4px">通知する内容（この端末）</div>';
+      PUSH_KINDS.forEach(function(k){
+        h += '<label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;line-height:1.5"><input type="checkbox" data-push-pref="'+k[0]+'"'+(pr[k[0]]!==false?" checked":"")+'><span>'+esc(k[1])+'<span style="display:block;font-size:11px;color:var(--ink-faint)">'+esc(k[2])+'</span></span></label>';
+      });
+    }
     if(p.msg) h += '<div style="font-size:11.5px;color:var(--ink-faint)">'+esc(p.msg)+'</div>';
     return h + '</div>';
   }
   function pushKeyBytes(b64){ var s=(b64+"====".slice(b64.length%4||4)).replace(/-/g,"+").replace(/_/g,"/"); var raw=atob(s), a=new Uint8Array(raw.length); for(var i=0;i<raw.length;i++) a[i]=raw.charCodeAt(i); return a; }
   function bindPushEvents(c){
+    c.querySelectorAll("[data-push-pref]").forEach(function(el){ el.addEventListener("change", function(){
+      var p = state.push; if(!p.sub) return;
+      var pr = {}; c.querySelectorAll("[data-push-pref]").forEach(function(x){ pr[x.getAttribute("data-push-pref")] = x.checked; });
+      p.prefs = pr;
+      pushCall("prefs", {endpoint:p.sub.endpoint, prefs:pr}).then(function(){ toast("通知の設定を保存しました"); }, function(){ toast("保存できませんでした"); });
+    }); });
     c.querySelectorAll("[data-push]").forEach(function(el){ el.addEventListener("click", function(){
       var k = el.getAttribute("data-push"), p = state.push;
       if(k==="copy-pub"||k==="copy-priv"){ var inp=document.getElementById(k==="copy-pub"?"pk-pub":"pk-priv"); if(inp){ inp.select(); try{ navigator.clipboard.writeText(inp.value); }catch(e){ document.execCommand("copy"); } toast("コピーしました"); } return; }
@@ -4349,7 +4383,7 @@
           return navigator.serviceWorker.ready;
         }).then(function(reg){
           return reg.pushManager.getSubscription().then(function(old){ return old || reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey: pushKeyBytes(p.status.publicKey)}); });
-        }).then(function(sub){ p.sub=sub; return pushCall("subscribe", {subscription: sub.toJSON()}); })
+        }).then(function(sub){ p.sub=sub; return pushCall("subscribe", {subscription: sub.toJSON(), prefs: p.prefs||null}); })
           .then(function(){ p.msg="通知をオンにしました。"; }, function(e){ p.msg="設定できませんでした："+e.message; })
           .then(function(){ p.busy=false; render(); });
         return;

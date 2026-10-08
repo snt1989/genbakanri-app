@@ -33,6 +33,22 @@ async function recipients(chatId){
   return {chat: chat, names: names};
 }
 
+var KINDS = ["chat", "projectNew", "projectStatus", "report", "task"];
+function cleanPrefs(p){ var o = {}; KINDS.forEach(function(k){ o[k] = !(p && p[k] === false); }); return o; }
+async function deliver(want, kind, payload){
+  var doc = await W.getDoc("settings/push");
+  var vapid = {publicKey: F.env("VAPID_PUBLIC_KEY"), privateKey: F.env("VAPID_PRIVATE_KEY"), subject: "mailto:" + (F.env("VAPID_SUBJECT") || "admin@example.com")};
+  var sent = 0, dead = [];
+  await Promise.all(Object.keys(doc).filter(function(k){ return k.indexOf("s_") === 0; }).map(async function(k){
+    var e = doc[k]; if(!e || !want[norm(e.name)]) return;
+    if(e.prefs && e.prefs[kind] === false) return;
+    try{ await webpush.send(JSON.parse(e.sub), payload, vapid, 3600); sent++; }
+    catch(err){ if(err.statusCode === 404 || err.statusCode === 410) dead.push(k); }
+  }));
+  if(dead.length) await W.patchDoc("settings/push", {}, dead).catch(function(){});
+  return sent;
+}
+
 module.exports = async function handler(req, res){
   res.setHeader("Cache-Control", "no-store");
   if(req.method !== "POST"){ res.setHeader("Allow", "POST"); return res.status(405).json({error: "POST only"}); }
@@ -43,8 +59,11 @@ module.exports = async function handler(req, res){
     if(!me) return res.status(403).json({error: "認証に失敗しました"});
     var admin = F.isAdminMember(me);
     switch(b.action){
-      case "status":
-        return res.status(200).json({configured: configured(), publicKey: F.env("VAPID_PUBLIC_KEY") || "", admin: admin});
+      case "status": {
+        var out = {configured: configured(), publicKey: F.env("VAPID_PUBLIC_KEY") || "", admin: admin};
+        if(b.endpoint){ var cur = (await W.getDoc("settings/push"))[keyOf(b.endpoint)]; if(cur && cur.name === me.name) out.prefs = cur.prefs || null; }
+        return res.status(200).json(out);
+      }
       case "genkeys": {
         if(!admin) return res.status(403).json({error: "管理者のみ実行できます"});
         var k = webpush.generateVAPIDKeys();
@@ -54,9 +73,27 @@ module.exports = async function handler(req, res){
         if(!configured()) return res.status(400).json({error: "通知がまだ設定されていません（管理者が設定します）"});
         var sub = b.subscription;
         if(!sub || !sub.endpoint) return res.status(400).json({error: "購読情報がありません"});
-        var d = {}; d[keyOf(sub.endpoint)] = {name: me.name, sub: JSON.stringify(sub)};
+        var d = {}; d[keyOf(sub.endpoint)] = {name: me.name, sub: JSON.stringify(sub), prefs: cleanPrefs(b.prefs)};
         await W.patchDoc("settings/push", d);
         return res.status(200).json({ok: true});
+      }
+      case "prefs": {
+        var k0 = keyOf(b.endpoint || ""), cur0 = (await W.getDoc("settings/push"))[k0];
+        if(!cur0 || cur0.name !== me.name) return res.status(404).json({error: "この端末は登録されていません"});
+        var d0 = {}; d0[k0] = {name: cur0.name, sub: cur0.sub, prefs: cleanPrefs(b.prefs)};
+        await W.patchDoc("settings/push", d0);
+        return res.status(200).json({ok: true});
+      }
+      case "event": {
+        if(!configured()) return res.status(200).json({sent: 0});
+        var kind = String(b.kind || "");
+        if(KINDS.indexOf(kind) === -1) return res.status(400).json({error: "kind"});
+        var want2 = {};
+        (Array.isArray(b.names) ? b.names : []).forEach(function(n){ want2[norm(n)] = 1; });
+        if(kind !== "task"){ (await W.listDocs("members")).forEach(function(m){ if(F.isAdminMember(m)) want2[norm(m.name)] = 1; }); }
+        delete want2[norm(me.name)];
+        var payload2 = JSON.stringify({title: String(b.title || "現場管理").slice(0, 60), body: String(b.text || "").replace(/\s+/g, " ").slice(0, 100) + "（" + me.name + "）", tag: kind + "-" + Date.now()});
+        return res.status(200).json({sent: await deliver(want2, kind, payload2)});
       }
       case "unsubscribe": {
         if(b.endpoint) await W.patchDoc("settings/push", {}, [keyOf(b.endpoint)]);
@@ -70,18 +107,9 @@ module.exports = async function handler(req, res){
         if(!r.chat) return res.status(200).json({sent: 0});
         var want = {}; r.names.forEach(function(n){ want[norm(n)] = 1; });
         delete want[norm(me.name)];
-        var doc = await W.getDoc("settings/push");
-        var vapid = {publicKey: F.env("VAPID_PUBLIC_KEY"), privateKey: F.env("VAPID_PRIVATE_KEY"), subject: "mailto:" + (F.env("VAPID_SUBJECT") || "admin@example.com")};
         var text = String(b.text || "").replace(/\s+/g, " ").slice(0, 80) || "新しいメッセージ";
         var payload = JSON.stringify({title: (r.chat.name || "チャット"), body: me.name + "：" + text, chatId: chatId, tag: "chat-" + chatId});
-        var sent = 0, dead = [];
-        await Promise.all(Object.keys(doc).filter(function(k){ return k.indexOf("s_") === 0; }).map(async function(k){
-          var e = doc[k]; if(!e || !want[norm(e.name)]) return;
-          try{ await webpush.send(JSON.parse(e.sub), payload, vapid, 3600); sent++; }
-          catch(err){ if(err.statusCode === 404 || err.statusCode === 410) dead.push(k); }
-        }));
-        if(dead.length) await W.patchDoc("settings/push", {}, dead).catch(function(){});
-        return res.status(200).json({sent: sent});
+        return res.status(200).json({sent: await deliver(want, "chat", payload)});
       }
       default:
         return res.status(400).json({error: "unknown action"});
