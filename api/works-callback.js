@@ -34,12 +34,11 @@ var HELP = [
 /* ---- 案件登録（決まった書き方のメッセージ） ---- */
 var PROJECT_TYPES = ["原状回復工事", "除草・草刈作業", "植栽維持管理", "建物・敷地清掃", "排水管清掃", "解体工事", "その他"];
 var STATUS_LIST = ["現地調査前", "現地調査済", "見積提出済", "契約済", "施工中", "施工完了", "清算済", "失注"];
-var STORES = ["盛岡店", "仙台店", "秋田店", "本社"];
 var PREFS = ["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
 var LABELS = {name: ["案件名", "名称", "物件名", "件名"], customer: ["顧客", "顧客名", "取引先", "お客様", "客先"], address: ["住所", "現場住所", "所在地", "現場"], type: ["種類", "案件種類", "種別"],
-  status: ["進捗", "ステータス", "状況"], store: ["店舗", "担当店舗"], amount: ["金額", "請求金額", "売上"], period: ["工期", "期間"], start: ["開始", "開始日", "着工", "着工日"], end: ["終了", "終了日", "完了", "完了日", "完工日"],
+  status: ["進捗", "ステータス", "状況"], amount: ["金額", "請求金額", "売上"], period: ["工期", "期間"], start: ["開始", "開始日", "着工", "着工日"], end: ["終了", "終了日", "完了", "完了日", "完工日"],
   assignees: ["担当", "担当者", "メンバー"], phone: ["電話", "電話番号", "tel", "TEL", "連絡先"], note: ["指示", "作業指示", "内容", "備考", "メモ"]};
-var TEMPLATE = ["案件登録", "案件名: ○○様邸 除草作業", "顧客: 福川 伸夫", "住所: 岩手県盛岡市箱清水1-7-16", "種類: 除草・草刈作業", "進捗: 現地調査前", "店舗: 盛岡店", "金額: 178200",
+var TEMPLATE = ["案件登録", "案件名: ○○様邸 除草作業", "顧客: 福川 伸夫", "住所: 岩手県盛岡市箱清水1-7-16", "種類: 除草・草刈作業", "進捗: 現地調査前", "金額: 178200",
   "工期: 2026-10-01 〜 2026-10-05", "担当: 阿部 晋太郎、鷹羽 悠希", "電話: 090-1234-5678", "指示: 作業内容のメモ"].join("\n");
 
 function labelKey(label){
@@ -80,8 +79,6 @@ async function registerProject(src, me, text){
   if(f.type && !type){ type = "その他"; notes.push("種類「" + f.type + "」は一覧にないため「その他」にしました"); }
   var status = f.status ? pickOne(f.status, STATUS_LIST) : "現地調査前";
   if(!status){ status = "現地調査前"; notes.push("進捗「" + f.status + "」は一覧にないため「現地調査前」にしました"); }
-  var store = f.store ? pickOne(f.store, STORES) : "";
-  if(f.store && !store) notes.push("店舗「" + f.store + "」は一覧にないため未設定にしました");
   var amount = 0;
   if(f.amount){ amount = parseInt(String(f.amount).normalize("NFKC").replace(/[,，¥￥円\s]/g, ""), 10); if(!(amount >= 0)){ amount = 0; notes.push("金額を読み取れませんでした"); } }
   var start = f.start ? parseDate(f.start) : "", end = f.end ? parseDate(f.end) : "";
@@ -113,7 +110,7 @@ async function registerProject(src, me, text){
   var KEYS = {name: "customerName", kana: "customerKana", postalCode: "postalCode", prefecture: "prefecture", address: "address", building: "building", phone: "customerPhone", email: "customerEmail",
     contactName: "customerContactName", department: "customerDepartment"};
   var now = new Date().toISOString();
-  var rec = {name: f.name, assignees: assignees, type: type || "その他", status: status, store: store, amount: amount || 0, startDate: start, endDate: end, workInstruction: f.note || "", handoverDate: "",
+  var rec = {name: f.name, assignees: assignees, type: type || "その他", status: status, amount: amount || 0, startDate: start, endDate: end, workInstruction: f.note || "", handoverDate: "",
     customerId: cid || "", secretFields: {}, addressMode: "same", createdAt: now, updatedAt: now, source: "LINE WORKS"};
   Object.keys(KEYS).forEach(function(k){ rec[KEYS[k]] = cdata[k] != null ? cdata[k] : ""; });
   if(cust && f.address){ rec.prefecture = pref || rec.prefecture; rec.address = addr || rec.address; }   // 案件ごとの住所を優先
@@ -122,7 +119,7 @@ async function registerProject(src, me, text){
   var s = await W.getSettings();
   if(s.channelId && s.notifyStatus !== false && src.channelId !== s.channelId)
     await W.sendChannel(s.channelId, "【案件登録】" + f.name + "（" + status + "）\n顧客: " + f.customer + "（LINE WORKSから登録: " + me.name + "）");
-  return reply(src, "案件を登録しました。\n【" + f.name + "】\n顧客: " + f.customer + "\n進捗: " + status + " ／ 種類: " + rec.type + (store ? " ／ " + store : "") +
+  return reply(src, "案件を登録しました。\n【" + f.name + "】\n顧客: " + f.customer + "\n進捗: " + status + " ／ 種類: " + rec.type + "" +
     (amount ? "\n金額: " + amount.toLocaleString("ja-JP") + "円" : "") + (start || end ? "\n工期: " + (start || "未定") + " 〜 " + (end || "未定") : "") +
     "\n担当: " + (assignees.map(function(a){ return a.name; }).join("、") || "未設定") + (notes.length ? "\n\n※ " + notes.join("\n※ ") : "") + "\n\n詳しい情報は、アプリの案件画面で追加・修正できます。");
 }
