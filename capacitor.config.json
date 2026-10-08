@@ -1,0 +1,8 @@
+{
+  "appId": "jp.ltd.sanoh.genba",
+  "appName": "現場管理",
+  "webDir": "www",
+  "backgroundColor": "#F8F9F8",
+  "ios": { "contentInset": "always" },
+  "android": { "allowMixedContent": false }
+}

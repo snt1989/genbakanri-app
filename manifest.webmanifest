@@ -1,0 +1,17 @@
+{
+  "name": "現場管理アプリ",
+  "short_name": "現場管理",
+  "description": "案件・工程・カレンダー・報告書・チャットを一元管理する現場管理アプリ",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F8F9F8",
+  "theme_color": "#175C40",
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
