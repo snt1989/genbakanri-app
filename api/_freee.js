@@ -15,7 +15,7 @@ var crypto = require("crypto");
 var AUTH_BASE = "https://accounts.secure.freee.co.jp/public_api";
 var API_BASE = "https://api.freee.co.jp";
 
-function env(n){ return process.env[n] || ""; }
+function env(n){ return String(process.env[n] || "").trim().replace(/^["']+|["']+$/g, ""); }
 function configured(){ return !!(env("FREEE_CLIENT_ID") && env("FREEE_CLIENT_SECRET") && env("FREEE_TOKEN_KEY") && env("FIREBASE_PROJECT_ID") && env("FIREBASE_API_KEY")); }
 function redirectUri(req){
   if(env("FREEE_REDIRECT_URI")) return env("FREEE_REDIRECT_URI");
