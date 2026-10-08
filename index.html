@@ -3224,11 +3224,42 @@
     });
   }
 
+  /* アップロード: claude.ai の assets が無い環境(Vercel等)では、画像は縮小して
+     データURLとして保存する(Firestore 1ドキュメント約1MBの制限内)。 */
+  var INLINE_MAX = 900000;
+  function readAsDataURL(blob){ return new Promise(function(ok,ng){ var r=new FileReader(); r.onload=function(){ok(r.result);}; r.onerror=function(){ng(r.error);}; r.readAsDataURL(blob); }); }
+  function shrinkImage(file){
+    return new Promise(function(ok,ng){
+      var u=URL.createObjectURL(file), img=new Image();
+      img.onload=function(){
+        URL.revokeObjectURL(u);
+        var side=1600, q=0.82, out=null;
+        for(var i=0;i<8;i++){
+          var sc=Math.min(1, side/Math.max(img.width,img.height));
+          var cv=document.createElement("canvas"); cv.width=Math.max(1,Math.round(img.width*sc)); cv.height=Math.max(1,Math.round(img.height*sc));
+          cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height);
+          out=cv.toDataURL("image/jpeg",q);
+          if(out.length<=INLINE_MAX) return ok(out);
+          side=Math.round(side*0.75); q=Math.max(0.5,q-0.07);
+        }
+        ng(new Error("too large"));
+      };
+      img.onerror=function(){ URL.revokeObjectURL(u); ng(new Error("img")); };
+      img.src=u;
+    });
+  }
+  function uploadBlob(file){
+    if(assetsCap) return assetsCap.upload(file);
+    var isImg=(file.type||"").indexOf("image/")===0 && file.type!=="image/svg+xml" && file.type!=="image/gif";
+    var p = isImg ? shrinkImage(file) : readAsDataURL(file).then(function(d){ if(d.length>INLINE_MAX) throw new Error("too large"); return d; });
+    return p.then(function(d){ return {id:null, url:d, contentType: isImg?"image/jpeg":file.type, sizeBytes:file.size}; });
+  }
+  function uploadFail(e){ toast(e && e.message==="too large" ? "ファイルが大きすぎます（画像以外は約650KBまで）" : "アップロードに失敗しました"); }
+
   function uploadProjectFile(projectId, file, folderId){
-    if(!assetsCap){ toast("この環境ではファイルアップロードを利用できません"); return; }
     var p = state.projects.find(function(x){return x.id===projectId;});
     toast("アップロード中…");
-    assetsCap.upload(file).then(function(res){
+    uploadBlob(file).then(function(res){
       writeDoc("files", null, {
         projectId: projectId,
         projectName: p?p.name:"",
@@ -3236,12 +3267,12 @@
         assetId: res.id,
         url: res.url||null,
         filename: file.name||"ファイル",
-        contentType: file.type||"",
+        contentType: res.contentType||file.type||"",
         size: file.size||0,
         uploadedAt: new Date().toISOString(),
         uploadedBy: state.myName||""
       }, "写真・ファイルを追加しました");
-    }).catch(function(e){ toast("アップロードに失敗しました"); });
+    }).catch(uploadFail);
   }
 
   /* ============ CHAT ============ */
@@ -5870,7 +5901,6 @@
         var k = el.getAttribute("data-chat-tool");
         if(k==="location"){ shareLocation(); return; }
         if(k==="file"||k==="image"){
-          if(!assetsCap){ toast("この環境ではファイルを添付できません"); return; }
           document.getElementById(k==="file"?"chat-file":"chat-image").click(); return;
         }
         state.chatDraft[state.activeChat] = input.value; state.chatPop = state.chatPop===k ? "" : k; render();
@@ -5884,13 +5914,13 @@
           var f = fi.files && fi.files[0]; if(!f) return;
           var chat = state.chats.find(function(x){return x.id===state.activeChat;});
           toast("アップロード中…");
-          assetsCap.upload(f).then(function(res){
+          uploadBlob(f).then(function(res){
             var pr = chatProject(chat);
             if(pr){
               saveRaw("files", null, {projectId:pr.id, projectName:pr?pr.name:"", folderId:null, assetId:res.id, url:res.url||null, filename:f.name||"ファイル", contentType:f.type||"", size:f.size||0, uploadedAt:new Date().toISOString(), uploadedBy:state.myName||""});
             }
             postMsg({text:"", attachment:{url:res.url, filename:f.name||"ファイル", contentType:f.type||""}}, function(){ toast("送信しました"); });
-          }).catch(function(){ toast("アップロードに失敗しました"); });
+          }).catch(uploadFail);
         });
       });
     }
