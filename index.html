@@ -3193,6 +3193,7 @@
   // ---- マスタ管理 ---------------------------------------------------------
   // 選択肢（案件種類・店舗・職種・物件種類・物件構造）を管理者が編集できる。
   // 元の配列を“その場で”書き換えるので、画面側のコードは変更不要。保存先: settings/master
+  var REPORT_TYPES = ["作業報告書","日報","進捗報告書","完了報告書","是正・指摘事項報告書"];
   var MASTERS = [
     {key:"statuses", label:"案件進捗", arr:STATUS_LIST, note:"案件の進捗（一覧の絞り込み・登録画面）に出ます。契約済・施工中・施工完了・清算済・失注は集計に使うため削除できません。色は自動で付きます"},
     {key:"projectTypes", label:"案件種類", arr:PROJECT_TYPES, note:"案件の登録・編集の「案件種類」に出ます"},
@@ -3201,7 +3202,8 @@
     {key:"propertyTypes", label:"物件種類", arr:PROPERTY_TYPES, note:"物件情報の「物件種類」に出ます"},
     {key:"propertyStructures", label:"物件構造", arr:PROPERTY_STRUCTURES, note:"物件情報の「構造」に出ます"},
     {key:"stepNames", label:"工程名", arr:STEP_NAMES, note:"工程表の「工程を追加」で選ぶ工程名に出ます"},
-    {key:"eventTypes", label:"予定の種類", arr:EVENT_TYPES, note:"カレンダーの「予定を追加」で選ぶ種類に出ます"}
+    {key:"eventTypes", label:"予定の種類", arr:EVENT_TYPES, note:"カレンダーの「予定を追加」で選ぶ種類に出ます"},
+    {key:"reportTypes", label:"報告書の種類", arr:REPORT_TYPES, note:"報告書の「報告書を作成」で選ぶ種類と、一覧の絞り込みに出ます"}
   ];
   // 画面ごとのタブ（店舗は案件・メンバーで共通の項目）
   var MASTER_TABS = [
@@ -3209,7 +3211,8 @@
     ["property","物件情報",["propertyTypes","propertyStructures"]],
     ["member","メンバー",["roles","stores"]],
     ["schedule","工程表",["stepNames"]],
-    ["calendar","カレンダー",["eventTypes"]]
+    ["calendar","カレンダー",["eventTypes"]],
+    ["reports","報告書",["reportTypes"]]
   ];
   var MASTER_DEFAULTS = {};
   MASTERS.forEach(function(m){ MASTER_DEFAULTS[m.key] = m.arr.slice(); });
@@ -3239,6 +3242,7 @@
     else if(m.key==="roles") n = state.members.filter(function(x){return (x.roles||[]).indexOf(name)!==-1;}).length;
     else if(m.key==="propertyTypes") n = rawStore.projects.filter(function(p){return p.propertyType===name;}).length;
     else if(m.key==="stepNames") n = state.steps.filter(function(x){return x.name===name;}).length;
+    else if(m.key==="reportTypes") n = state.reports.filter(function(x){return x.type===name;}).length;
     else if(m.key==="eventTypes") n = state.events.filter(function(x){return x.category===name;}).length;
     else if(m.key==="propertyStructures") n = rawStore.projects.filter(function(p){return p.propertyStructure===name;}).length;
     return n;
@@ -3286,7 +3290,7 @@
     statuses:[["projects","status"]], projectTypes:[["projects","type"]],
     stores:[["members","store"]],
     propertyTypes:[["projects","propertyType"]], propertyStructures:[["projects","propertyStructure"]],
-    roles:[["members","roles"]], stepNames:[["steps","name"]], eventTypes:[["events","category"]]
+    roles:[["members","roles"]], stepNames:[["steps","name"]], eventTypes:[["events","category"]], reportTypes:[["reports","type"]]
   };
   function masterAffected(key, removed){
     var out = [];
@@ -3381,7 +3385,6 @@
   }
 
 /* ============ 報告書 ============ */
-  var REPORT_TYPES = ["作業報告書","日報","進捗報告書","完了報告書","是正・指摘事項報告書"];
   var REPORT_WEATHER = ["晴れ","曇り","雨","雪","その他"];
   function reportFilter(){ return state.reportFilter = state.reportFilter || {project:"all", type:"all", status:"all", q:""}; }
   function visibleReports(){
