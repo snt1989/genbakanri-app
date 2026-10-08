@@ -900,7 +900,7 @@
     settingsSeg:"company",
     freee:{settings:{}, status:null, master:null, loading:false, busy:false, error:""},
     works:{status:null, loading:false, error:"", code:null},
-    mobileNav:null, navDraft:null,
+    mobileNav:null, navDraft:null, listDefaults:null,
     editingMember:null,
     activeChat:null,
     chatMsgs:{},
@@ -1134,6 +1134,7 @@
     loadMasters();
     loadFreeeSettings();
     loadMobileNav();
+    loadListDefaults();
   }
 
   // 削除用パスワード: one shared password (set by an admin in 設定 > 管理画面)
@@ -1441,6 +1442,52 @@
     };
     var sv = document.getElementById("nav-save"); if(sv) sv.addEventListener("click", function(){ if(draft()) save(draft().slice(), "メニューバーを保存しました"); });
     var rs = document.getElementById("nav-reset"); if(rs) rs.addEventListener("click", function(){ save(MOBILE_NAV_DEFAULT.slice(), "初期設定に戻しました"); });
+  }
+
+  /* ============ 案件一覧の初期チェック（進捗） ============ */
+  // 管理者が「設定 > 管理画面」で、営業・施工それぞれの案件一覧を開いたときに最初からチェックされている進捗を決める。全員共通。保存先: settings/listDefaults
+  var LIST_DEFAULTS_BUILTIN = {sales: null, construction: ["契約済","施工中"]};   // null = すべての進捗
+  function listDefaultStatuses(mode){
+    var saved = state.listDefaults && Array.isArray(state.listDefaults[mode]) ? state.listDefaults[mode] : LIST_DEFAULTS_BUILTIN[mode];
+    return (saved || STATUS_LIST).filter(function(x){ return STATUS_LIST.indexOf(x)!==-1; });
+  }
+  function applyListDefaults(){
+    state.salesFilter.status = listDefaultStatuses("sales");
+    state.constFilter.status = listDefaultStatuses("construction");
+  }
+  function loadListDefaults(){
+    if(!db) return;
+    db.doc("settings/listDefaults").get().then(function(snap){
+      var d = snap.exists ? snap.data() : null;
+      if(d && (Array.isArray(d.sales) || Array.isArray(d.construction))){ state.listDefaults = {sales:d.sales, construction:d.construction}; applyListDefaults(); render(); }
+    }).catch(function(){});
+  }
+  function listDefaultsEditorHtml(){
+    var group = function(mode, label){
+      var cur = listDefaultStatuses(mode);
+      return '<div><div style="font-size:12px;font-weight:700;margin-bottom:6px">'+label+'</div><div style="display:flex;flex-wrap:wrap;gap:6px 14px">'+
+        STATUS_LIST.map(function(st){ return '<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;margin:0"><input type="checkbox" data-listdef="'+mode+'" value="'+esc(st)+'"'+(cur.indexOf(st)!==-1?" checked":"")+'>'+esc(st)+'</label>'; }).join("")+'</div></div>';
+    };
+    return '<h2 style="font-size:13.5px;margin:4px 0 10px">案件一覧の初期チェック</h2>'+
+      '<div class="card" style="padding:16px 18px;max-width:520px;display:flex;flex-direction:column;gap:12px;margin-bottom:18px">'+
+      '<div style="font-size:11.5px;color:var(--ink-faint);line-height:1.6">営業案件一覧・施工案件一覧を開いたときに、最初からチェックが入っている進捗を決めます（全員共通）。全部外すと、すべての進捗を表示します。各自が一覧の画面でチェックを変えて検索することは、これまでどおりできます。</div>'+
+      group("sales","営業案件一覧")+group("construction","施工案件一覧")+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="listdef-save">'+iAdmin()+'初期チェックを保存する</button><button class="btn outline" id="listdef-reset">'+iAdmin()+'初期設定に戻す</button></div></div>';
+  }
+  function bindListDefEvents(c){
+    var save = function(val, msg){
+      if(!state.isAdmin){ toast("管理者のみ行えます"); return; }
+      var done = function(){ state.listDefaults = val; applyListDefaults(); toast(msg); render(); };
+      if(!db){ done(); return; }
+      db.doc("settings/listDefaults").set(Object.assign({}, val, {updatedAt:new Date().toISOString()})).then(done).catch(function(){ toast("保存に失敗しました"); });
+    };
+    var sv = document.getElementById("listdef-save");
+    if(sv) sv.addEventListener("click", function(){
+      var pick = function(mode){ return Array.prototype.slice.call(c.querySelectorAll('input[data-listdef="'+mode+'"]:checked')).map(function(x){ return x.value; }); };
+      save({sales:pick("sales"), construction:pick("construction")}, "初期チェックを保存しました");
+    });
+    var rs = document.getElementById("listdef-reset");
+    if(rs) rs.addEventListener("click", function(){ save({sales:STATUS_LIST.slice(), construction:LIST_DEFAULTS_BUILTIN.construction.slice()}, "初期設定に戻しました"); });
   }
 
   /* ============ shell ============ */
@@ -3581,6 +3628,8 @@
     html += '</div>';
 
     html += mobileNavEditorHtml();
+
+    html += listDefaultsEditorHtml();
 
     html += '<h2 style="font-size:13.5px;margin:4px 0 10px">データの状態とバックアップ</h2>';
     html += '<div class="card" style="padding:16px 18px;max-width:520px;display:flex;flex-direction:column;gap:10px">';
@@ -5773,6 +5822,7 @@
     bindFreeeEvents(c);
     bindWorksEvents(c);
     bindNavEvents(c);
+    bindListDefEvents(c);
     c.querySelectorAll("[data-setseg]").forEach(function(el){ el.addEventListener("click", function(){ state.settingsSeg = el.getAttribute("data-setseg"); render(); }); });
 
     var setSave = document.getElementById("set-save");
