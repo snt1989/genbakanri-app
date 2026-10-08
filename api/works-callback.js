@@ -1,6 +1,6 @@
 // LINE WORKS Bot のコールバック（Webhook）。POST /api/works-callback
 // 署名（X-WORKS-Signature = Base64(HMAC-SHA256(body, Bot Secret))）を検証してから処理します。
-//   joined … Botがトークルームに追加された → そのルームを通知先に自動設定（未設定の場合）
+//   join … Botがグループ/複数人トークルームに招待された → そのルームを通知先に自動設定（未設定の場合）
 //   message … 「ヘルプ」「連携 コード」「案件」「案件 名前」「タスク」「報告 案件名 内容」
 var crypto = require("crypto");
 var F = require("./_freee");
@@ -120,7 +120,7 @@ module.exports = async function handler(req, res){
   try{
     var ev = JSON.parse(raw.toString("utf8"));
     var src = ev.source || {};
-    if(ev.type === "joined" && src.channelId){
+    if(ev.type === "join" && src.channelId){
       var s = await W.getSettings();
       if(!s.channelId){
         await W.patchDoc("settings/works", {channelId: src.channelId});

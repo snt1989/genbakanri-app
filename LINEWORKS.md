@@ -13,6 +13,7 @@
 4. 「Bot」を作成し、Bot ID と Signing Secret を控える
    - Callback URL: `https://<公開URL>/api/works-callback`(アプリの 設定 > LINE WORKS に表示)
    - Botのトーク参加を許可(グループトークルームに追加できる設定)にする
+   - 受信するCallback Event は **Message Event(テキストにチェック)** と **Join Event** を On にする(他は Off のままで可)
 5. Botを、通知先にしたいグループトークルームに追加する
    → 追加した時点で、そのルームが通知先に自動設定されます(設定画面でチャンネルIDの手入力も可)
 
