@@ -876,6 +876,7 @@
   // 集計・一覧の絞り込みで名前を使っている進捗（削除不可）
   var STATUS_REQUIRED = ["契約済","施工中","施工完了","清算済","失注"];
   var PROJECT_TYPES = ["原状回復工事","除草・草刈作業","植栽維持管理","建物・敷地清掃","排水管清掃","解体工事","その他"];
+  var DIVISIONS = ["緑化事業部","除雪事業部","本社管理部"];   // 自社メンバーの事業部（マスタ管理で編集できます）
   var ROLES = ["社長","営業","コーディネーター","施工管理","現場監督","設計","管理部門","事務","大工","塗装","屋根/外装","電気","内装","設備","ガス","水道","とび","外構","ハウスクリーニング","解体","左官","板金","サッシ","基礎","建具/家具","空調","防虫"];
   var PROPERTY_TYPES = ["アパート","戸建て","マンション","店舗","事務所","土地","その他"];
   var PROPERTY_STRUCTURES = ["木造","鉄骨造","RC造","SRC造","その他"];
@@ -2818,6 +2819,7 @@
     html += formRow("メールアドレス", false, false, '<input type="email" id="f-memail" placeholder="例：abcdeft@mail.com" value="'+v("email")+'">');
     if(m) html += formRow("所属会社", false, false, '<input type="text" id="f-mcompany" value="'+v("company")+'">');
     else html += formRow("所属会社", false, false, '<div style="font-size:12.5px;padding:8px 0">'+esc(state.orgSettings.companyName)+'</div>');
+    html += formRow("事業部", false, false, selectHtml("f-mdivision", ["未選択"].concat(DIVISIONS), (m && m.division) || "未選択"));
     html += formRow("職種", true, false, '<div class="assignee-pick" id="f-mroles">'+ROLES.map(function(r){return '<span class="chip-toggle'+(picked0.indexOf(r)!==-1?" on":"")+'" data-role-pick="'+esc(r)+'">'+esc(r)+'</span>';}).join("")+'</div>');
     html += formRow("ログインパスワード", true, true, '<div class="pw-wrap" style="max-width:280px"><input type="password" id="f-mpassword" placeholder="アプリへのログインに使用します" value="'+v("password")+'"><button type="button" class="pw-toggle" id="f-mpassword-toggle" tabindex="-1" title="パスワードを表示">'+iEye()+'</button></div>');
     var curPerm = m ? memberPermission(m) : "general";
@@ -2861,7 +2863,7 @@
         name:name, phone:phone, kana:document.getElementById("f-mkana").value.trim(),
         email:document.getElementById("f-memail").value.trim(),
         company: editing ? document.getElementById("f-mcompany").value.trim() : state.orgSettings.companyName,
-        roles:picked, password:password
+        division: document.getElementById("f-mdivision").value==="未選択" ? "" : document.getElementById("f-mdivision").value, roles:picked, password:password
       }, permissionFields(perm));
       if(!editing){
         writeDoc("members", null, data, "メンバーを登録しました", function(){ setTab("members"); });
@@ -2933,7 +2935,7 @@
     if(list.length===0){
       html += emptyState(iUsers,"メンバーが登録されていません","");
     }else{
-      html += '<div class="tablewrap"><table><thead><tr><th>氏名</th><th>所属会社</th><th>職種</th><th>'+(state.isAdmin?iAdmin():'')+'権限</th>'+(state.isAdmin?'<th></th>':'')+'</tr></thead><tbody>';
+      html += '<div class="tablewrap"><table><thead><tr><th>氏名</th><th>所属会社</th><th>事業部</th><th>職種</th><th>'+(state.isAdmin?iAdmin():'')+'権限</th>'+(state.isAdmin?'<th></th>':'')+'</tr></thead><tbody>';
       html += list.map(function(m){
         var perm = memberPermission(m);
         var permCell = state.isAdmin ?
@@ -2942,7 +2944,7 @@
           }).join("")+'</select>' :
           '<span class="tag'+(perm==="admin"?"":" muted")+'" style="'+(perm==="admin"?'background:var(--sidebar-active);color:#fff':'')+'">'+esc(permissionLabel(perm))+'</span>';
         return '<tr class="rowhover" data-row-id="'+esc(m.id)+'"><td class="cell-main"><div class="member-name"><span class="mini-avatar" style="background:'+avaColor(m.name)+'">'+esc(initials(m.name))+'</span>'+esc(m.name)+'</div></td>'+
-          '<td data-label="所属会社">'+esc(m.company||"—")+'</td>'+
+          '<td data-label="所属会社">'+esc(m.company||"—")+'</td><td data-label="事業部">'+esc(m.division||"—")+'</td>'+
           '<td data-label="職種"><div class="tagrow" style="margin-top:0">'+(m.roles||[]).map(function(r){return '<span class="tag muted">'+esc(r)+'</span>';}).join("")+'</div></td>'+
           '<td data-label="権限">'+permCell+'</td>'+
           (state.isAdmin ?
@@ -3333,7 +3335,7 @@
       html += '<div class="chat-side">'+(chatProject(chat)?'<a class="goproj" href="#" data-open-project="'+esc(chatProject(chat).id)+'">'+iDoc()+' 案件詳細へ</a>':'<div style="height:12px"></div>')+
         '<h3 style="padding-left:12px;display:flex;justify-content:space-between;align-items:center;padding-right:12px">メンバー<button class="btn sm outline" id="chat-edit">'+iEdit()+' チャットを編集</button></h3><div class="mlist">'+
         (mem.length ? mem.map(function(m){
-          return '<div class="mi"><div class="cav" style="background:'+avaColor(m.name)+'">'+esc(initials(m.name))+'</div><div><div class="mn">'+esc(m.name)+'</div><div class="ms">'+esc(m.company||"")+((m.roles||[]).length?'<br>'+esc(m.roles.join(",")):'')+'</div></div></div>';
+          return '<div class="mi"><div class="cav" style="background:'+avaColor(m.name)+'">'+esc(initials(m.name))+'</div><div><div class="mn">'+esc(m.name)+'</div><div class="ms">'+esc(m.company||"")+(m.division?'<br>'+esc(m.division):'')+((m.roles||[]).length?'<br>'+esc(m.roles.join(",")):'')+'</div></div></div>';
         }).join("") : '<div style="padding:16px;font-size:12px;color:var(--ink-faint)">メンバーが登録されていません</div>')+
         '</div><button class="chat-del" data-chat-hide="'+esc(chat.id)+'" style="margin-bottom:0">'+iEye(!isHidden(chat))+' '+(isHidden(chat)?'チャットを再表示する':'チャットを非表示にする')+'</button><button class="chat-del" id="chat-del">'+iTrash()+' チャットを削除する</button></div>';
     }
@@ -3422,7 +3424,7 @@
     var html = '<div class="card" style="padding:20px;max-width:520px;display:flex;flex-direction:column;gap:14px">';
     html += '<h2 style="font-size:13.5px;margin-bottom:4px">個人情報</h2>';
     html += '<div style="display:flex;align-items:center;gap:12px"><span class="mini-avatar" style="background:'+avaColor(me.name)+';width:44px;height:44px;font-size:16px">'+esc(initials(me.name))+'</span>'+
-      '<div><div style="font-weight:700;font-size:14px">'+esc(me.name)+'</div><div style="font-size:11.5px;color:var(--ink-faint)">'+esc(me.company||"")+'</div></div></div>';
+      '<div><div style="font-weight:700;font-size:14px">'+esc(me.name)+'</div><div style="font-size:11.5px;color:var(--ink-faint)">'+esc(me.company||"")+(me.division?" ／ "+esc(me.division):"")+'</div></div></div>';
     html += '<div class="kv" style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--ink-soft)">'+
       '<span class="tag'+(perm==="admin"?"":" muted")+'">'+esc(permissionLabel(perm))+'</span>'+
       (me.roles||[]).map(function(r){return '<span class="tag muted">'+esc(r)+'</span>';}).join("")+'</div>';
@@ -3452,6 +3454,7 @@
   var MASTERS = [
     {key:"statuses", label:"案件進捗", arr:STATUS_LIST, note:"案件の進捗（一覧の絞り込み・登録画面）に出ます。契約済・施工中・施工完了・清算済・失注は集計に使うため削除できません。色は自動で付きます"},
     {key:"projectTypes", label:"案件種類", arr:PROJECT_TYPES, note:"案件の登録・編集の「案件種類」に出ます"},
+    {key:"divisions", label:"事業部", arr:DIVISIONS, note:"自社メンバーの「事業部」に出ます"},
     {key:"roles", label:"職種", arr:ROLES, note:"メンバーの「職種」に出ます"},
     {key:"propertyTypes", label:"物件種類", arr:PROPERTY_TYPES, note:"物件情報の「物件種類」に出ます"},
     {key:"propertyStructures", label:"物件構造", arr:PROPERTY_STRUCTURES, note:"物件情報の「構造」に出ます"},
@@ -3463,7 +3466,7 @@
   var MASTER_TABS = [
     ["project","案件",["statuses","projectTypes"]],
     ["property","物件情報",["propertyTypes","propertyStructures"]],
-    ["member","メンバー",["roles"]],
+    ["member","メンバー",["divisions","roles"]],
     ["schedule","工程表",["stepNames"]],
     ["calendar","カレンダー",["eventTypes"]],
     ["reports","報告書",["reportTypes"]]
@@ -3498,6 +3501,7 @@
     var n = 0;
     if(m.key==="projectTypes") n = rawStore.projects.filter(function(p){return p.type===name;}).length;
     else if(m.key==="statuses") n = rawStore.projects.filter(function(p){return p.status===name;}).length;
+    else if(m.key==="divisions") n = state.members.filter(function(x){return x.division===name;}).length;
     else if(m.key==="roles") n = state.members.filter(function(x){return (x.roles||[]).indexOf(name)!==-1;}).length;
     else if(m.key==="propertyTypes") n = rawStore.projects.filter(function(p){return p.propertyType===name;}).length;
     else if(m.key==="stepNames") n = state.steps.filter(function(x){return x.name===name;}).length;
@@ -3548,7 +3552,7 @@
   var MASTER_FIELDS = {
     statuses:[["projects","status"]], projectTypes:[["projects","type"]],
     propertyTypes:[["projects","propertyType"]], propertyStructures:[["projects","propertyStructure"]],
-    roles:[["members","roles"]], stepNames:[["steps","name"]], eventTypes:[["events","category"]], reportTypes:[["reports","type"]]
+    divisions:[["members","division"]], roles:[["members","roles"]], stepNames:[["steps","name"]], eventTypes:[["events","category"]], reportTypes:[["reports","type"]]
   };
   function masterAffected(key, removed){
     var out = [];
@@ -4790,11 +4794,12 @@
         {key:"phone",label:"携帯番号"},
         {key:"email",label:"メールアドレス"},
         {key:"company",label:"所属会社",bulk:true},
+        {key:"division",label:"事業部",options:DIVISIONS,bulk:true},
         {key:"roles",label:"職種",type:"list",options:ROLES,bulk:true},
         {key:"permission",label:"権限",type:"perm",bulk:true},
         {key:"password",label:"パスワード",importOnly:true}
       ],
-      sample:{name:"山田 武史",kana:"ヤマダ タケシ",phone:"09012341234",email:"yamada@example.com",company:"株式会社三桜",roles:"営業",permission:"一般",password:"1234"},
+      sample:{name:"山田 武史",kana:"ヤマダ タケシ",phone:"09012341234",email:"yamada@example.com",company:"株式会社三桜",division:"緑化事業部",roles:"営業",permission:"一般",password:"1234"},
       all:function(){ return state.members; },
       fileLabel:function(){ return "メンバー一覧"; },
       finalize:function(patch, existing){
