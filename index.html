@@ -5753,6 +5753,95 @@
     };
   }
 
+  /* ---- 他システム（クラフタ等）のCSV取込：列を対応付けて案件として登録 ---- */
+  var EXT_FIELDS = [
+    ["name","案件名（現場名）",true,["現場名","案件名","工事名","物件名","件名","名称","現場"]],
+    ["customerName","顧客名",false,["顧客","取引先","発注者","施主","お客様","元請","得意先"]],
+    ["address","住所",false,["住所","所在地","現場住所"]],
+    ["startDate","開始日",false,["開始","着工","着手","工期(自","工期（自","from"]],
+    ["endDate","終了日",false,["終了","完工","竣工","完了日","工期(至","工期（至","to"]],
+    ["status","進捗・状態",false,["状態","ステータス","進捗","status"]],
+    ["amount","金額",false,["金額","請負","契約金額","受注","売上"]],
+    ["memo","メモ",false,["備考","メモ","note","コメント"]]
+  ];
+  function extIsoDate(v){
+    var m = String(v||"").normalize("NFKC").match(/(\d{4})\D{1,2}(\d{1,2})\D{1,2}(\d{1,2})/);
+    return m ? m[1]+"-"+("0"+m[2]).slice(-2)+"-"+("0"+m[3]).slice(-2) : "";
+  }
+  function extStatus(v, dflt){
+    var t = String(v||"").normalize("NFKC").trim(); if(!t) return dflt;
+    if(STATUS_LIST.indexOf(t)!==-1) return t;
+    if(/完了|完工|竣工|終了|済/.test(t)) return STATUS_LIST.indexOf("施工完了")!==-1 ? "施工完了" : dflt;
+    if(/施工|進行|着工|工事中/.test(t)) return STATUS_LIST.indexOf("施工中")!==-1 ? "施工中" : dflt;
+    return dflt;
+  }
+  function openExtImport(){
+    if(!csvCanWrite("projects")) return;
+    openModal("他システムのCSVから案件を取り込む（クラフタなど）", '<div style="font-size:12.5px;line-height:1.7"><div>クラフタ等の「現場一覧」を書き出したCSV（またはExcelをCSV保存したもの）を選ぶと、列を自動で対応付けます。取り込む前に確認・修正できます。</div>'+
+      '<div style="margin-top:12px"><input type="file" id="ext-file" accept=".csv,text/csv"></div><div id="ext-body" style="margin-top:12px"></div></div>',
+      '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="ext-run" disabled>取り込む</button>');
+    var rows = null, head = [];
+    var body = document.getElementById("ext-body"), run = document.getElementById("ext-run");
+    var colVal = function(r, key){ var sel = document.getElementById("ext-map-"+key); var i = sel ? Number(sel.value) : -1; return i>=0 ? String(r[i]==null?"":r[i]).trim() : ""; };
+    var build = function(){
+      var dflt = document.getElementById("ext-dflt").value;
+      var out = [], dup = 0, existing = {};
+      state.projects.forEach(function(p){ existing[custNormName(p.name)+"|"+custNormName(p.address)] = 1; });
+      rows.forEach(function(r){
+        var name = colVal(r,"name"); if(!name) return;
+        var addr = colVal(r,"address");
+        if(existing[custNormName(name)+"|"+custNormName(addr)]){ dup++; return; }
+        var pref = PREFS.filter(function(x){ return addr.indexOf(x)===0; })[0] || "";
+        var memo = colVal(r,"memo");
+        out.push({name:name, customerName:colVal(r,"customerName"), prefecture:pref, address:pref?addr.slice(pref.length):addr,
+          startDate:extIsoDate(colVal(r,"startDate")), endDate:extIsoDate(colVal(r,"endDate")), status:extStatus(colVal(r,"status"), dflt),
+          amount:parseInt(String(colVal(r,"amount")).normalize("NFKC").replace(/[^0-9]/g,"")||"0",10), workInstruction:memo});
+      });
+      return {list:out, dup:dup};
+    };
+    var preview = function(){
+      var b = build(), pv = document.getElementById("ext-preview");
+      pv.innerHTML = '<div style="margin-bottom:6px">取り込める案件 <b>'+b.list.length+'</b>件'+(b.dup?'　<span style="color:var(--ink-faint)">（登録済みと同じ名前・住所の '+b.dup+'件は除外）</span>':'')+'</div>'+
+        '<div style="max-height:160px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:11.5px;color:var(--ink-soft)">'+b.list.slice(0,8).map(function(x){ return '<div>'+esc(x.name)+'　'+esc([x.customerName,x.prefecture+x.address,x.startDate&&(x.startDate+"〜"+x.endDate),x.status].filter(Boolean).join(" / "))+'</div>'; }).join("")+(b.list.length>8?'<div>…ほか '+(b.list.length-8)+'件</div>':'')+'</div>';
+      run.disabled = b.list.length===0;
+    };
+    document.getElementById("ext-file").addEventListener("change", function(ev){
+      var file = ev.target.files && ev.target.files[0]; if(!file) return;
+      var fr = new FileReader();
+      fr.onload = function(){
+        var all; try{ all = parseCsv(csvDecode(fr.result)).filter(function(r){ return r.some(function(x){ return String(x).trim(); }); }); }catch(e){ body.textContent = "CSVの解析に失敗しました"; return; }
+        if(all.length<2){ body.textContent = "データ行がありません"; return; }
+        head = all[0].map(function(x){ return String(x).trim(); }); rows = all.slice(1);
+        var guess = function(f){ for(var k=0;k<f[3].length;k++){ for(var i=0;i<head.length;i++){ if(head[i].toLowerCase().indexOf(f[3][k].toLowerCase())!==-1) return i; } } return -1; };
+        var opts = function(sel){ return '<option value="-1">（取り込まない）</option>'+head.map(function(h,i){ return '<option value="'+i+'"'+(i===sel?" selected":"")+'>'+esc(h||("列"+(i+1)))+'</option>'; }).join(""); };
+        body.innerHTML = '<div style="font-size:12px;color:var(--ink-faint);margin-bottom:6px">'+rows.length+'行を読み込みました。クラフタの列を、このアプリの項目に対応付けてください。</div>'+
+          '<div style="display:grid;grid-template-columns:130px 1fr;gap:6px 10px;align-items:center;font-size:12.5px">'+EXT_FIELDS.map(function(f){ return '<span>'+esc(f[1])+(f[2]?' <span class="req">必須</span>':'')+'</span><select id="ext-map-'+f[0]+'">'+opts(guess(f))+'</select>'; }).join("")+
+          '<span>状態が不明なとき</span><select id="ext-dflt">'+STATUS_LIST.map(function(x){ return '<option'+(x==="施工中"?" selected":"")+'>'+esc(x)+'</option>'; }).join("")+'</select></div><div id="ext-preview" style="margin-top:12px"></div>';
+        body.querySelectorAll("select").forEach(function(sl){ sl.addEventListener("change", preview); });
+        preview();
+      };
+      fr.readAsArrayBuffer(file);
+    });
+    run.onclick = function(){
+      var b = build(); if(!b.list.length) return;
+      run.disabled = true;
+      // 顧客は同じ名前があれば紐づけ、なければ作成してから案件を登録する
+      var names = {}; b.list.forEach(function(x){ if(x.customerName) names[x.customerName] = ""; });
+      var ids = {}, queue = Object.keys(names);
+      var next = function(){
+        if(!queue.length) return Promise.resolve();
+        var n = queue.shift();
+        return new Promise(function(res){ ensureCustomer({name:n}, function(id){ ids[n] = id; res(); }); }).then(next);
+      };
+      next().then(function(){
+        runBatch(b.list.map(function(x){
+          var d = Object.assign({}, x, {type:PROJECT_TYPES[0], assignees:[], customerId:ids[x.customerName]||""});
+          return saveRaw("projects", null, d);
+        }), "取り込み");
+      });
+    };
+  }
+
   /* ---- bulk edit (selection mode) ---- */
   function bulkReset(){ state.bulk = {on:false, entity:null, selected:{}, field:"", value:""}; }
   function bulkSelectedIds(){ return Object.keys(state.bulk.selected).filter(function(k){ return state.bulk.selected[k]; }); }
@@ -5772,6 +5861,7 @@
     var sm = small ? " sm" : "";
     var on = state.bulk.on && state.bulk.entity===entity;
     return (E.importable ? '<button class="btn outline'+sm+'" data-csv-import="'+entity+'">'+iAdmin()+iUpload()+' CSV入力</button>' : '')+
+      (entity==="projects" ? '<button class="btn outline'+sm+'" data-ext-import>'+iAdmin()+iUpload()+' 他システムから取込</button>' : '')+
       '<button class="btn outline'+sm+'" data-csv-export="'+entity+'">'+iAdmin()+iDownload()+' CSV出力</button>'+
       '<button class="btn'+(on?' primary':' outline')+sm+'" data-bulk-toggle="'+entity+'">'+iAdmin()+'一括編集'+(on?'（終了）':'')+'</button>';
   }
@@ -6106,6 +6196,7 @@
     c.querySelectorAll("[data-del-customer]").forEach(function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-del-customer"); confirmDelete("この顧客を削除しますか？",function(){deleteDoc("customers",id,"顧客を削除しました");}); }); });
     c.querySelectorAll("[data-done-task]").forEach(function(el){ el.addEventListener("click", function(){ writeDoc("tasks", el.getAttribute("data-done-task"), {done:true}, "タスクを完了しました"); }); });
     c.querySelectorAll("[data-csv-export]").forEach(function(el){ el.addEventListener("click", function(){ csvExport(el.getAttribute("data-csv-export")); }); });
+    c.querySelectorAll("[data-ext-import]").forEach(function(el){ el.addEventListener("click", openExtImport); });
     c.querySelectorAll("[data-csv-import]").forEach(function(el){ el.addEventListener("click", function(){ openCsvImport(el.getAttribute("data-csv-import")); }); });
     c.querySelectorAll("[data-bulk-toggle]").forEach(function(el){ el.addEventListener("click", function(){ bulkToggle(el.getAttribute("data-bulk-toggle")); }); });
     c.querySelectorAll("[data-edit-member]").forEach(function(el){ el.addEventListener("click", function(){ editMember(el.getAttribute("data-edit-member")); }); });
