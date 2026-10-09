@@ -2415,12 +2415,17 @@
       else if(j && j.status===200) finish(null, "notfound");
       else finish(null, "error");
     }
+    function proxy(){
+      if(done) return;
+      if(!/^https?:$/.test(location.protocol) || window.claude){ finish(null, "error"); return; }
+      fetch("/api/zip?zipcode="+zip).then(function(r){ return r.json(); }).then(parse).catch(function(){ finish(null, "error"); });
+    }
     function jsonp(){
       var name = "__zipcb"+Date.now(), sc = document.createElement("script");
-      var timer = setTimeout(function(){ cleanup(); finish(null, "error"); }, 8000);
+      var timer = setTimeout(function(){ cleanup(); proxy(); }, 8000);
       function cleanup(){ clearTimeout(timer); try{ delete window[name]; }catch(e){ window[name]=undefined; } if(sc.parentNode) sc.parentNode.removeChild(sc); }
       window[name] = function(j){ cleanup(); parse(j); };
-      sc.onerror = function(){ cleanup(); finish(null, "error"); };
+      sc.onerror = function(){ cleanup(); proxy(); };
       sc.src = "https://zipcloud.ibsnet.jp/api/search?zipcode="+zip+"&callback="+name;
       document.head.appendChild(sc);
     }
@@ -6346,6 +6351,22 @@
     bindListDefEvents(c);
     c.querySelectorAll("[data-setseg]").forEach(function(el){ el.addEventListener("click", function(){ state.settingsSeg = el.getAttribute("data-setseg"); render(); }); });
 
+    var setZip = document.getElementById("set-zip"), setAddr = document.getElementById("set-address");
+    if(setZip && setAddr && state.isAdmin){
+      var zSeq = 0;
+      setAddr.addEventListener("input", function(){ setAddr.removeAttribute("data-auto"); });
+      setZip.addEventListener("input", function(){
+        var d = String(setZip.value).replace(/[０-９]/g, function(ch){ return String.fromCharCode(ch.charCodeAt(0)-0xFEE0); }).replace(/[^0-9]/g,"").slice(0,7);
+        setZip.value = d.length>3 ? d.slice(0,3)+"-"+d.slice(3) : d;
+        if(d.length!==7) return;
+        var my = ++zSeq;
+        lookupPostal(d, function(res, err){
+          if(my!==zSeq) return;
+          if(!res){ toast(err==="notfound" ? "該当する住所が見つかりませんでした" : "住所を取得できませんでした。手入力してください"); return; }
+          if(!setAddr.value.trim() || setAddr.getAttribute("data-auto")==="1"){ setAddr.value = res.prefecture+res.address; setAddr.setAttribute("data-auto","1"); toast("郵便番号から住所を入力しました"); }
+        });
+      });
+    }
     var setSave = document.getElementById("set-save");
     if(setSave){
       setSave.addEventListener("click", function(){
