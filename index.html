@@ -2326,7 +2326,9 @@
   var PAGE_SIZES = [6,10,20,50,100];
   function pageSizeFor(kind){
     var def = kind==="cust" ? 20 : 6, v = 0;
-    try{ v = parseInt(localStorage.getItem("gc_ps_"+kind),10); }catch(e){}
+    state.pageSizes = state.pageSizes || {};
+    if(state.pageSizes[kind]) v = state.pageSizes[kind];
+    else { try{ v = parseInt(localStorage.getItem("gc_ps_"+kind),10); }catch(e){} }
     return PAGE_SIZES.indexOf(v)!==-1 ? v : def;
   }
   function pageSizeSelect(kind){
@@ -5584,7 +5586,7 @@
   /* ---- what each screen currently shows (export / "select all" use these) ---- */
   var PROJ_SORTS = [["new","作成日（新しい順）"],["old","作成日（古い順）"],["name","案件名（五十音順）"],["namer","案件名（逆順）"],["start","施工開始日（近い順）"],["startr","施工開始日（遠い順）"],["end","施工完了予定日（近い順）"],["endr","施工完了予定日（遠い順）"],["amount","金額（高い順）"],["amountr","金額（低い順）"],["status","進捗順"],["cust","顧客名順"]];
   function projSortKey(){
-    var v = ""; try{ v = localStorage.getItem("gc_projsort")||""; }catch(e){}
+    var v = state.projSort || ""; if(!v){ try{ v = localStorage.getItem("gc_projsort")||""; }catch(e){} }
     return PROJ_SORTS.some(function(x){ return x[0]===v; }) ? v : "new";
   }
   function projSortFn(k){
@@ -6622,11 +6624,11 @@
       var mode = filterCard.getAttribute("data-filter-mode");
       var f = mode==="sales"?state.salesFilter:state.constFilter;
       var sortSel = document.getElementById("flt-sort");
-      if(sortSel) sortSel.addEventListener("change", function(){ try{ localStorage.setItem("gc_projsort", sortSel.value); }catch(e){} f.page = 1; render(); });
+      if(sortSel) sortSel.addEventListener("change", function(){ state.projSort = sortSel.value; try{ localStorage.setItem("gc_projsort", sortSel.value); }catch(e){} f.page = 1; render(); });
       searchBtn.addEventListener("click", function(){
         f.name = document.getElementById("flt-name").value.trim();
         f.type = document.getElementById("flt-type").value;
-        try{ localStorage.setItem("gc_projsort", document.getElementById("flt-sort").value); }catch(e){}
+        state.projSort = document.getElementById("flt-sort").value; try{ localStorage.setItem("gc_projsort", state.projSort); }catch(e){}
         f.noSched = document.getElementById("flt-nosched").checked;
         f.status = Array.prototype.slice.call(c.querySelectorAll(".flt-status:checked")).map(function(x){return x.value;});
         f.page = 1;
@@ -6647,6 +6649,7 @@
 
     c.querySelectorAll("[data-cflt]").forEach(function(el){ el.addEventListener("change", function(){ custFilterState()[el.getAttribute("data-cflt")] = el.value; state.custPage = 1; render(); }); });
     c.querySelectorAll("[data-pagesize]").forEach(function(el){ el.addEventListener("change", function(){
+      state.pageSizes = state.pageSizes || {}; state.pageSizes[el.getAttribute("data-pagesize")] = parseInt(el.value,10);
       try{ localStorage.setItem("gc_ps_"+el.getAttribute("data-pagesize"), el.value); }catch(e){}
       if(el.getAttribute("data-pagesize")==="cust") state.custPage = 1; else { state.salesFilter.page = 1; state.constFilter.page = 1; }
       render(); }); });
