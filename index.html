@@ -2298,7 +2298,7 @@
     if(pageItems.length===0){
       html += emptyState(iBriefcase,"該当する案件がありません","条件を変更するか、新規案件を登録してください");
     }else{
-      html += '<div class="tablewrap"><table><thead><tr><th>案件名 / 物件住所</th><th>進捗</th><th>工程・予定・報告</th><th>施工開始日</th><th>施工完了予定日</th><th>金額</th><th>作成日</th><th></th></tr></thead><tbody>';
+      html += '<div class="tablewrap"><table><thead><tr><th>案件名 / 物件住所</th><th>顧客</th><th>進捗</th><th>工程・予定・報告</th><th>施工開始日</th><th>施工完了予定日</th><th>金額</th><th>作成日</th><th></th></tr></thead><tbody>';
       html += pageItems.map(function(p){
         var names = normalizeAssignees(p.assignees).map(function(a){return a.name;});
         return '<tr class="rowhover" data-row-id="'+esc(p.id)+'"><td class="cell-main">'+
@@ -2306,6 +2306,7 @@
             '<div class="cell-sub">'+(hiddenFor(p,"pr_addr")?"":esc(propertyAddressOf(p).full))+'</div>'+
             '<div class="tagrow">'+names.map(function(a){return '<span class="tag">'+esc(a)+'</span>';}).join("")+'</div>'+
           '</td>'+
+          '<td data-label="顧客">'+(p.customerName?'<div style="font-size:12.5px;font-weight:600">'+esc(p.customerName)+'</div>':'<div style="font-size:12px;color:var(--ink-faint)">未設定</div>')+'<button class="btn sm" data-list-cust="'+esc(p.id)+'" style="margin-top:4px">'+(p.customerName?'顧客を編集':'顧客を設定')+'</button></td>'+
           '<td data-label="進捗">'+(hiddenFor(p,"p_status")?"—":statusBadge(p))+(freeeBadge(p)?'<div style="margin-top:4px">'+freeeBadge(p)+'</div>':'')+'</td>'+
           '<td data-label="作業">'+workChips(p)+'</td>'+
           '<td class="num" data-label="施工開始日">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.startDate))+'</td>'+
@@ -5381,7 +5382,7 @@
         {key:"name",label:"案件名"},
         {key:"type",label:"案件種類",options:PROJECT_TYPES,bulk:true},
         {key:"status",label:"進捗",options:STATUS_LIST,bulk:true},
-        {key:"customerName",label:"顧客名"},
+        {key:"customerName",label:"顧客名",bulk:true},
         {key:"prefecture",label:"都道府県",options:PREFS},
         {key:"address",label:"物件住所"},
         {key:"propertyType",label:"物件種類",options:PROPERTY_TYPES},
@@ -5401,7 +5402,7 @@
         if(patch.customerName){
           var cu = state.customers.find(function(c){ return c.name===patch.customerName; });
           if(cu) d.customerId = cu.id;
-        }
+        }else if(patch.customerName==="" && existing && existing.customerId) d.customerId = "";
         if(!existing){
           if(!d.status) d.status = "現地調査前";
           if(!d.type) d.type = "その他";
@@ -6131,7 +6132,8 @@
   function bulkValueControl(c){
     if(!c) return "";
     var opts = null;
-    if(c.options && c.type!=="list") opts = c.options.map(function(o){ return [o,o]; });
+    if(c.key==="customerName") opts = [["","（顧客なし）"]].concat(state.customers.map(function(x){ return [x.name,x.name]; }));
+    else if(c.options && c.type!=="list") opts = c.options.map(function(o){ return [o,o]; });
     else if(c.type==="perm") opts = PERMISSION_LEVELS.map(function(p){ return [p[1],p[1]]; });
     else if(c.type==="bool") opts = [["はい","はい"],["いいえ","いいえ"]];
     if(opts) return '<select id="bulk-value">'+opts.map(function(o){ return '<option value="'+esc(o[0])+'"'+(state.bulk.value===o[0]?" selected":"")+'>'+esc(o[1])+'</option>'; }).join("")+'</select>';
@@ -6308,6 +6310,8 @@
         var ms = state.members.filter(function(m){ return m.kind==="internal" || m.kind==="external"; });
         ctl = '<select id="bm-mode-'+i+'" style="margin-bottom:6px"><option value="add">追加する</option><option value="remove">外す</option><option value="replace">この内容に置き換える</option></select>'+
           '<div style="display:flex;flex-wrap:wrap;gap:6px 12px;max-height:130px;overflow:auto">'+ms.map(function(m){ return '<label style="font-size:12.5px;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" data-bm-name="'+i+'" value="'+esc(m.name)+'"> '+esc(m.name)+'</label>'; }).join("")+'</div>';
+      }else if(c.key==="customerName"){
+        ctl = '<select id="bm-val-'+i+'"><option value="">（顧客なし）</option>'+state.customers.map(function(x){ return '<option value="'+esc(x.name)+'">'+esc(x.name)+'</option>'; }).join("")+'</select>';
       }else if(c.options && c.type!=="list"){
         ctl = '<select id="bm-val-'+i+'">'+c.options.map(function(o){ return '<option value="'+esc(o)+'">'+esc(o)+'</option>'; }).join("")+'</select>';
       }else{
@@ -6496,6 +6500,7 @@
       var ids = Object.keys(state.pfSel);
       confirmDelete(ids.length+"件のファイルを削除しますか？", function(){ state.pfSel={}; ids.forEach(function(id){ deleteDoc("files", id, "削除しました"); }); });
     });
+    c.querySelectorAll("[data-list-cust]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.stopPropagation(); openProjectSectionEdit("customer", el.getAttribute("data-list-cust")); }); });
     c.querySelectorAll("[data-edit-section]").forEach(function(el){ el.addEventListener("click", function(){ openProjectSectionEdit(el.getAttribute("data-edit-section"), state.viewingProjectId); }); });
     c.querySelectorAll("[data-edit-project]").forEach(function(el){ el.addEventListener("click", function(){ var p=state.projects.find(function(x){return x.id===el.getAttribute("data-edit-project");}); goProjectForm(state.returnTab, p); }); });
     c.querySelectorAll("[data-newproject]").forEach(function(el){ el.addEventListener("click", function(){ goProjectForm(el.getAttribute("data-newproject"), null); }); });
