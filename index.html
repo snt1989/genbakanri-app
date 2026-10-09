@@ -851,6 +851,7 @@
     {id:"members", label:"メンバー管理", icon:iUsers},
     {id:"customers", label:"顧客管理", icon:iBriefcase2},
     {id:"files", label:"写真・ファイル", icon:iImage},
+    {id:"help", label:"使い方・Q&A", icon:iHelp},
     {id:"settings", label:"設定", icon:iBox}
   ];
   var SUBPAGES = {"project-form":1,"project-detail":1,"member-form":1,"project-files":1};
@@ -1365,6 +1366,7 @@
   function iDoc(){ return svgIcon('<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M9.5 13h5M9.5 16.5h5"/>'); }
   function iChat(){ return svgIcon('<path d="M4 5h16v11H8l-4 4z"/>'); }
   function iUsers(){ return svgIcon('<circle cx="9" cy="8" r="3.3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5c1.7.4 3 2 3 3.8 0 1.8-1.3 3.4-3 3.8"/><path d="M21 20c0-2.7-1.8-5-4.3-5.7"/>'); }
+  function iHelp(){ return svgIcon('<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 1-1 1.7"/><path d="M12 17h.01"/>'); }
   function iBox(){ return svgIcon('<path d="M3.5 8 12 3.5 20.5 8 12 12.5z"/><path d="M3.5 8v9L12 21.5 20.5 17V8"/><path d="M12 12.5V21.5"/>'); }
   function iPlus(){ return svgIcon('<path d="M12 5v14M5 12h14"/>',14); }
   function iGlobe(){ return svgIcon('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9S14.6 18.4 12 21c-2.6-2.6-3.8-5.6-3.8-9S9.4 5.6 12 3z"/>',20); }
@@ -1408,7 +1410,7 @@
   // 管理者が「設定 > 管理画面」で、スマホ下部のバーに出す項目と順番を決める。全員に共通。保存先: settings/mobileNav
   var MOBILE_NAV_DEFAULT = ["home","sales","construction","chat"];
   var MOBILE_NAV_MAX = 4;   // 右端の「メニュー」と合わせて5つまで
-  var BN_SHORT = {home:"ホーム", tasks:"タスク", sales:"営業", construction:"施工", calendar:"予定", schedule:"工程表", reports:"報告書", chat:"チャット", members:"メンバー", customers:"顧客", files:"写真", settings:"設定"};
+  var BN_SHORT = {help:"使い方", home:"ホーム", tasks:"タスク", sales:"営業", construction:"施工", calendar:"予定", schedule:"工程表", reports:"報告書", chat:"チャット", members:"メンバー", customers:"顧客", files:"写真", settings:"設定"};
   function mobileNavTabs(){
     var seen = {}, list = (state.mobileNav || MOBILE_NAV_DEFAULT).filter(function(id){
       if(seen[id] || !TABS.some(function(t){ return t.id===id; })) return false; seen[id] = 1; return true;
@@ -1588,6 +1590,7 @@
     else if(state.tab==="members") c.innerHTML = banner+renderMembers();
     else if(state.tab==="customers") c.innerHTML = banner+renderCustomers();
     else if(state.tab==="files") c.innerHTML = banner+renderFiles();
+    else if(state.tab==="help") c.innerHTML = banner+'<div class="page-head"><h1 style="font-size:20px;margin:0 0 4px">使い方・Q&A</h1></div>'+renderSettingsHelp();
     else if(state.tab==="settings") c.innerHTML = banner+renderSettings();
     else if(state.tab==="project-form") c.innerHTML = banner+renderProjectForm();
     else if(state.tab==="project-detail") c.innerHTML = banner+renderProjectDetail();
@@ -3525,7 +3528,6 @@
     if(state.isAdmin){ s.push(["admin","管理画面"]); s.push(["loginlog","ログイン履歴"]); s.push(["master","マスタ管理"]); s.push(["trash","ゴミ箱"]); }
     if(worksAvailable()) s.push(["works","LINE WORKS"]);
     if(state.isAdmin){ s.push(["freee","freee連携"]); s.push(["backup","バックアップ"]); }
-    s.push(["help","使い方・Q&A"]);
     return s;
   }
   function myMember(){
@@ -3541,7 +3543,6 @@
       return '<div class="segopt'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+((x[0]==="company"||x[0]==="admin"||x[0]==="loginlog"||x[0]==="freee"||x[0]==="master"||x[0]==="trash"||x[0]==="backup")?iAdmin():'')+x[1]+'</div>';
     }).join("")+'</div>';
     if(state.settingsSeg==="personal") html += renderSettingsPersonal();
-    else if(state.settingsSeg==="help") html += renderSettingsHelp();
     else if(state.settingsSeg==="admin") html += renderSettingsAdmin();
     else if(state.settingsSeg==="loginlog") html += renderSettingsLoginLog();
     else if(state.settingsSeg==="freee") html += renderSettingsFreee();
