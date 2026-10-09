@@ -979,6 +979,22 @@
     var n = normPhone(phone); if(!n) return false;
     return state.members.some(function(x){ return x.id!==exceptId && normPhone(x.phone)===n; });
   }
+  /* ---- ログイン履歴（管理画面で確認） ---- */
+  function deviceSummary(){
+    var ua = navigator.userAgent||"", os = /iPhone|iPad|iPod/.test(ua) ? "iOS" : /Android/.test(ua) ? "Android" : /Windows/.test(ua) ? "Windows" : /Mac OS X|Macintosh/.test(ua) ? "Mac" : /Linux/.test(ua) ? "Linux" : "不明";
+    var br = /Edg\//.test(ua) ? "Edge" : /OPR\//.test(ua) ? "Opera" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : /Firefox\//.test(ua) ? "Firefox" : "ブラウザ";
+    var mobile = /iPhone|Android.*Mobile|iPod/.test(ua) ? "スマホ" : /iPad|Android/.test(ua) ? "タブレット" : "PC";
+    return mobile+" / "+os+" / "+br;
+  }
+  var localLoginLogs = [];
+  function recordLogin(kind, name, memberName){
+    var rec = {at:new Date().toISOString(), kind:kind, name:String(name||"").slice(0,40), memberName:memberName||"", device:deviceSummary()};
+    try{
+      if(db) db.collection("loginLogs").add(rec).catch(function(){});
+      else localLoginLogs.push(Object.assign({id:uid()}, rec));
+    }catch(e){}
+  }
+  function maskLoginId(v){ var d = String(v||"").replace(/\D/g,""); return d.length>=8 ? "電話番号 …"+d.slice(-4) : String(v||""); }
   function attemptLogin(){
     clearLoginError();
     var idv = document.getElementById("login-name").value.trim();
@@ -990,11 +1006,13 @@
     // 電話番号 → 氏名（空白の有無・全角半角は区別しない）の順に照合する
     var m = (n.length>=8) ? state.members.find(function(x){ return normPhone(x.phone)===n && okPw(x); }) : null;
     if(!m && nn) m = state.members.find(function(x){ return normName(x.name)===nn && okPw(x); });
-    if(!m){ showLoginError("電話番号（氏名）またはパスワードが正しくありません"); return; }
-    completeLogin(m, document.getElementById("login-remember").checked);
+    if(!m){ recordLogin("fail", maskLoginId(idv), ""); showLoginError("電話番号（氏名）またはパスワードが正しくありません"); return; }
+    completeLogin(m, document.getElementById("login-remember").checked, "login");
   }
-  function completeLogin(m, remember){
+  function completeLogin(m, remember, kind){
     state.authed = true;
+    if(kind==="login") recordLogin("login", m.name, m.name);
+    else if(kind==="auto"){ try{ var lastA = Number(localStorage.getItem("gc_lastauto_log")||0); if(Date.now()-lastA > 6*3600*1000){ recordLogin("auto", m.name, m.name); localStorage.setItem("gc_lastauto_log", String(Date.now())); } }catch(e){} }
     state.myName = m.name;
     state.isAdmin = memberPermission(m)==="admin";
     try{
@@ -1015,7 +1033,7 @@
     try{ name = localStorage.getItem("gc_login_name"); phone = localStorage.getItem("gc_login_phone"); pass = localStorage.getItem("gc_login_password"); }catch(e){ return; }
     if((!name && !phone) || !pass) return;
     var m = state.members.find(function(x){ return (phone ? normPhone(x.phone)===phone : (!normPhone(x.phone) && x.name===name)) && x.password===pass; });
-    if(m) completeLogin(m, true);
+    if(m) completeLogin(m, true, "auto");
   }
   function logout(){
     state.authed = false;
@@ -3504,7 +3522,7 @@
   // (admins only: stats, permission/password management, backup).
   function settingsSections(){
     var s = state.isAdmin ? [["company","会社情報"],["personal","個人情報"]] : [["personal","個人情報"]];   // 会社情報は管理者のみ
-    if(state.isAdmin){ s.push(["admin","管理画面"]); s.push(["master","マスタ管理"]); s.push(["trash","ゴミ箱"]); }
+    if(state.isAdmin){ s.push(["admin","管理画面"]); s.push(["loginlog","ログイン履歴"]); s.push(["master","マスタ管理"]); s.push(["trash","ゴミ箱"]); }
     if(worksAvailable()) s.push(["works","LINE WORKS"]);
     if(state.isAdmin){ s.push(["freee","freee連携"]); s.push(["backup","バックアップ"]); }
     return s;
@@ -3519,10 +3537,11 @@
     if(state.settingsSeg!=="admin") state.navDraft = null;
     var html = '<h1 class="pagetitle">設定</h1><div style="height:14px"></div>';
     html += '<div class="segmented" style="margin-bottom:16px">'+sections.map(function(x){
-      return '<div class="segopt'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+((x[0]==="company"||x[0]==="admin"||x[0]==="freee"||x[0]==="master"||x[0]==="trash"||x[0]==="backup")?iAdmin():'')+x[1]+'</div>';
+      return '<div class="segopt'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+((x[0]==="company"||x[0]==="admin"||x[0]==="loginlog"||x[0]==="freee"||x[0]==="master"||x[0]==="trash"||x[0]==="backup")?iAdmin():'')+x[1]+'</div>';
     }).join("")+'</div>';
     if(state.settingsSeg==="personal") html += renderSettingsPersonal();
     else if(state.settingsSeg==="admin") html += renderSettingsAdmin();
+    else if(state.settingsSeg==="loginlog") html += renderSettingsLoginLog();
     else if(state.settingsSeg==="freee") html += renderSettingsFreee();
     else if(state.settingsSeg==="works") html += renderSettingsWorks();
     else if(state.settingsSeg==="master") html += renderSettingsMaster();
@@ -3725,6 +3744,53 @@
     if(affected.length && !confirmed){
       confirmDelete("「"+removed.filter(function(n){ return masterAffected(key,[n]).length; }).join("」「")+"」を削除します。使用中の登録済みデータ "+affected.length+"件 は「未入力」に変わります。", run);
     }else run();
+  }
+  var LOGIN_KIND = {login:["ログイン",""], auto:["自動ログイン","muted"], fail:["失敗","danger"]};
+  function loginLogsLoad(force){
+    var L = state.loginLogs = state.loginLogs || {list:null, loading:false, name:"all", kind:"all", days:"30"};
+    if(L.loading || (L.list && !force)) return;
+    if(!db){ L.list = localLoginLogs.slice(); return; }
+    L.loading = true;
+    db.collection("loginLogs").get().then(function(snap){ L.list = snap.docs.map(toObj); }, function(){ L.list = []; })
+      .then(function(){ L.loading = false; if(state.tab==="settings" && state.settingsSeg==="loginlog") render(); });
+  }
+  function renderSettingsLoginLog(){
+    if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
+    if(!state.loaded.members) return skeleton();
+    loginLogsLoad();
+    var L = state.loginLogs;
+    if(!L.list) return skeleton();
+    var all = L.list.slice().sort(function(a,b){ return String(b.at).localeCompare(String(a.at)); });
+    var since = L.days==="all" ? "" : new Date(Date.now()-Number(L.days)*86400000).toISOString();
+    var list = all.filter(function(x){
+      if(since && String(x.at)<since) return false;
+      if(L.kind!=="all" && x.kind!==L.kind) return false;
+      if(L.name!=="all" && (x.memberName||x.name)!==L.name) return false;
+      return true;
+    });
+    var d30 = new Date(Date.now()-30*86400000).toISOString(), d1 = new Date(Date.now()-86400000).toISOString();
+    var last = {}, cnt = {};
+    all.forEach(function(x){ if(x.kind==="fail" || !x.memberName) return; if(!last[x.memberName]) last[x.memberName] = x; if(String(x.at)>=d30) cnt[x.memberName] = (cnt[x.memberName]||0)+1; });
+    var failRecent = all.filter(function(x){ return x.kind==="fail" && String(x.at)>=d1; }).length;
+    var opt = function(v, cur, label){ return '<option value="'+esc(v)+'"'+(cur===v?" selected":"")+'>'+esc(label)+'</option>'; };
+    var html = '<div style="font-size:12px;color:var(--ink-faint);line-height:1.7;max-width:760px;margin-bottom:12px">メンバーがログインした記録です（日時・端末）。「自動ログイン」は保存済みの情報で開いたときの記録で、同じ端末では6時間に1回までです。失敗は、入力された電話番号（下4桁）または氏名だけを記録し、パスワードは記録しません。'+(db?'':'（この環境では、この画面を開いている間の記録のみです）')+'</div>';
+    html += '<div class="card" style="padding:14px 16px;max-width:760px;margin-bottom:14px"><h2 style="font-size:13.5px;margin-bottom:8px">メンバー別の最終ログイン'+(failRecent?'　<span class="tag" style="background:#fde7e7;color:#a12a2a">直近24時間の失敗 '+failRecent+'件</span>':'')+'</h2>'+
+      '<div class="tablewrap"><table><thead><tr><th>メンバー</th><th>最終ログイン</th><th>端末</th><th>30日の回数</th></tr></thead><tbody>'+
+      state.members.slice().sort(function(a,b){ return String((last[b.name]||{}).at||"").localeCompare(String((last[a.name]||{}).at||"")); }).map(function(m){
+        var l = last[m.name];
+        return '<tr><td class="cell-main">'+esc(m.name)+'</td><td data-label="最終ログイン">'+(l?fmtDateTime(l.at):'<span style="color:var(--ink-faint)">記録なし</span>')+'</td><td data-label="端末">'+esc(l?l.device:"—")+'</td><td class="num" data-label="30日の回数">'+(cnt[m.name]||0)+'</td></tr>';
+      }).join("")+'</tbody></table></div></div>';
+    html += '<div class="card filter-card"><div class="filter-line">'+
+      '<div class="fitem"><span>メンバー</span><select data-llf="name">'+opt("all",L.name,"すべて")+state.members.map(function(m){ return opt(m.name,L.name,m.name); }).join("")+'</select></div>'+
+      '<div class="fitem"><span>結果</span><select data-llf="kind">'+opt("all",L.kind,"すべて")+opt("login",L.kind,"ログイン")+opt("auto",L.kind,"自動ログイン")+opt("fail",L.kind,"失敗")+'</select></div>'+
+      '<div class="fitem"><span>期間</span><select data-llf="days">'+opt("7",L.days,"7日")+opt("30",L.days,"30日")+opt("90",L.days,"90日")+opt("all",L.days,"すべて")+'</select></div>'+
+      '<button class="btn" id="ll-reload">'+(L.loading?"更新中…":"最新の情報に更新")+'</button></div></div>';
+    html += '<div class="summary-line"><span>履歴 <b>'+list.length+'</b>件'+(list.length>500?'（新しい500件を表示）':'')+'</span></div>';
+    html += list.length ? '<div class="tablewrap"><table><thead><tr><th>日時</th><th>メンバー</th><th>結果</th><th>端末</th></tr></thead><tbody>'+list.slice(0,500).map(function(x){
+      var k = LOGIN_KIND[x.kind]||[x.kind,"muted"];
+      return '<tr><td class="num" data-label="日時">'+fmtDateTime(x.at)+'</td><td class="cell-main">'+(x.kind==="fail"?'<span style="color:var(--ink-faint)">入力：</span>':'')+esc(x.memberName||x.name||"—")+'</td><td data-label="結果"><span class="tag'+(k[1]==="muted"?" muted":"")+'"'+(k[1]==="danger"?' style="background:#fde7e7;color:#a12a2a"':'')+'>'+esc(k[0])+'</span></td><td data-label="端末">'+esc(x.device||"—")+'</td></tr>';
+    }).join("")+'</tbody></table></div>' : emptyState(iBox,"該当する履歴がありません","");
+    return html;
   }
   function renderSettingsAdmin(){
     if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
@@ -6502,6 +6568,8 @@
     bindFreeeEvents(c);
     bindWorksEvents(c);
     bindPushEvents(c);
+    c.querySelectorAll("[data-llf]").forEach(function(el){ el.addEventListener("change", function(){ state.loginLogs[el.getAttribute("data-llf")] = el.value; render(); }); });
+    var llr = document.getElementById("ll-reload"); if(llr) llr.addEventListener("click", function(){ loginLogsLoad(true); render(); });
     bindNavEvents(c);
     bindListDefEvents(c);
     c.querySelectorAll("[data-setseg]").forEach(function(el){ el.addEventListener("click", function(){ state.settingsSeg = el.getAttribute("data-setseg"); render(); }); });
