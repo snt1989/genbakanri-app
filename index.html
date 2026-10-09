@@ -2256,7 +2256,7 @@
       return true;
     }).sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");});
 
-    var perPage = 6, totalPages = Math.max(1,Math.ceil(filtered.length/perPage));
+    var perPage = pageSizeFor("proj"), totalPages = Math.max(1,Math.ceil(filtered.length/perPage));
     if(f.page>totalPages) f.page = totalPages;
     var pageItems = filtered.slice((f.page-1)*perPage, f.page*perPage);
 
@@ -2292,7 +2292,7 @@
       '<span><b>'+filtered.length+'</b>件 / 全'+state.projects.length+'件</span>'+
       STATUS_LIST.slice(0,4).map(function(s){return '<span>'+s+' <b style="font-size:13px">'+counts[s]+'</b></span>';}).join("")+
       '<span>合計金額 <b class="num" style="font-size:14px">'+fmtYen(totalAmount)+'</b></span>'+
-      '<span class="summary-pager">'+((f.page-1)*perPage+1)+'-'+Math.min(filtered.length,f.page*perPage)+' / '+filtered.length+'件</span>'+
+      '<span class="summary-pager">'+(filtered.length?((f.page-1)*perPage+1):0)+'-'+Math.min(filtered.length,f.page*perPage)+' / '+filtered.length+'件</span>'+pageSizeSelect("proj")+
     '</div>';
 
     if(pageItems.length===0){
@@ -2321,12 +2321,27 @@
     return html;
   }
 
+  var PAGE_SIZES = [6,10,20,50,100];
+  function pageSizeFor(kind){
+    var def = kind==="cust" ? 20 : 6, v = 0;
+    try{ v = parseInt(localStorage.getItem("gc_ps_"+kind),10); }catch(e){}
+    return PAGE_SIZES.indexOf(v)!==-1 ? v : def;
+  }
+  function pageSizeSelect(kind){
+    var cur = pageSizeFor(kind);
+    return '<label class="summary-pager" style="display:inline-flex;align-items:center;gap:6px">1ページの表示件数 <select data-pagesize="'+kind+'" style="padding:3px 6px;font-size:12px">'+
+      PAGE_SIZES.map(function(n){ return '<option value="'+n+'"'+(n===cur?' selected':'')+'>'+n+'件</option>'; }).join("")+'</select></label>';
+  }
   function renderPager(page,total,mode){
     if(total<=1) return "";
     var html = '<div class="pager" data-pager-mode="'+mode+'">';
-    for(var i=1;i<=total && i<=6;i++){
+    if(page>1) html += '<span class="pagelink" data-page="'+(page-1)+'">前へ</span>';
+    var lo = Math.max(1,Math.min(page-2,total-4)), hi = Math.min(total,lo+4);
+    if(lo>1) html += '<button class="pagebtn" data-page="1">1</button>'+(lo>2?'<span style="color:var(--ink-faint)">…</span>':'');
+    for(var i=lo;i<=hi;i++){
       html += '<button class="pagebtn'+(i===page?" active":"")+'" data-page="'+i+'">'+i+'</button>';
     }
+    if(hi<total) html += (hi<total-1?'<span style="color:var(--ink-faint)">…</span>':'')+'<button class="pagebtn" data-page="'+total+'">'+total+'</button>';
     if(total>page) html += '<span class="pagelink" data-page="'+(page+1)+'">次のページへ</span>';
     html += '</div>';
     return html;
@@ -3095,19 +3110,25 @@
       '<button class="btn primary" id="cust-search-btn">'+iSearch()+' 検索する</button>'+
       (active?'<button class="btn" id="cust-flt-clear">条件をクリア</button>':'')+
     '</div></div>';
-    html += '<div class="summary-line"><span>顧客数 <b>'+list.length+'</b>件'+(list.length!==state.customers.length?'（全'+state.customers.length+'件中）':'')+'</span></div>';
+    var cPer = pageSizeFor("cust"), cTotal = Math.max(1,Math.ceil(list.length/cPer));
+    if(!state.custPage || state.custPage<1) state.custPage = 1;
+    if(state.custPage>cTotal) state.custPage = cTotal;
+    var cStart = (state.custPage-1)*cPer;
+    html += '<div class="summary-line"><span>顧客数 <b>'+list.length+'</b>件'+(list.length!==state.customers.length?'（全'+state.customers.length+'件中）':'')+'</span>'+
+      (list.length?'<span class="summary-pager">'+(cStart+1)+'-'+Math.min(list.length,cStart+cPer)+' / '+list.length+'件</span>':'')+pageSizeSelect("cust")+'</div>';
     if(list.length===0){
       html += state.customers.length ? emptyState(iBriefcase2,"条件に一致する顧客がありません","条件を変えるか「条件をクリア」を押してください") : emptyState(iBriefcase2,"顧客が登録されていません","");
     }else{
       var cols = custCols();
       var cnt = {}; state.projects.forEach(function(p){ if(p.customerId) cnt[p.customerId] = (cnt[p.customerId]||0)+1; });
       html += '<div class="tablewrap"><table><thead><tr><th>顧客名</th>'+cols.map(function(k){ return '<th>'+esc(CUST_COLS[k].label)+'</th>'; }).join("")+'<th></th></tr></thead><tbody>';
-      html += list.map(function(c){
+      html += list.slice(cStart,cStart+cPer).map(function(c){
         return '<tr class="rowhover" data-row-id="'+esc(c.id)+'"><td class="cell-name cell-main"><a href="#" data-cust-projects="'+esc(c.id)+'" style="color:inherit;font-weight:700">'+esc(c.name)+'</a></td>'+
           cols.map(function(k){ var d = CUST_COLS[k]; return '<td'+(d.num?' class="num"':'')+' data-label="'+esc(d.label)+'">'+d.html(c,cnt)+'</td>'; }).join("")+
           '<td class="cell-actions" style="white-space:nowrap">'+(cnt[c.id]?'<button class="btn sm" data-cust-projects="'+c.id+'">案件 '+cnt[c.id]+'</button> ':'')+'<button class="btn sm" data-edit-customer="'+c.id+'">'+iEdit()+' 編集</button> <button class="iconbtn" data-del-customer="'+c.id+'">'+iTrash()+'</button></td></tr>';
       }).join("");
       html += '</tbody></table></div>';
+      html += renderPager(state.custPage, cTotal, "cust");
     }
     return html;
   }
@@ -6516,7 +6537,12 @@
       });
     }
 
-    c.querySelectorAll("[data-cflt]").forEach(function(el){ el.addEventListener("change", function(){ custFilterState()[el.getAttribute("data-cflt")] = el.value; render(); }); });
+    c.querySelectorAll("[data-cflt]").forEach(function(el){ el.addEventListener("change", function(){ custFilterState()[el.getAttribute("data-cflt")] = el.value; state.custPage = 1; render(); }); });
+    c.querySelectorAll("[data-pagesize]").forEach(function(el){ el.addEventListener("change", function(){
+      try{ localStorage.setItem("gc_ps_"+el.getAttribute("data-pagesize"), el.value); }catch(e){}
+      if(el.getAttribute("data-pagesize")==="cust") state.custPage = 1; else { state.salesFilter.page = 1; state.constFilter.page = 1; }
+      render(); }); });
+    c.querySelectorAll('[data-pager-mode="cust"] [data-page]').forEach(function(el){ el.addEventListener("click", function(){ state.custPage = parseInt(el.getAttribute("data-page"),10); render(); window.scrollTo(0,0); }); });
     var saveCols = function(){ try{ localStorage.setItem("gc_custcols", JSON.stringify(state.custCols)); }catch(e){} var open = document.getElementById("cust-cols"); state.custColsOpen = !!(open && open.open); render(); var o2 = document.getElementById("cust-cols"); if(o2 && state.custColsOpen) o2.open = true; };
     c.querySelectorAll("[data-cust-col]").forEach(function(el){ el.addEventListener("change", function(){
       var k = el.getAttribute("data-cust-col"), cur = custCols().slice(), i = cur.indexOf(k);
@@ -6526,11 +6552,11 @@
     var colRst = c.querySelector("[data-cust-col-reset]");
     if(colRst) colRst.addEventListener("click", function(){ state.custCols = CUST_COLS_DEFAULT.slice(); saveCols(); });
     var custClr = document.getElementById("cust-flt-clear");
-    if(custClr) custClr.addEventListener("click", function(){ state.custQuery = ""; var o = custFilterState(); o.pref = o.etype = o.freee = o.proj = "all"; render(); });
+    if(custClr) custClr.addEventListener("click", function(){ state.custPage = 1; state.custQuery = ""; var o = custFilterState(); o.pref = o.etype = o.freee = o.proj = "all"; render(); });
     var custSearchInp = document.getElementById("cust-search");
-    if(custSearchInp) custSearchInp.addEventListener("keydown", function(e){ if(e.key==="Enter"){ state.custQuery = custSearchInp.value.trim(); render(); } });
+    if(custSearchInp) custSearchInp.addEventListener("keydown", function(e){ if(e.key==="Enter"){ state.custQuery = custSearchInp.value.trim(); state.custPage = 1; render(); } });
     var custSearchBtn = document.getElementById("cust-search-btn");
-    if(custSearchBtn){ custSearchBtn.addEventListener("click", function(){ state.custQuery = document.getElementById("cust-search").value.trim(); render(); }); }
+    if(custSearchBtn){ custSearchBtn.addEventListener("click", function(){ state.custQuery = document.getElementById("cust-search").value.trim(); state.custPage = 1; render(); }); }
 
     c.querySelectorAll("[data-seg]").forEach(function(el){ el.addEventListener("click", function(){ state.memberSeg = el.getAttribute("data-seg"); render(); }); });
 
