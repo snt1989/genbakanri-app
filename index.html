@@ -5778,7 +5778,9 @@
   function openExtImport(){
     if(!csvCanWrite("projects")) return;
     openModal("他システムのCSVから案件を取り込む（クラフタなど）", '<div style="font-size:12.5px;line-height:1.7"><div>クラフタ等の「現場一覧」を書き出したCSV（またはExcelをCSV保存したもの）を選ぶと、列を自動で対応付けます。取り込む前に確認・修正できます。</div>'+
-      '<div style="margin-top:12px"><input type="file" id="ext-file" accept=".csv,text/csv"></div><div id="ext-body" style="margin-top:12px"></div></div>',
+      '<div style="margin-top:12px"><input type="file" id="ext-file" accept=".csv,text/csv"></div>'+
+      '<div style="margin-top:10px;color:var(--ink-faint)">CSVで書き出せない場合は、画面の一覧表（1行目の見出しごと）をコピーして、ここに貼り付けてください。</div>'+
+      '<textarea id="ext-paste" rows="3" placeholder="ここに貼り付け（Ctrl+V）" style="margin-top:6px;width:100%"></textarea><div id="ext-body" style="margin-top:12px"></div></div>',
       '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="ext-run" disabled>取り込む</button>');
     var rows = null, head = [];
     var body = document.getElementById("ext-body"), run = document.getElementById("ext-run");
@@ -5805,22 +5807,30 @@
         '<div style="max-height:160px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:11.5px;color:var(--ink-soft)">'+b.list.slice(0,8).map(function(x){ return '<div>'+esc(x.name)+'　'+esc([x.customerName,x.prefecture+x.address,x.startDate&&(x.startDate+"〜"+x.endDate),x.status].filter(Boolean).join(" / "))+'</div>'; }).join("")+(b.list.length>8?'<div>…ほか '+(b.list.length-8)+'件</div>':'')+'</div>';
       run.disabled = b.list.length===0;
     };
+    var loadRows = function(all){
+      all = all.filter(function(r){ return r.some(function(x){ return String(x).trim(); }); });
+      if(all.length<2){ body.textContent = "データ行がありません（1行目に見出し、2行目以降にデータが必要です）"; return; }
+      head = all[0].map(function(x){ return String(x).trim(); }); rows = all.slice(1);
+      var guess = function(f){ for(var k=0;k<f[3].length;k++){ for(var i=0;i<head.length;i++){ if(head[i].toLowerCase().indexOf(f[3][k].toLowerCase())!==-1) return i; } } return -1; };
+      var opts = function(sel){ return '<option value="-1">（取り込まない）</option>'+head.map(function(h,i){ return '<option value="'+i+'"'+(i===sel?" selected":"")+'>'+esc(h||("列"+(i+1)))+'</option>'; }).join(""); };
+      body.innerHTML = '<div style="font-size:12px;color:var(--ink-faint);margin-bottom:6px">'+rows.length+'行を読み込みました。元の列を、このアプリの項目に対応付けてください。</div>'+
+        '<div style="display:grid;grid-template-columns:130px 1fr;gap:6px 10px;align-items:center;font-size:12.5px">'+EXT_FIELDS.map(function(f){ return '<span>'+esc(f[1])+(f[2]?' <span class="req">必須</span>':'')+'</span><select id="ext-map-'+f[0]+'">'+opts(guess(f))+'</select>'; }).join("")+
+        '<span>状態が不明なとき</span><select id="ext-dflt">'+STATUS_LIST.map(function(x){ return '<option'+(x==="施工中"?" selected":"")+'>'+esc(x)+'</option>'; }).join("")+'</select></div><div id="ext-preview" style="margin-top:12px"></div>';
+      body.querySelectorAll("select").forEach(function(sl){ sl.addEventListener("change", preview); });
+      preview();
+    };
     document.getElementById("ext-file").addEventListener("change", function(ev){
       var file = ev.target.files && ev.target.files[0]; if(!file) return;
       var fr = new FileReader();
-      fr.onload = function(){
-        var all; try{ all = parseCsv(csvDecode(fr.result)).filter(function(r){ return r.some(function(x){ return String(x).trim(); }); }); }catch(e){ body.textContent = "CSVの解析に失敗しました"; return; }
-        if(all.length<2){ body.textContent = "データ行がありません"; return; }
-        head = all[0].map(function(x){ return String(x).trim(); }); rows = all.slice(1);
-        var guess = function(f){ for(var k=0;k<f[3].length;k++){ for(var i=0;i<head.length;i++){ if(head[i].toLowerCase().indexOf(f[3][k].toLowerCase())!==-1) return i; } } return -1; };
-        var opts = function(sel){ return '<option value="-1">（取り込まない）</option>'+head.map(function(h,i){ return '<option value="'+i+'"'+(i===sel?" selected":"")+'>'+esc(h||("列"+(i+1)))+'</option>'; }).join(""); };
-        body.innerHTML = '<div style="font-size:12px;color:var(--ink-faint);margin-bottom:6px">'+rows.length+'行を読み込みました。クラフタの列を、このアプリの項目に対応付けてください。</div>'+
-          '<div style="display:grid;grid-template-columns:130px 1fr;gap:6px 10px;align-items:center;font-size:12.5px">'+EXT_FIELDS.map(function(f){ return '<span>'+esc(f[1])+(f[2]?' <span class="req">必須</span>':'')+'</span><select id="ext-map-'+f[0]+'">'+opts(guess(f))+'</select>'; }).join("")+
-          '<span>状態が不明なとき</span><select id="ext-dflt">'+STATUS_LIST.map(function(x){ return '<option'+(x==="施工中"?" selected":"")+'>'+esc(x)+'</option>'; }).join("")+'</select></div><div id="ext-preview" style="margin-top:12px"></div>';
-        body.querySelectorAll("select").forEach(function(sl){ sl.addEventListener("change", preview); });
-        preview();
-      };
+      fr.onload = function(){ var all; try{ all = parseCsv(csvDecode(fr.result)); }catch(e){ body.textContent = "CSVの解析に失敗しました"; return; } loadRows(all); };
       fr.readAsArrayBuffer(file);
+    });
+    // 画面の表をコピーして貼り付け（Excel・Webの表はタブ区切りになる）
+    document.getElementById("ext-paste").addEventListener("input", function(ev){
+      var t = ev.target.value; if(!t.trim()) return;
+      var sep = t.indexOf("\t")!==-1 ? "\t" : ",";
+      var all = sep==="\t" ? t.replace(/\r/g,"").split("\n").map(function(l){ return l.split("\t"); }) : parseCsv(t);
+      loadRows(all);
     });
     run.onclick = function(){
       var b = build(); if(!b.list.length) return;
