@@ -2641,7 +2641,7 @@
   }
 
   // 顧客名の入力欄に、登録済み顧客の候補を出す（選ぶと顧客情報をまとめて入力）
-  function attachCustomerSuggest(inp){
+  function attachCustomerSuggest(inp, onPick){
     if(!inp || !state.customers.length) return;
     var wrap = inp.parentNode; if(wrap && getComputedStyle(wrap).position==="static") wrap.style.position = "relative";
     var box = document.createElement("div");
@@ -2653,12 +2653,12 @@
       var q = nz(inp.value), cnt = {}; state.projects.forEach(function(p){ if(p.customerId) cnt[p.customerId] = (cnt[p.customerId]||0)+1; });
       var list = state.customers.filter(function(c){ return !q || nz([c.name,c.kana,c.phone,c.address].join(" ")).indexOf(q)!==-1; }).slice(0, 8);
       if(!list.length || (list.length===1 && nz(list[0].name)===q)){ hide(); return; }
-      box.innerHTML = '<div style="font-size:10.5px;color:var(--ink-faint);padding:6px 10px 2px">登録済みの顧客から選べます（新しい顧客はそのまま入力）</div>'+list.map(function(c){
+      box.innerHTML = '<div style="font-size:10.5px;color:var(--ink-faint);padding:6px 10px 2px">登録済みの顧客から選べます'+(onPick?'':'（新しい顧客はそのまま入力）')+'</div>'+list.map(function(c){
         return '<div data-sug="'+esc(c.id)+'" style="padding:7px 10px;cursor:pointer;border-top:1px solid var(--border)"><div style="font-weight:700;font-size:12.5px">'+esc(c.name)+(cnt[c.id]?' <span style="font-weight:400;font-size:10.5px;color:var(--ink-faint)">案件'+cnt[c.id]+'件</span>':'')+'</div><div style="font-size:11px;color:var(--ink-faint)">'+esc([c.phone,c.address].filter(Boolean).join("　"))+'</div></div>';
       }).join("");
       box.style.display = "block";
       box.querySelectorAll("[data-sug]").forEach(function(el){
-        el.addEventListener("mousedown", function(ev){ ev.preventDefault(); var c = state.customers.find(function(x){ return x.id===el.getAttribute("data-sug"); }); if(c) setCustomerFormValues(c); hide(); });
+        el.addEventListener("mousedown", function(ev){ ev.preventDefault(); var c = state.customers.find(function(x){ return x.id===el.getAttribute("data-sug"); }); if(c){ if(onPick) onPick(c); else setCustomerFormValues(c); } hide(); });
       });
     };
     inp.setAttribute("autocomplete","off");
@@ -2709,15 +2709,12 @@
       };
     }
     else if(kind==="customer"){
-      var pick = '<label class="cf-field" style="margin-bottom:6px"><span class="cf-label">顧客一覧から選ぶ</span><select id="sec-cust-pick"><option value="">選択してください</option>'+
-        state.customers.map(function(c){ return '<option value="'+esc(c.id)+'">'+esc(c.name)+'</option>'; }).join("")+'</select></label>';
+      var pick = '<label class="cf-field" style="margin-bottom:6px;position:relative;display:block"><span class="cf-label">登録済みの顧客を呼び出す（名前・電話・住所で検索）</span><input type="text" id="sec-cust-pick" autocomplete="off" placeholder="顧客名を入力すると候補が出ます"></label>';
       openModal("顧客情報の編集", pick+customerFormSectionsHtml(projectCustomerSrc(p), false, true), cancel+'<button class="btn primary" id="sec-save">保存する</button>');
       box().style.maxWidth = "860px"; styleFoot();
       bindCustomerFormEvents();
-      document.getElementById("sec-cust-pick").onchange = function(){
-        var c = state.customers.find(function(x){ return x.id===this.value; }.bind(this));
-        if(c) setCustomerFormValues(c);
-      };
+      var secPick = document.getElementById("sec-cust-pick");
+      attachCustomerSuggest(secPick, function(c){ setCustomerFormValues(c); secPick.value = ""; });
       document.getElementById("sec-save").onclick = function(){
         var cdata = readCustomerForm(); if(!cdata) return;
         ensureCustomer(cdata, function(customerId){
@@ -6132,8 +6129,8 @@
   function bulkValueControl(c){
     if(!c) return "";
     var opts = null;
-    if(c.key==="customerName") opts = [["","（顧客なし）"]].concat(state.customers.map(function(x){ return [x.name,x.name]; }));
-    else if(c.options && c.type!=="list") opts = c.options.map(function(o){ return [o,o]; });
+    if(c.key==="customerName") return '<span style="position:relative;display:inline-block"><input type="text" id="bulk-value" autocomplete="off" placeholder="顧客名を入力して候補から選択（空欄で顧客なし）" value="'+esc(state.bulk.value||"")+'" style="min-width:260px"></span>';
+    if(c.options && c.type!=="list") opts = c.options.map(function(o){ return [o,o]; });
     else if(c.type==="perm") opts = PERMISSION_LEVELS.map(function(p){ return [p[1],p[1]]; });
     else if(c.type==="bool") opts = [["はい","はい"],["いいえ","いいえ"]];
     if(opts) return '<select id="bulk-value">'+opts.map(function(o){ return '<option value="'+esc(o[0])+'"'+(state.bulk.value===o[0]?" selected":"")+'>'+esc(o[1])+'</option>'; }).join("")+'</select>';
@@ -6253,6 +6250,7 @@
   }
   function bindBulkValue(){
     var v = document.getElementById("bulk-value");
+    if(v && v.tagName==="INPUT" && state.bulk.field==="customerName") attachCustomerSuggest(v, function(cu){ v.value = cu.name; state.bulk.value = cu.name; });
     if(v){ v.addEventListener("input", function(){ state.bulk.value = v.value; }); v.addEventListener("change", function(){ state.bulk.value = v.value; }); if(v.tagName==="SELECT") state.bulk.value = v.value; }
   }
 
@@ -6277,6 +6275,7 @@
       if(col.options && col.type!=="list" || col.type==="number" || col.type==="bool" || col.type==="perm"){ toast("変更後の値を入力してください"); return; }
       value = (col.type==="names"||col.type==="list") ? [] : "";
     }else value = res.value;
+    if(col.key==="customerName" && value && !state.customers.some(function(x){ return x.name===value; })){ toast("登録されている顧客を候補から選んでください"); return; }
     var shown = Array.isArray(value) ? (value.join("、")||"（なし）") : (col.type==="perm" ? permissionLabel(value) : (col.type==="bool" ? (value?"はい":"いいえ") : (value===""?"（空欄）":String(value))));
     if(entity==="members" && col.key==="permission"){
       var ch = {}; ids.forEach(function(id){ ch[id] = value; });
@@ -6311,7 +6310,7 @@
         ctl = '<select id="bm-mode-'+i+'" style="margin-bottom:6px"><option value="add">追加する</option><option value="remove">外す</option><option value="replace">この内容に置き換える</option></select>'+
           '<div style="display:flex;flex-wrap:wrap;gap:6px 12px;max-height:130px;overflow:auto">'+ms.map(function(m){ return '<label style="font-size:12.5px;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" data-bm-name="'+i+'" value="'+esc(m.name)+'"> '+esc(m.name)+'</label>'; }).join("")+'</div>';
       }else if(c.key==="customerName"){
-        ctl = '<select id="bm-val-'+i+'"><option value="">（顧客なし）</option>'+state.customers.map(function(x){ return '<option value="'+esc(x.name)+'">'+esc(x.name)+'</option>'; }).join("")+'</select>';
+        ctl = '<span style="position:relative;display:block"><input type="text" id="bm-val-'+i+'" data-bm-cust="1" autocomplete="off" placeholder="顧客名を入力して候補から選択（空欄で顧客なし）"></span>';
       }else if(c.options && c.type!=="list"){
         ctl = '<select id="bm-val-'+i+'">'+c.options.map(function(o){ return '<option value="'+esc(o)+'">'+esc(o)+'</option>'; }).join("")+'</select>';
       }else{
@@ -6323,6 +6322,7 @@
       '<div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:4px">変更したい項目にチェックを入れて、新しい値を指定してください。チェックのない項目は変更されません。</div>'+rows,
       '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="bm-ok">選択した'+ids.length+'件に適用</button>');
     var box = document.getElementById("modal-box");
+    box.querySelectorAll("[data-bm-cust]").forEach(function(inp){ attachCustomerSuggest(inp, function(cu){ inp.value = cu.name; }); });
     box.querySelectorAll("[data-bm-on]").forEach(function(chk){ chk.addEventListener("change", function(){ box.querySelector('[data-bm-ctl="'+chk.getAttribute("data-bm-on")+'"]').style.opacity = chk.checked ? 1 : .45; }); });
     document.getElementById("bm-ok").onclick = function(){
       var plan = [];
@@ -6337,6 +6337,7 @@
           plan.push({col:c, names:picked, mode:mode});
         }else{
           var raw = document.getElementById("bm-val-"+i).value, res = parseCell(c, raw, null);
+          if(c.key==="customerName" && raw.trim() && !state.customers.some(function(x){ return x.name===raw.trim(); })){ toast("登録されている顧客を候補から選んでください"); return; }
           if(res.error){ toast(res.error); return; }
           if(res.empty && (c.options && c.type!=="list" || c.type==="number")){ toast("「"+c.label+"」の値を入力してください"); return; }
           plan.push({col:c, value: res.empty ? (c.type==="list"?[]:"") : res.value});
