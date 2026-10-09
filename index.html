@@ -5755,14 +5755,19 @@
 
   /* ---- 他システム（クラフタ等）のCSV取込：列を対応付けて案件として登録 ---- */
   var EXT_FIELDS = [
-    ["name","案件名（現場名）",true,["現場名","案件名","工事名","物件名","件名","名称","現場"]],
-    ["customerName","顧客名",false,["顧客","取引先","発注者","施主","お客様","元請","得意先"]],
-    ["address","住所",false,["住所","所在地","現場住所"]],
-    ["startDate","開始日",false,["開始","着工","着手","工期(自","工期（自","from"]],
-    ["endDate","終了日",false,["終了","完工","竣工","完了日","工期(至","工期（至","to"]],
-    ["status","進捗・状態",false,["状態","ステータス","進捗","status"]],
+    ["name","案件名（現場名）",true,["案件名","現場名","工事名","物件名","件名","名称"]],
+    ["customerName","顧客名",false,["顧客名","顧客","取引先","発注者","施主","お客様","元請","得意先"]],
+    ["type","案件種類",false,["案件種類","工事種別","種類"]],
+    ["propertyType","物件種類",false,["物件種類"]],
+    ["addrKind","物件住所区分",false,["物件住所区分","住所区分"]],
+    ["postalCode","郵便番号",false,["郵便番号","郵便"]],
+    ["prefecture","都道府県",false,["都道府県"]],
+    ["address","住所（市区町村・番地）",false,["住所","所在地","現場住所"]],
+    ["startDate","開始日",false,["開始","着工","着手","工期(自","工期（自"]],
+    ["endDate","終了日",false,["終了","完工","竣工","完了予定","工期(至","工期（至"]],
+    ["status","進捗・状態",false,["案件進捗","進捗","状態","ステータス"]],
     ["amount","金額",false,["金額","請負","契約金額","受注","売上"]],
-    ["memo","メモ",false,["備考","メモ","note","コメント"]]
+    ["memo","メモ",false,["備考","メモ","コメント"]]
   ];
   function extIsoDate(v){
     var m = String(v||"").normalize("NFKC").match(/(\d{4})\D{1,2}(\d{1,2})\D{1,2}(\d{1,2})/);
@@ -5782,41 +5787,81 @@
       '<div style="margin-top:10px;color:var(--ink-faint)">CSVで書き出せない場合は、画面の一覧表（1行目の見出しごと）をコピーして、ここに貼り付けてください。</div>'+
       '<textarea id="ext-paste" rows="3" placeholder="ここに貼り付け（Ctrl+V）" style="margin-top:6px;width:100%"></textarea><div id="ext-body" style="margin-top:12px"></div></div>',
       '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="ext-run" disabled>取り込む</button>');
-    var rows = null, head = [];
+    var rows = null, head = [], skippedRows = 0, asgCols = [];
     var body = document.getElementById("ext-body"), run = document.getElementById("ext-run");
     var colVal = function(r, key){ var sel = document.getElementById("ext-map-"+key); var i = sel ? Number(sel.value) : -1; return i>=0 ? String(r[i]==null?"":r[i]).trim() : ""; };
+    var memberKey = function(n){ return String(n||"").normalize("NFKC").replace(/[\s　]/g,""); };
     var build = function(){
       var dflt = document.getElementById("ext-dflt").value;
-      var out = [], dup = 0, existing = {};
-      state.projects.forEach(function(p){ existing[custNormName(p.name)+"|"+custNormName(p.address)] = 1; });
+      var addTypes = document.getElementById("ext-addtypes").checked, useAsg = document.getElementById("ext-useasg") && document.getElementById("ext-useasg").checked;
+      var out = [], dup = 0, existing = {}, newTypes = {}, newProps = {}, unknownAsg = {}, assigned = 0;
+      state.projects.forEach(function(p){ existing[custNormName(p.name)+"|"+custNormName(p.address||p.propertyAddress)] = 1; });
+      var byKey = {}; state.members.forEach(function(m){ byKey[memberKey(m.name)] = m; });
       rows.forEach(function(r){
         var name = colVal(r,"name"); if(!name) return;
-        var addr = colVal(r,"address");
-        if(existing[custNormName(name)+"|"+custNormName(addr)]){ dup++; return; }
-        var pref = PREFS.filter(function(x){ return addr.indexOf(x)===0; })[0] || "";
-        var memo = colVal(r,"memo");
-        out.push({name:name, customerName:colVal(r,"customerName"), prefecture:pref, address:pref?addr.slice(pref.length):addr,
+        var addr = colVal(r,"address"), pref = colVal(r,"prefecture");
+        if(!pref){ pref = PREFS.filter(function(x){ return addr.indexOf(x)===0; })[0] || ""; if(pref) addr = addr.slice(pref.length); }
+        var k = custNormName(name)+"|"+custNormName(addr);
+        if(existing[k]){ dup++; return; } existing[k] = 1;
+        var z = colVal(r,"postalCode").normalize("NFKC").replace(/[^0-9]/g,""); if(z.length===7) z = z.slice(0,3)+"-"+z.slice(3); else z = "";
+        var type = colVal(r,"type"), ptype = colVal(r,"propertyType");
+        if(type && PROJECT_TYPES.indexOf(type)===-1){ if(addTypes) newTypes[type] = 1; else type = "その他"; }
+        if(ptype && PROPERTY_TYPES.indexOf(ptype)===-1){ if(addTypes) newProps[ptype] = 1; else ptype = "その他"; }
+        var d = {name:name, customerName:colVal(r,"customerName"), type:type,
           startDate:extIsoDate(colVal(r,"startDate")), endDate:extIsoDate(colVal(r,"endDate")), status:extStatus(colVal(r,"status"), dflt),
-          amount:parseInt(String(colVal(r,"amount")).normalize("NFKC").replace(/[^0-9]/g,"")||"0",10), workInstruction:memo});
+          amount:parseInt(String(colVal(r,"amount")).normalize("NFKC").replace(/[^0-9]/g,"")||"0",10), workInstruction:colVal(r,"memo")};
+        if(!d.type) d.type = "その他";
+        if(ptype) d.propertyType = ptype;
+        if(colVal(r,"addrKind").indexOf("新しい")!==-1){ d.addressMode = "new"; d.propertyPrefecture = pref; d.propertyAddress = addr; d.propertyPostalCode = z; }
+        else { d.addressMode = "same"; d.prefecture = pref; d.address = addr; d.postalCode = z; }
+        if(useAsg){
+          var seen = {}, as = [];
+          asgCols.forEach(function(ci){
+            var n = String(r[ci]||"").trim(); if(!n) return;
+            var m = byKey[memberKey(n)];
+            if(!m){ unknownAsg[n] = (unknownAsg[n]||0)+1; return; }
+            if(seen[m.name]) return; seen[m.name] = 1;
+            as.push({name:m.name, kind:m.kind||"internal", status:"確認済"});
+          });
+          d.assignees = as; if(as.length) assigned++;
+        }
+        out.push(d);
       });
-      return {list:out, dup:dup};
+      return {list:out, dup:dup, newTypes:Object.keys(newTypes), newProps:Object.keys(newProps), unknownAsg:unknownAsg, assigned:assigned};
     };
     var preview = function(){
       var b = build(), pv = document.getElementById("ext-preview");
-      pv.innerHTML = '<div style="margin-bottom:6px">取り込める案件 <b>'+b.list.length+'</b>件'+(b.dup?'　<span style="color:var(--ink-faint)">（登録済みと同じ名前・住所の '+b.dup+'件は除外）</span>':'')+'</div>'+
-        '<div style="max-height:160px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:11.5px;color:var(--ink-soft)">'+b.list.slice(0,8).map(function(x){ return '<div>'+esc(x.name)+'　'+esc([x.customerName,x.prefecture+x.address,x.startDate&&(x.startDate+"〜"+x.endDate),x.status].filter(Boolean).join(" / "))+'</div>'; }).join("")+(b.list.length>8?'<div>…ほか '+(b.list.length-8)+'件</div>':'')+'</div>';
+      var unk = Object.keys(b.unknownAsg);
+      pv.innerHTML = '<div style="margin-bottom:6px">取り込める案件 <b>'+b.list.length+'</b>件'+(b.dup?'　<span style="color:var(--ink-faint)">（登録済み・重複の '+b.dup+'件は除外）</span>':'')+(skippedRows?'　<span style="color:var(--danger)">（列数が合わず読めない行 '+skippedRows+'件）</span>':'')+'</div>'+
+        (b.newTypes.length||b.newProps.length ? '<div style="font-size:11.5px;color:var(--ink-faint);margin-bottom:4px">選択肢に追加される値：'+esc(b.newTypes.concat(b.newProps).join("、"))+'</div>' : '')+
+        (asgCols.length ? '<div style="font-size:11.5px;color:var(--ink-faint);margin-bottom:4px">担当者あり '+b.assigned+'件'+(unk.length?'　／メンバーに見つからない名前（取り込みません）：'+esc(unk.slice(0,6).join("、"))+(unk.length>6?"…":""):'')+'</div>' : '')+
+        '<div style="max-height:160px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:11.5px;color:var(--ink-soft)">'+b.list.slice(0,8).map(function(x){ return '<div>'+esc(x.name)+'　'+esc([x.customerName,(x.prefecture||x.propertyPrefecture||"")+(x.address||x.propertyAddress||""),x.startDate&&(x.startDate+"〜"+x.endDate),x.type,x.status].filter(Boolean).join(" / "))+'</div>'; }).join("")+(b.list.length>8?'<div>…ほか '+(b.list.length-8)+'件</div>':'')+'</div>';
       run.disabled = b.list.length===0;
     };
     var loadRows = function(all){
       all = all.filter(function(r){ return r.some(function(x){ return String(x).trim(); }); });
       if(all.length<2){ body.textContent = "データ行がありません（1行目に見出し、2行目以降にデータが必要です）"; return; }
-      head = all[0].map(function(x){ return String(x).trim(); }); rows = all.slice(1);
-      var guess = function(f){ for(var k=0;k<f[3].length;k++){ for(var i=0;i<head.length;i++){ if(head[i].toLowerCase().indexOf(f[3][k].toLowerCase())!==-1) return i; } } return -1; };
+      head = all[0].map(function(x){ return String(x).trim(); });
+      rows = all.slice(1).filter(function(r){ return r.length<=head.length; });
+      skippedRows = all.length-1-rows.length;
+      asgCols = []; head.forEach(function(h,i){ if(/担当/.test(h)) asgCols.push(i); });
+      var used = {};
+      var guess = function(f){
+        var pick = function(match){ for(var k=0;k<f[3].length;k++){ for(var i=0;i<head.length;i++){ if(!used[i] && match(head[i].toLowerCase(), f[3][k].toLowerCase())) return i; } } return -1; };
+        var r = pick(function(h,w){ return h===w; });
+        if(r<0) r = pick(function(h,w){ return h.indexOf(w)!==-1; });
+        if(r>=0) used[r] = 1;
+        return r;
+      };
+      var guessed = {}; EXT_FIELDS.forEach(function(f){ guessed[f[0]] = guess(f); });
       var opts = function(sel){ return '<option value="-1">（取り込まない）</option>'+head.map(function(h,i){ return '<option value="'+i+'"'+(i===sel?" selected":"")+'>'+esc(h||("列"+(i+1)))+'</option>'; }).join(""); };
       body.innerHTML = '<div style="font-size:12px;color:var(--ink-faint);margin-bottom:6px">'+rows.length+'行を読み込みました。元の列を、このアプリの項目に対応付けてください。</div>'+
-        '<div style="display:grid;grid-template-columns:130px 1fr;gap:6px 10px;align-items:center;font-size:12.5px">'+EXT_FIELDS.map(function(f){ return '<span>'+esc(f[1])+(f[2]?' <span class="req">必須</span>':'')+'</span><select id="ext-map-'+f[0]+'">'+opts(guess(f))+'</select>'; }).join("")+
-        '<span>状態が不明なとき</span><select id="ext-dflt">'+STATUS_LIST.map(function(x){ return '<option'+(x==="施工中"?" selected":"")+'>'+esc(x)+'</option>'; }).join("")+'</select></div><div id="ext-preview" style="margin-top:12px"></div>';
-      body.querySelectorAll("select").forEach(function(sl){ sl.addEventListener("change", preview); });
+        '<div style="display:grid;grid-template-columns:150px 1fr;gap:6px 10px;align-items:center;font-size:12.5px">'+EXT_FIELDS.map(function(f){ return '<span>'+esc(f[1])+(f[2]?' <span class="req">必須</span>':'')+'</span><select id="ext-map-'+f[0]+'">'+opts(guessed[f[0]])+'</select>'; }).join("")+
+        '<span>状態が不明なとき</span><select id="ext-dflt">'+STATUS_LIST.map(function(x){ return '<option'+(x==="施工中"?" selected":"")+'>'+esc(x)+'</option>'; }).join("")+'</select></div>'+
+        '<label style="display:flex;gap:8px;margin-top:10px;font-size:12.5px;cursor:pointer"><input type="checkbox" id="ext-addtypes" checked><span>案件種類・物件種類で、リストにない値は選択肢に追加する（外すと「その他」にします）</span></label>'+
+        (asgCols.length?'<label style="display:flex;gap:8px;margin-top:6px;font-size:12.5px;cursor:pointer"><input type="checkbox" id="ext-useasg" checked><span>担当者も取り込む（'+esc(asgCols.map(function(c){ return head[c]; }).join("・"))+'。メンバーの名前と一致する人だけ）</span></label>':'')+
+        '<div id="ext-preview" style="margin-top:12px"></div>';
+      body.querySelectorAll("select,input[type=checkbox]").forEach(function(sl){ sl.addEventListener("change", preview); });
       preview();
     };
     document.getElementById("ext-file").addEventListener("change", function(ev){
@@ -5828,27 +5873,36 @@
     // 画面の表をコピーして貼り付け（Excel・Webの表はタブ区切りになる）
     document.getElementById("ext-paste").addEventListener("input", function(ev){
       var t = ev.target.value; if(!t.trim()) return;
-      var sep = t.indexOf("\t")!==-1 ? "\t" : ",";
-      var all = sep==="\t" ? t.replace(/\r/g,"").split("\n").map(function(l){ return l.split("\t"); }) : parseCsv(t);
+      var all = t.indexOf("\t")!==-1 ? t.replace(/\r/g,"").split("\n").map(function(l){ return l.split("\t"); }) : parseCsv(t);
       loadRows(all);
     });
     run.onclick = function(){
       var b = build(); if(!b.list.length) return;
       run.disabled = true;
+      // リストにない種類は選択肢（マスタ）に追加
+      if(b.newTypes.length || b.newProps.length){
+        b.newTypes.forEach(function(x){ if(PROJECT_TYPES.indexOf(x)===-1) PROJECT_TYPES.push(x); });
+        b.newProps.forEach(function(x){ if(PROPERTY_TYPES.indexOf(x)===-1) PROPERTY_TYPES.push(x); });
+        saveMaster("projectTypes", PROJECT_TYPES.slice(), "選択肢に追加しました");
+      }
       // 顧客は同じ名前があれば紐づけ、なければ作成してから案件を登録する
       var names = {}; b.list.forEach(function(x){ if(x.customerName) names[x.customerName] = ""; });
       var ids = {}, queue = Object.keys(names);
-      var next = function(){
+      var nextCust = function(){
         if(!queue.length) return Promise.resolve();
         var n = queue.shift();
-        return new Promise(function(res){ ensureCustomer({name:n}, function(id){ ids[n] = id; res(); }); }).then(next);
+        return new Promise(function(res){ ensureCustomer({name:n}, function(id){ ids[n] = id; res(); }); }).then(nextCust);
       };
-      next().then(function(){
-        runBatch(b.list.map(function(x){
-          var d = Object.assign({}, x, {type:PROJECT_TYPES[0], assignees:[], customerId:ids[x.customerName]||""});
-          return saveRaw("projects", null, d);
-        }), "取り込み");
-      });
+      var pos = 0, ok = 0, fail = 0, CH = 40;
+      var nextChunk = function(){
+        if(pos>=b.list.length) return Promise.resolve();
+        var part = b.list.slice(pos, pos+CH); pos += CH;
+        return Promise.all(part.map(function(x){
+          return saveRaw("projects", null, Object.assign({}, x, {customerId:ids[x.customerName]||""})).then(function(){ ok++; }, function(){ fail++; });
+        })).then(function(){ toast("取り込み中… "+Math.min(pos,b.list.length)+" / "+b.list.length); }).then(nextChunk);
+      };
+      toast("取り込みを始めます（"+b.list.length+"件）。完了まで画面を閉じないでください");
+      nextCust().then(nextChunk).then(function(){ closeModal(); toast(ok+"件を取り込みました"+(fail?"（"+fail+"件は失敗）":"")); render(); });
     };
   }
 
