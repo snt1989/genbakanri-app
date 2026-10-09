@@ -4058,16 +4058,16 @@
       freeePicker("freeeの取引先を取り込む", (j.quotedOnly?"見積書の作成履歴がある取引先のうち、":"freeeにある取引先のうち、")+"まだこのアプリに紐づいていないものです。選んだものを顧客として追加します。",
         cands.map(function(x){ return {id:String(x.p.id), label:x.p.name, sub:(x.match?"既存の顧客「"+x.match.name+"」に紐づけ":"新規の顧客として追加")+(x.p.phone?"　"+x.p.phone:"")+(x.p.quoteCount?"　見積書 "+x.p.quoteCount+"件"+(x.p.lastQuote?"（最新 "+x.p.lastQuote+"）":""):"")}; }),
         "取り込む", function(ids){
-          state.freee.busy = true; var ok = 0, linked = 0;
+          state.freee.busy = true; var ok = 0, linked = 0, filledN = 0;
           var jobs = ids.map(function(id){
             var x = byId[id]; if(!x) return Promise.resolve();
-            if(x.match){ linked++; return saveRaw("customers", x.match.id, {freeePartnerId:x.p.id}); }
+            if(x.match){ linked++; var f3 = freeeFillBlanks(x.match, {kana:x.p.kana, email:x.p.email, phone:x.p.phone, zipcode:x.p.zipcode, prefectureCode:x.p.prefectureCode, street1:x.p.street1, street2:x.p.street2}); if(Object.keys(f3).length) filledN++; return saveRaw("customers", x.match.id, Object.assign({freeePartnerId:x.p.id}, f3)); }
             var pr = x.p.prefectureCode!=="" ? PREFS[Number(x.p.prefectureCode)] : "";
             ok++;
             return saveRaw("customers", null, {name:x.p.name, kana:x.p.kana||"", email:x.p.email||"", phone:x.p.phone||"", postalCode:x.p.zipcode||"",
               prefecture:pr||"未選択", address:x.p.street1||"", building:x.p.street2||"", region:"国内", registeredDate:todayISO(), freeePartnerId:x.p.id});
           });
-          Promise.all(jobs).then(function(){ state.freee.busy = false; toast(ok+"件を顧客に追加"+(linked?"、"+linked+"件を既存の顧客に紐づけ":"")+"しました"); render(); },
+          Promise.all(jobs).then(function(){ state.freee.busy = false; toast(ok+"件を顧客に追加"+(linked?"、"+linked+"件を既存の顧客に紐づけ":"")+"しました"+(filledN?"（うち"+filledN+"件はfreeeの情報で空欄を補いました）":"")); render(); },
             function(){ state.freee.busy = false; toast("取り込みに失敗しました"); render(); });
         });
     }, function(e){ state.freee.busy = false; toast("取得できませんでした："+e.message); });
@@ -4081,7 +4081,7 @@
       state.freee.busy = true; toast("freeeの取引先と照合中…");
       freeeCall("partners.check", {customers: list.map(function(c){ return {id:c.id, name:c.name}; })}).then(function(j){
         state.freee.busy = false;
-        var cands = {}; (j.results||[]).forEach(function(r){ if(r.candidates && r.candidates.length) cands[r.id] = r.candidates; });
+        var cands = {}; (j.results||[]).forEach(function(r){ if(r.candidates && r.candidates.length){ cands[r.id] = r.candidates; r.candidates.forEach(function(x){ if(x.info) freeeInfoCache[x.id] = x.info; }); } });
         var ask = list.filter(function(c){ return cands[c.id]; });
         if(!ask.length){ freeeRunCustomers(list, {}); return; }
         freeeResolveNames(list, ask, cands);
@@ -4112,12 +4112,27 @@
       closeModal(); freeeRunCustomers(list, dec);
     };
   }
+  // freeeの取引先情報のうち、アプリの顧客で空欄の項目だけを補う（入力済みの項目は上書きしない）
+  var freeeInfoCache = {};
+  function freeeFillBlanks(c, info){
+    var o = {}; if(!info) return o;
+    var blank = function(v){ return v==null || v==="" || v==="未選択"; };
+    if(blank(c.kana) && info.kana) o.kana = info.kana;
+    if(blank(c.email) && info.email) o.email = info.email;
+    if(blank(c.phone) && info.phone) o.phone = info.phone;
+    if(blank(customerPostal(c)) && info.zipcode) o.postalCode = info.zipcode;
+    if(blank(c.prefecture) && info.prefectureCode!=="" && PREFS[Number(info.prefectureCode)]) o.prefecture = PREFS[Number(info.prefectureCode)];
+    if(blank(c.address) && info.street1) o.address = info.street1;
+    if(blank(c.building) && info.street2) o.building = info.street2;
+    return o;
+  }
+  var FREEE_FILL_LABEL = {kana:"ふりがな", email:"メール", phone:"電話番号", postalCode:"郵便番号", prefecture:"都道府県", address:"住所", building:"建物名"};
   // dec[id]: "link:<freeeのID>" | "new" | "skip"（未指定は新規登録）
   function freeeRunCustomers(list, dec){
     var links = list.filter(function(c){ return /^link:/.test(dec[c.id]||""); });
     var creates = list.filter(function(c){ return !dec[c.id] || dec[c.id]==="new"; });
-    state.freee.busy = true;
-    var linked = Promise.all(links.map(function(c){ return saveRaw("customers", c.id, {freeePartnerId:Number(dec[c.id].slice(5))}); }));
+    state.freee.busy = true; var filled = 0;
+    var linked = Promise.all(links.map(function(c){ var pid = Number(dec[c.id].slice(5)), fill = freeeFillBlanks(c, freeeInfoCache[pid]); filled += Object.keys(fill).length?1:0; return saveRaw("customers", c.id, Object.assign({freeePartnerId:pid}, fill)); }));
     linked.then(function(){
       return freeeChunks(creates, 20, function(part){
         return freeeCall("partners.push", {customers: part.map(function(c){
@@ -4128,7 +4143,8 @@
           (j.results||[]).forEach(function(x){
             var c = part.find(function(y){ return y.id===x.id; });
             if(x.error){ fail.push({name:c?c.name:x.id, msg:x.error}); return; }
-            ok++; jobs.push(saveRaw("customers", x.id, {freeePartnerId:x.partnerId}));
+            ok++; var fill2 = x.status==="linked" ? freeeFillBlanks(c||{}, x.info) : {}; if(Object.keys(fill2).length) filled++;
+            jobs.push(saveRaw("customers", x.id, Object.assign({freeePartnerId:x.partnerId}, fill2)));
           });
           return Promise.all(jobs).then(function(){ return {ok:ok, fail:fail}; });
         });
@@ -4138,6 +4154,7 @@
       var skipped = list.filter(function(c){ return dec[c.id]==="skip"; }).length;
       freeeReport("登録", r);
       if(skipped) setTimeout(function(){ toast("（"+skipped+"件は登録せず、そのままにしました）"); }, 2500);
+      else if(filled) setTimeout(function(){ toast("freeeにあった情報を"+filled+"件の顧客に反映しました（空欄の項目のみ）"); }, 2500);
     }, function(e){ state.freee.busy = false; toast("失敗しました："+e.message); render(); });
   }
   function freeePushDeals(){

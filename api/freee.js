@@ -25,6 +25,12 @@ function similarity(a, b){
   Object.keys(y).forEach(function(k){ ny += y[k]; });
   return (2 * inter) / (nx + ny);
 }
+// freeeの取引先 → アプリの顧客に反映できる項目
+function partnerInfo(p){
+  var ad = p.address_attributes || p.address || {};
+  return {kana: p.name_kana || "", email: p.email || "", phone: p.phone || "", zipcode: ad.zipcode || "",
+    prefectureCode: ad.prefecture_code == null ? "" : ad.prefecture_code, street1: ad.street_name1 || "", street2: ad.street_name2 || ""};
+}
 function isoDate(s){ return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "")) ? s : ""; }
 
 module.exports = async function handler(req, res){
@@ -97,10 +103,10 @@ async function run(b, req){
         var arr = page.partners || []; all = all.concat(arr);
         if(arr.length < 3000) break; off += 3000;
       }
-      var idx = all.map(function(p){ return {id: p.id, name: p.name, n: norm(p.name)}; });
+      var idx = all.map(function(p){ return {id: p.id, name: p.name, n: norm(p.name), info: partnerInfo(p)}; });
       var out = (b.customers || []).slice(0, 100).map(function(c){
         var cn = norm(c.name), raw = String(c.name || "").trim();
-        var cands = idx.map(function(p){ return {id: p.id, name: p.name, score: p.name === raw ? 1 : similarity(cn, p.n), exact: p.name === raw}; })
+        var cands = idx.map(function(p){ return {id: p.id, name: p.name, info: p.info, score: p.name === raw ? 1 : similarity(cn, p.n), exact: p.name === raw}; })
           .filter(function(x){ return x.score >= 0.6; })
           .sort(function(a, b){ return b.score - a.score; }).slice(0, 3);
         return {id: c.id, candidates: cands};
@@ -138,7 +144,7 @@ async function run(b, req){
           var found = c.force ? {partners: []} : null;
           if(!found) found = await F.freee("GET", "/api/1/partners", {query: {company_id: cid, keyword: name, limit: 50}});
           var same = (found.partners || []).find(function(p){ return p.name === name; });
-          if(same){ results.push({id: c.id, partnerId: same.id, status: "linked"}); continue; }
+          if(same){ results.push({id: c.id, partnerId: same.id, status: "linked", info: partnerInfo(same)}); continue; }
           var body = {company_id: cid, name: name};
           if(c.kana) body.name_kana = String(c.kana).slice(0, 100);
           if(c.email) body.email = c.email;
