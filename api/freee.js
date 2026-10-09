@@ -86,6 +86,21 @@ async function run(b, req){
       return {results: out, total: all.length};
     }
 
+    case "partners.list": {
+      t = await need(); cid = t.companyId;
+      var got = [], offs = 0;
+      for(var pg2 = 0; pg2 < 10; pg2++){
+        var pgd = await F.freee("GET", "/api/1/partners", {query: {company_id: cid, limit: 3000, offset: offs}});
+        var ar = pgd.partners || []; got = got.concat(ar);
+        if(ar.length < 3000) break; offs += 3000;
+      }
+      return {total: got.length, partners: got.filter(function(p){ return p.available !== false && String(p.name || "").trim(); }).map(function(p){
+        var ad = p.address_attributes || p.address || {};
+        return {id: p.id, name: String(p.name).trim(), kana: p.name_kana || "", email: p.email || "", phone: p.phone || "",
+          zipcode: ad.zipcode || "", prefectureCode: ad.prefecture_code == null ? "" : ad.prefecture_code, street1: ad.street_name1 || "", street2: ad.street_name2 || ""};
+      })};
+    }
+
     case "partners.push": {
       t = await need(); cid = t.companyId;
       var list = (b.customers || []).slice(0, 40), results = [];

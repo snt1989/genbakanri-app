@@ -3967,6 +3967,7 @@
         '<div><button class="btn outline sm" id="fr-disconnect">連携を解除する</button></div></div>'+
       freeeSettingsHtml()+
       '<div class="card" style="padding:6px 18px 10px;max-width:560px;margin-bottom:14px"><h2 style="font-size:13.5px;margin:10px 0 4px">freeeへ登録・更新</h2>'+
+        '<div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--border)"><div style="flex:1;min-width:200px"><div style="font-weight:700;font-size:12.5px">freeeの取引先を顧客として取り込む</div><div style="font-size:11.5px;color:var(--ink-faint);line-height:1.5">freeeに登録済みの取引先から、このアプリにまだない顧客を追加します（同じ名前の顧客があれば紐づけるだけです）</div></div><button class="btn primary" id="fr-import-partners"'+(state.freee.busy?" disabled":"")+'>'+iAdmin()+'取引先を取り込む</button></div>'+
         act("顧客を取引先として登録","まだfreeeと紐づいていない顧客を登録します（同じ名前の取引先があれば紐づけるだけです）","fr-push-customers","取引先を登録",nC,false)+
         act("案件を売上取引として登録","契約済・施工中・施工完了・清算済で金額のある案件を、未決済の収入取引として登録します"+(ready?"":"（先に上の設定を保存してください）"),"fr-push-deals","売上取引を登録",nP,!ready)+
         act("入金状況を更新","登録済みの案件について、freeeの取引の決済状況を取得して案件に表示します","fr-sync-status","入金状況を更新",nS,false)+
@@ -3992,6 +3993,38 @@
       openModal(label+"できなかった項目", '<div style="font-size:12.5px;line-height:1.7;max-height:50vh;overflow:auto">'+r.fail.slice(0,50).map(function(f){ return '<div>'+esc(f.name)+'：<span style="color:var(--danger)">'+esc(f.msg)+'</span></div>'; }).join("")+(r.fail.length>50?'<div>…ほか'+(r.fail.length-50)+'件</div>':'')+'</div>', '<button class="btn" data-close-modal>閉じる</button>');
     }
     render();
+  }
+  // freeeの取引先 → このアプリの顧客（新規追加／同名の既存顧客に紐づけ）
+  function freeeImportPartners(){
+    if(state.freee.busy){ toast("処理中です。完了までお待ちください"); return; }
+    state.freee.busy = true; toast("freeeから取引先を取得中…");
+    freeeCall("partners.list").then(function(j){
+      state.freee.busy = false;
+      var nz = function(x){ return String(x||"").normalize("NFKC").replace(/[\s\u3000]/g,"").toLowerCase(); };
+      var linkedIds = {}; state.customers.forEach(function(c){ if(c.freeePartnerId) linkedIds[c.freeePartnerId] = 1; });
+      var unlinked = {}; state.customers.forEach(function(c){ if(!c.freeePartnerId && c.name) unlinked[nz(c.name)] = c; });
+      var cands = (j.partners||[]).filter(function(p){ return !linkedIds[p.id]; }).map(function(p){
+        var m = unlinked[nz(p.name)] || null;
+        return {p:p, match:m};
+      });
+      if(!cands.length){ toast("取り込む取引先はありません（freee側 "+(j.total||0)+"件、すべて取り込み済みです）"); return; }
+      var byId = {}; cands.forEach(function(x){ byId[x.p.id] = x; });
+      freeePicker("freeeの取引先を取り込む", "freeeにある取引先のうち、まだこのアプリに紐づいていないものです。選んだものを顧客として追加します。",
+        cands.map(function(x){ return {id:String(x.p.id), label:x.p.name, sub:(x.match?"既存の顧客「"+x.match.name+"」に紐づけ":"新規の顧客として追加")+(x.p.phone?"　"+x.p.phone:"")}; }),
+        "取り込む", function(ids){
+          state.freee.busy = true; var ok = 0, linked = 0;
+          var jobs = ids.map(function(id){
+            var x = byId[id]; if(!x) return Promise.resolve();
+            if(x.match){ linked++; return saveRaw("customers", x.match.id, {freeePartnerId:x.p.id}); }
+            var pr = x.p.prefectureCode!=="" ? PREFS[Number(x.p.prefectureCode)] : "";
+            ok++;
+            return saveRaw("customers", null, {name:x.p.name, kana:x.p.kana||"", email:x.p.email||"", phone:x.p.phone||"", postalCode:x.p.zipcode||"",
+              prefecture:pr||"未選択", address:x.p.street1||"", building:x.p.street2||"", region:"国内", registeredDate:todayISO(), freeePartnerId:x.p.id});
+          });
+          Promise.all(jobs).then(function(){ state.freee.busy = false; toast(ok+"件を顧客に追加"+(linked?"、"+linked+"件を既存の顧客に紐づけ":"")+"しました"); render(); },
+            function(){ state.freee.busy = false; toast("取り込みに失敗しました"); render(); });
+        });
+    }, function(e){ state.freee.busy = false; toast("取得できませんでした："+e.message); });
   }
   function freeePushCustomers(){
     var all = freeeCustomersToPush();
@@ -4154,6 +4187,7 @@
       db.doc("settings/freee").set(data).then(function(){ state.freee.settings = data; toast("設定を保存しました"); render(); }).catch(function(){ toast("保存に失敗しました"); });
     });
     on("fr-push-customers", freeePushCustomers);
+    on("fr-import-partners", freeeImportPartners);
     on("fr-push-deals", freeePushDeals);
     on("fr-sync-status", freeeSyncStatus);
     on("fr-csv", function(){
