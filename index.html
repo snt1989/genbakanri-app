@@ -4038,8 +4038,13 @@
   // freeeの取引先 → このアプリの顧客（新規追加／同名の既存顧客に紐づけ）
   function freeeImportPartners(){
     if(state.freee.busy){ toast("処理中です。完了までお待ちください"); return; }
-    state.freee.busy = true; toast("freeeから取引先を取得中…");
-    freeeCall("partners.list").then(function(j){
+    openModal("freeeの取引先を取り込む", '<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;line-height:1.6;cursor:pointer"><input type="checkbox" id="fr-onlyq" checked style="margin-top:4px"><span>見積書の作成履歴がある取引先だけに絞り込む<span style="display:block;font-size:11.5px;color:var(--ink-faint)">freeeで見積書を作成したことのある取引先だけを一覧に出します。外すとすべての取引先が対象です。</span></span></label>',
+      '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="fr-onlyq-go">取引先を取得する</button>');
+    document.getElementById("fr-onlyq-go").onclick = function(){ var only = document.getElementById("fr-onlyq").checked; closeModal(); freeeImportRun(only); };
+  }
+  function freeeImportRun(onlyQuoted){
+    state.freee.busy = true; toast(onlyQuoted ? "freeeの見積書履歴を確認中…" : "freeeから取引先を取得中…");
+    freeeCall("partners.list", {onlyQuoted: !!onlyQuoted}).then(function(j){
       state.freee.busy = false;
       var nz = function(x){ return String(x||"").normalize("NFKC").replace(/[\s\u3000]/g,"").toLowerCase(); };
       var linkedIds = {}; state.customers.forEach(function(c){ if(c.freeePartnerId) linkedIds[c.freeePartnerId] = 1; });
@@ -4048,10 +4053,10 @@
         var m = unlinked[nz(p.name)] || null;
         return {p:p, match:m};
       });
-      if(!cands.length){ toast("取り込む取引先はありません（freee側 "+(j.total||0)+"件、すべて取り込み済みです）"); return; }
+      if(!cands.length){ toast(j.quotedOnly ? "見積書の作成履歴があり、まだ取り込んでいない取引先はありません" : "取り込む取引先はありません（freee側 "+(j.total||0)+"件、すべて取り込み済みです）"); return; }
       var byId = {}; cands.forEach(function(x){ byId[x.p.id] = x; });
-      freeePicker("freeeの取引先を取り込む", "freeeにある取引先のうち、まだこのアプリに紐づいていないものです。選んだものを顧客として追加します。",
-        cands.map(function(x){ return {id:String(x.p.id), label:x.p.name, sub:(x.match?"既存の顧客「"+x.match.name+"」に紐づけ":"新規の顧客として追加")+(x.p.phone?"　"+x.p.phone:"")}; }),
+      freeePicker("freeeの取引先を取り込む", (j.quotedOnly?"見積書の作成履歴がある取引先のうち、":"freeeにある取引先のうち、")+"まだこのアプリに紐づいていないものです。選んだものを顧客として追加します。",
+        cands.map(function(x){ return {id:String(x.p.id), label:x.p.name, sub:(x.match?"既存の顧客「"+x.match.name+"」に紐づけ":"新規の顧客として追加")+(x.p.phone?"　"+x.p.phone:"")+(x.p.quoteCount?"　見積書 "+x.p.quoteCount+"件"+(x.p.lastQuote?"（最新 "+x.p.lastQuote+"）":""):"")}; }),
         "取り込む", function(ids){
           state.freee.busy = true; var ok = 0, linked = 0;
           var jobs = ids.map(function(id){

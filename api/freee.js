@@ -42,6 +42,28 @@ module.exports = async function handler(req, res){
   }
 };
 
+// 見積書を作成した履歴のある取引先 { 取引先ID: {n:件数, last:最新の発行日} }（freee会計の見積書API → だめなら請求書APIを試す）
+async function quotedPartners(cid){
+  var paths = ["/api/1/quotations", "/iv/quotations"], lastErr = null;
+  for(var pi = 0; pi < paths.length; pi++){
+    try{
+      var map = {}, off = 0;
+      for(var pg = 0; pg < 100; pg++){
+        var r = await F.freee("GET", paths[pi], {query: {company_id: cid, limit: 100, offset: off}});
+        var arr = r.quotations || [];
+        arr.forEach(function(q){
+          var id = q.partner_id; if(!id) return;
+          var d = String(q.quotation_date || q.issue_date || q.created_at || "").slice(0, 10);
+          var e = map[id] || (map[id] = {n: 0, last: ""}); e.n++; if(d > e.last) e.last = d;
+        });
+        if(arr.length < 100) break; off += 100;
+      }
+      return map;
+    }catch(e){ lastErr = e; if(e.status === 401) throw e; }
+  }
+  throw F.httpErr(502, "見積書の履歴を取得できませんでした（" + (lastErr ? lastErr.message : "") + "）。freeeアプリの権限に見積書（請求書）の読み取りが必要な場合があります");
+}
+
 async function run(b, req){
   var t, cid;
   switch(b.action){
@@ -88,16 +110,19 @@ async function run(b, req){
 
     case "partners.list": {
       t = await need(); cid = t.companyId;
+      var quoted = null;
+      if(b.onlyQuoted) quoted = await quotedPartners(cid);
       var got = [], offs = 0;
       for(var pg2 = 0; pg2 < 10; pg2++){
         var pgd = await F.freee("GET", "/api/1/partners", {query: {company_id: cid, limit: 3000, offset: offs}});
         var ar = pgd.partners || []; got = got.concat(ar);
         if(ar.length < 3000) break; offs += 3000;
       }
-      return {total: got.length, partners: got.filter(function(p){ return p.available !== false && String(p.name || "").trim(); }).map(function(p){
+      return {total: got.length, quotedOnly: !!quoted, partners: got.filter(function(p){ return p.available !== false && String(p.name || "").trim() && (!quoted || quoted[p.id]); }).map(function(p){
         var ad = p.address_attributes || p.address || {};
         return {id: p.id, name: String(p.name).trim(), kana: p.name_kana || "", email: p.email || "", phone: p.phone || "",
-          zipcode: ad.zipcode || "", prefectureCode: ad.prefecture_code == null ? "" : ad.prefecture_code, street1: ad.street_name1 || "", street2: ad.street_name2 || ""};
+          zipcode: ad.zipcode || "", prefectureCode: ad.prefecture_code == null ? "" : ad.prefecture_code, street1: ad.street_name1 || "", street2: ad.street_name2 || "",
+          quoteCount: quoted && quoted[p.id] ? quoted[p.id].n : 0, lastQuote: quoted && quoted[p.id] ? quoted[p.id].last : ""};
       })};
     }
 
