@@ -539,6 +539,17 @@
     .content > div:first-child[style*="justify-content:space-between"] > div[style*="display:flex"] .btn{flex:1 1 calc(33% - 6px);min-height:38px;padding:8px 8px;font-size:12px;gap:4px;}
     .content > div:first-child[style*="justify-content:space-between"] > div[style*="display:flex"] .btn.primary:first-child{flex:1 1 100%;font-size:14px;min-height:44px;}
     .filter-card{padding:12px;}
+    .mob-more{flex:1 1 100%;border:1px solid var(--border);border-radius:12px;background:var(--surface,#fff);}
+    .mob-more>summary{list-style:none;cursor:pointer;padding:12px 14px;font-size:13px;font-weight:700;color:var(--ink-soft);}
+    .mob-more>summary::-webkit-details-marker{display:none;}
+    .mob-more-body{display:flex;flex-wrap:wrap;gap:8px;padding:0 12px 12px;}
+    .mob-more-body .btn{flex:1 1 calc(50% - 6px) !important;min-height:42px !important;font-size:12.5px !important;}
+    .mob-filter-toggle{width:100%;min-height:46px;font-size:14px;font-weight:700;margin-bottom:12px;justify-content:center;}
+    .mob-filter-toggle.on{background:var(--accent-soft);}
+    .summary-line > span:not(:first-child):not(.summary-pager){display:none;}
+    .summary-line > span.summary-pager{display:none;}
+    .summary-line label.summary-pager{display:none !important;}
+    .tablewrap td[data-label="作業"]{display:none !important;}
     .filter-line{gap:10px;}
     .filter-line .fitem{min-width:0 !important;flex:1 1 100%;}
     .filter-line .btn{flex:1 1 100%;}
@@ -1598,6 +1609,7 @@
     else if(state.tab==="member-form") c.innerHTML = banner+renderMemberForm();
     bindEvents();
     applyBulkUi();
+    mobileSimplify();
     // 横に長いタブ（設定など）は、選択中のタブが見える位置までスクロールしておく
     document.querySelectorAll("#content .segmented").forEach(function(sg){ var on = sg.querySelector(".segopt.active"); if(on && sg.scrollWidth>sg.clientWidth) sg.scrollLeft = Math.max(0, on.offsetLeft - (sg.clientWidth-on.offsetWidth)/2); });
     if(state.tab==="chat") scrollChatToBottom();
@@ -6253,6 +6265,40 @@
   }
   function bulkSetSelected(ids, on){ ids.forEach(function(id){ state.bulk.selected[id] = on; }); bulkRefreshCount(); }
 
+  // スマホ向けの簡易表示：管理用ボタンと検索・絞り込みを折りたたむ
+  function isPhone(){ return window.innerWidth <= 700; }
+  function mobileSimplify(){
+    if(!isPhone()) return;
+    var c = document.getElementById("content"); if(!c) return;
+    // 1) 見出し右側のボタン群：主ボタン（登録など）だけ残し、残りは「その他の操作」に入れる
+    var head = c.querySelector(':scope > div:first-child > h1.pagetitle');
+    var row = head && head.nextElementSibling;
+    if(row && !row.querySelector("details.mob-more")){
+      var others = Array.prototype.filter.call(row.children, function(el){ return !el.classList.contains("primary"); });
+      if(others.length){
+        var d = document.createElement("details"); d.className = "mob-more";
+        d.open = !!state.mobMoreOpen;
+        var sm = document.createElement("summary"); sm.textContent = "⋯ その他の操作（CSV・一括編集など）";
+        d.appendChild(sm);
+        var box = document.createElement("div"); box.className = "mob-more-body";
+        others.forEach(function(el){ box.appendChild(el); });
+        d.appendChild(box); row.appendChild(d);
+        d.addEventListener("toggle", function(){ state.mobMoreOpen = d.open; });
+      }
+    }
+    // 2) 検索・絞り込み：トグルで開閉
+    var fc = c.querySelector(":scope > .filter-card");
+    if(fc && !c.querySelector(".mob-filter-toggle")){
+      var open = !!state.mobFiltOpen;
+      var t = document.createElement("button"); t.type = "button"; t.className = "btn mob-filter-toggle"+(open?" on":"");
+      t.textContent = (open ? "▲ 検索・絞り込みを閉じる" : "🔍 検索・絞り込み");
+      t.addEventListener("click", function(){ state.mobFiltOpen = !state.mobFiltOpen; render(); });
+      fc.parentNode.insertBefore(t, fc);
+      if(!open) fc.style.display = "none";
+      fc.addEventListener("click", function(ev){ if(ev.target.closest("button.primary")) state.mobFiltOpen = false; }, true);
+      fc.addEventListener("keydown", function(ev){ if(ev.key==="Enter") state.mobFiltOpen = false; }, true);
+    }
+  }
   function applyBulkUi(){
     if(!state.bulk.on) return;
     if(!state.isAdmin){ bulkReset(); return; }
