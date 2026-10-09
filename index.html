@@ -841,6 +841,7 @@
 
   var TABS = [
     {id:"home", label:"ホーム", icon:iHome},
+    {id:"help", label:"使い方・Q&A", icon:iHelp},
     {id:"tasks", label:"タスク管理", icon:iTaskList},
     {id:"sales", label:"営業案件一覧", icon:iBriefcase},
     {id:"construction", label:"施工案件一覧", icon:iDoc},
@@ -851,7 +852,6 @@
     {id:"members", label:"メンバー管理", icon:iUsers},
     {id:"customers", label:"顧客管理", icon:iBriefcase2},
     {id:"files", label:"写真・ファイル", icon:iImage},
-    {id:"help", label:"使い方・Q&A", icon:iHelp},
     {id:"settings", label:"設定", icon:iBox}
   ];
   var SUBPAGES = {"project-form":1,"project-detail":1,"member-form":1,"project-files":1};
@@ -1590,7 +1590,7 @@
     else if(state.tab==="members") c.innerHTML = banner+renderMembers();
     else if(state.tab==="customers") c.innerHTML = banner+renderCustomers();
     else if(state.tab==="files") c.innerHTML = banner+renderFiles();
-    else if(state.tab==="help") c.innerHTML = banner+'<div class="page-head"><h1 style="font-size:20px;margin:0 0 4px">使い方・Q&A</h1></div>'+renderSettingsHelp();
+    else if(state.tab==="help") c.innerHTML = banner+renderHelpPage();
     else if(state.tab==="settings") c.innerHTML = banner+renderSettings();
     else if(state.tab==="project-form") c.innerHTML = banner+renderProjectForm();
     else if(state.tab==="project-detail") c.innerHTML = banner+renderProjectDetail();
@@ -3856,6 +3856,36 @@
       ["操作を間違えて消した／変えた","削除したものは、管理者が「ゴミ箱」から戻せます。内容の変更は元に戻す機能がないため、重要な変更の前には管理者にバックアップを依頼してください。"]
     ]}
   ];
+  function renderHelpPage(){
+    var q = (state.helpQ||"").trim().toLowerCase();
+    var cat = state.helpCat==null ? -1 : state.helpCat;
+    var secs = HELP.map(function(sec,i){ return {sec:sec,i:i}; }).filter(function(o){ return !(o.sec.admin && !state.isAdmin); });
+    var total = secs.reduce(function(n,o){ return n+o.sec.items.length; },0);
+    var html = '<div style="max-width:980px;margin:0 auto">'+
+      '<div class="card" style="padding:22px 24px;margin-bottom:16px;background:linear-gradient(135deg,var(--accent-soft,#eef3ff),var(--surface,#fff))">'+
+        '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><span style="width:40px;height:40px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;background:var(--accent,#2f5bea);color:#fff">'+iHelp()+'</span>'+
+        '<div><h1 style="font-size:22px;margin:0">使い方・Q&amp;A</h1><div style="font-size:12.5px;color:var(--ink-soft);margin-top:2px">困ったときはここ。全'+total+'項目から探せます。</div></div></div>'+
+        '<div class="fitem" style="margin:14px 0 0"><input type="text" id="help-q" style="font-size:15px;padding:12px 14px" placeholder="🔍 知りたいことを入力（例：パスワード、通知、CSV、重複）" value="'+esc(state.helpQ||"")+'"></div>'+
+      '</div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">'+
+        '<button type="button" class="btn'+(cat===-1?' primary':'')+'" data-helpcat="-1" style="font-size:13px">すべて</button>'+
+        secs.map(function(o){ return '<button type="button" class="btn'+(cat===o.i?' primary':'')+'" data-helpcat="'+o.i+'" style="font-size:13px">'+(o.sec.admin?iAdmin():'')+esc(o.sec.t)+'</button>'; }).join("")+
+      '</div>';
+    var shown = 0, cards = "";
+    secs.forEach(function(o){
+      if(!q && cat!==-1 && cat!==o.i) return;
+      var items = o.sec.items.filter(function(it){ return !q || (it[0]+" "+it[1]).toLowerCase().indexOf(q)!==-1; });
+      if(!items.length) return;
+      shown += items.length;
+      cards += '<div class="card" style="padding:14px 20px 8px;margin-bottom:14px"><h2 style="font-size:16px;margin:2px 0 8px;display:flex;align-items:center;gap:6px">'+(o.sec.admin?iAdmin():'')+esc(o.sec.t)+'<span style="font-size:11px;font-weight:600;color:var(--ink-faint)">'+items.length+'件</span></h2>'+
+        items.map(function(it){
+          return '<details style="border-top:1px solid var(--border);padding:11px 0"'+(q?" open":"")+'><summary style="cursor:pointer;font-weight:700;font-size:14px;line-height:1.6">Q. '+esc(it[0])+'</summary><div style="font-size:13.5px;line-height:1.9;color:var(--ink-soft);margin-top:8px;padding:10px 12px;background:var(--bg-soft,rgba(0,0,0,.03));border-radius:8px;white-space:pre-wrap">'+esc(it[1])+'</div></details>';
+        }).join("")+'</div>';
+    });
+    html += cards;
+    if(!shown) html += emptyState(iBox,"該当する項目がありません","別のキーワードで探してみてください");
+    return html+'</div>';
+  }
   function renderSettingsHelp(){
     var q = (state.helpQ||"").trim().toLowerCase();
     var html = '<div style="max-width:780px"><div style="font-size:12.5px;color:var(--ink-soft);line-height:1.7;margin-bottom:10px">アプリの使い方とよくある質問です。キーワードで探すこともできます。</div>'+
@@ -6650,6 +6680,7 @@
     bindFreeeEvents(c);
     bindWorksEvents(c);
     bindPushEvents(c);
+    c.querySelectorAll("[data-helpcat]").forEach(function(el){ el.addEventListener("click", function(){ state.helpCat = parseInt(el.getAttribute("data-helpcat"),10); render(); }); });
     var helpQ = document.getElementById("help-q");
     if(helpQ) helpQ.addEventListener("input", function(){ state.helpQ = helpQ.value; var pos = helpQ.selectionStart; render(); var h2 = document.getElementById("help-q"); if(h2){ h2.focus(); try{ h2.setSelectionRange(pos,pos); }catch(e){} } });
     c.querySelectorAll("[data-llf]").forEach(function(el){ el.addEventListener("change", function(){ state.loginLogs[el.getAttribute("data-llf")] = el.value; render(); }); });
