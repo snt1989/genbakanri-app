@@ -2979,13 +2979,43 @@
   function seg(id,label){ return '<div class="segopt'+(state.memberSeg===id?" active":"")+'" data-seg="'+id+'">'+label+'</div>'; }
 
   /* ============ CUSTOMERS ============ */
+  var CUST_COLS = {
+    kana:{label:"ふりがな", html:function(c){ return esc(c.kana||"—"); }},
+    entityType:{label:"事業所種別", html:function(c){ return esc(c.entityType||"—"); }},
+    postal:{label:"郵便番号", num:true, html:function(c){ return esc(customerPostal(c)||"—"); }},
+    address:{label:"住所", html:function(c){ var a=(c.prefecture&&c.prefecture!=="未選択"?c.prefecture:"")+(c.address||"")+(c.building?" "+c.building:""); return esc(a||"—"); }},
+    contact:{label:"担当者", html:function(c){ var t=[c.department,c.contactName?c.contactName+(c.contactHonorific&&c.contactHonorific!=="未選択"?c.contactHonorific:""):""].filter(Boolean).join(" "); return esc(t||"—"); }},
+    phone:{label:"電話番号", num:true, html:function(c){ return c.phone?'<a href="tel:'+esc(c.phone)+'">'+esc(c.phone)+'</a>':"—"; }},
+    email:{label:"メール", html:function(c){ return c.email?'<a href="mailto:'+esc(c.email)+'">'+esc(c.email)+'</a>':"—"; }},
+    projects:{label:"案件数", num:true, html:function(c,cnt){ return String((cnt&&cnt[c.id])||0); }},
+    invoice:{label:"インボイス", html:function(c){ var t=(c.invoiceIssuer&&c.invoiceIssuer!=="未選択"?c.invoiceIssuer:"")+(c.invoiceNumber?" "+c.invoiceNumber:""); return esc(t||"—"); }},
+    freee:{label:"freee", html:function(c){ return c.freeePartnerId?'<span class="tag">連携済み</span>':'<span class="tag muted">未連携</span>'; }},
+    notes:{label:"備考", html:function(c){ var t=String(c.notes||"").replace(/\s+/g," "); return esc(t.length>40?t.slice(0,40)+"…":(t||"—")); }},
+    registered:{label:"登録日", num:true, html:function(c){ return fmtDate(c.registeredDate); }}
+  };
+  var CUST_COLS_DEFAULT = ["address","phone","registered"];
+  function custCols(){
+    if(!state.custCols){
+      var v = null; try{ v = JSON.parse(localStorage.getItem("gc_custcols")||"null"); }catch(e){}
+      state.custCols = Array.isArray(v) ? v.filter(function(k){ return CUST_COLS[k]; }) : CUST_COLS_DEFAULT.slice();
+    }
+    return Object.keys(CUST_COLS).filter(function(k){ return state.custCols.indexOf(k)!==-1; });
+  }
+  function custColsPicker(){
+    var cur = custCols();
+    return '<details class="flt-more" id="cust-cols" style="position:relative"><summary class="btn">表示項目（'+(cur.length+1)+'）</summary>'+
+      '<div class="card" style="position:absolute;right:0;z-index:20;padding:10px 14px;min-width:180px;display:flex;flex-direction:column;gap:6px;margin-top:4px">'+
+      '<label style="font-size:12.5px;color:var(--ink-faint)"><input type="checkbox" checked disabled> 顧客名（固定）</label>'+
+      Object.keys(CUST_COLS).map(function(k){ return '<label style="font-size:12.5px;cursor:pointer"><input type="checkbox" data-cust-col="'+k+'"'+(cur.indexOf(k)!==-1?" checked":"")+'> '+esc(CUST_COLS[k].label)+'</label>'; }).join("")+
+      '<button class="btn sm" type="button" data-cust-col-reset>初期に戻す</button></div></details>';
+  }
   function renderCustomers(){
     if(!state.loaded.customers) return skeleton();
     var q = state.custQuery||"", cf = custFilterState();
     var list = filterCustomers();
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">'+
       '<h1 class="pagetitle">顧客管理</h1>'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-open="customer-form">'+iPlus()+' 顧客登録</button>'+csvToolbar("customers")+'</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-open="customer-form">'+iPlus()+' 顧客登録</button>'+custColsPicker()+csvToolbar("customers")+'</div>'+
       '</div><div style="height:14px"></div>';
     var optsOf = function(arr, cur, all){ return '<option value="all"'+(cur==="all"?" selected":"")+'>'+all+'</option>'+arr.map(function(x){ return '<option value="'+esc(x[0])+'"'+(cur===x[0]?" selected":"")+'>'+esc(x[1])+'</option>'; }).join(""); };
     var prefsUsed = {}; state.customers.forEach(function(c){ prefsUsed[c.prefecture||"未選択"] = 1; });
@@ -3007,10 +3037,12 @@
     if(list.length===0){
       html += state.customers.length ? emptyState(iBriefcase2,"条件に一致する顧客がありません","条件を変えるか「条件をクリア」を押してください") : emptyState(iBriefcase2,"顧客が登録されていません","");
     }else{
-      html += '<div class="tablewrap"><table><thead><tr><th>顧客名</th><th>住所</th><th>電話番号</th><th>登録日</th><th></th></tr></thead><tbody>';
+      var cols = custCols();
+      var cnt = {}; state.projects.forEach(function(p){ if(p.customerId) cnt[p.customerId] = (cnt[p.customerId]||0)+1; });
+      html += '<div class="tablewrap"><table><thead><tr><th>顧客名</th>'+cols.map(function(k){ return '<th>'+esc(CUST_COLS[k].label)+'</th>'; }).join("")+'<th></th></tr></thead><tbody>';
       html += list.map(function(c){
-        return '<tr class="rowhover" data-row-id="'+esc(c.id)+'"><td class="cell-name cell-main">'+esc(c.name)+'</td><td data-label="住所">'+esc(c.address||"—")+'</td>'+
-          '<td class="num" data-label="電話番号">'+(c.phone?'<a href="tel:'+esc(c.phone)+'">'+esc(c.phone)+'</a>':"—")+'</td><td class="num" data-label="登録日">'+fmtDate(c.registeredDate)+'</td>'+
+        return '<tr class="rowhover" data-row-id="'+esc(c.id)+'"><td class="cell-name cell-main">'+esc(c.name)+'</td>'+
+          cols.map(function(k){ var d = CUST_COLS[k]; return '<td'+(d.num?' class="num"':'')+' data-label="'+esc(d.label)+'">'+d.html(c,cnt)+'</td>'; }).join("")+
           '<td class="cell-actions" style="white-space:nowrap"><button class="btn sm" data-edit-customer="'+c.id+'">'+iEdit()+' 編集</button> <button class="iconbtn" data-del-customer="'+c.id+'">'+iTrash()+'</button></td></tr>';
       }).join("");
       html += '</tbody></table></div>';
@@ -6021,6 +6053,14 @@
     }
 
     c.querySelectorAll("[data-cflt]").forEach(function(el){ el.addEventListener("change", function(){ custFilterState()[el.getAttribute("data-cflt")] = el.value; render(); }); });
+    var saveCols = function(){ try{ localStorage.setItem("gc_custcols", JSON.stringify(state.custCols)); }catch(e){} var open = document.getElementById("cust-cols"); state.custColsOpen = !!(open && open.open); render(); var o2 = document.getElementById("cust-cols"); if(o2 && state.custColsOpen) o2.open = true; };
+    c.querySelectorAll("[data-cust-col]").forEach(function(el){ el.addEventListener("change", function(){
+      var k = el.getAttribute("data-cust-col"), cur = custCols().slice(), i = cur.indexOf(k);
+      if(el.checked && i===-1) cur.push(k); if(!el.checked && i!==-1) cur.splice(i,1);
+      state.custCols = cur; saveCols();
+    }); });
+    var colRst = c.querySelector("[data-cust-col-reset]");
+    if(colRst) colRst.addEventListener("click", function(){ state.custCols = CUST_COLS_DEFAULT.slice(); saveCols(); });
     var custClr = document.getElementById("cust-flt-clear");
     if(custClr) custClr.addEventListener("click", function(){ state.custQuery = ""; var o = custFilterState(); o.pref = o.etype = o.freee = o.proj = "all"; render(); });
     var custSearchInp = document.getElementById("cust-search");
