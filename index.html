@@ -2254,7 +2254,7 @@
         if(!names.some(function(n){return f.assignees.indexOf(n)!==-1;})) return false;
       }
       return true;
-    }).sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");});
+    }).sort(projSortFn(projSortKey()));
 
     var perPage = pageSizeFor("proj"), totalPages = Math.max(1,Math.ceil(filtered.length/perPage));
     if(f.page>totalPages) f.page = totalPages;
@@ -2273,6 +2273,7 @@
     html += '<div class="card filter-card" data-filter-mode="'+mode+'">';
     html += '<div class="filter-line">'+
       '<div class="fitem" style="min-width:220px"><span>案件名・住所で検索</span><input type="text" id="flt-name" value="'+esc(f.name)+'" placeholder="案件名または住所"></div>'+
+      '<div class="fitem"><span>並び替え</span><select id="flt-sort">'+PROJ_SORTS.map(function(x){ return '<option value="'+x[0]+'"'+(projSortKey()===x[0]?" selected":"")+'>'+x[1]+'</option>'; }).join("")+'</select></div>'+
       '<div class="fitem"><span>案件種類</span><select id="flt-type"><option value="all">すべて</option>'+PROJECT_TYPES.map(function(t){return '<option value="'+esc(t)+'"'+(f.type===t?" selected":"")+'>'+esc(t)+'</option>';}).join("")+'</select></div>'+
       '<label class="checkopt" style="align-self:flex-end;padding-bottom:8px"><input type="checkbox" id="flt-nosched"'+(f.noSched?" checked":"")+'>工程表・カレンダー未作成のみ</label>'+
       '<button class="btn primary" id="flt-search">'+iSearch()+' 検索する</button>'+
@@ -5581,6 +5582,30 @@
   };
 
   /* ---- what each screen currently shows (export / "select all" use these) ---- */
+  var PROJ_SORTS = [["new","作成日（新しい順）"],["old","作成日（古い順）"],["name","案件名（五十音順）"],["namer","案件名（逆順）"],["start","施工開始日（近い順）"],["startr","施工開始日（遠い順）"],["end","施工完了予定日（近い順）"],["endr","施工完了予定日（遠い順）"],["amount","金額（高い順）"],["amountr","金額（低い順）"],["status","進捗順"],["cust","顧客名順"]];
+  function projSortKey(){
+    var v = ""; try{ v = localStorage.getItem("gc_projsort")||""; }catch(e){}
+    return PROJ_SORTS.some(function(x){ return x[0]===v; }) ? v : "new";
+  }
+  function projSortFn(k){
+    var dt = function(a,b,key,desc){ var x=a[key]||"", y=b[key]||""; if(!x&&!y) return 0; if(!x) return 1; if(!y) return -1; return desc ? y.localeCompare(x) : x.localeCompare(y); };
+    var cr = function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); };
+    var f = {
+      "new": cr,
+      "old": function(a,b){ return -cr(a,b); },
+      "name": function(a,b){ return (a.name||"").localeCompare(b.name||"","ja"); },
+      "namer": function(a,b){ return (b.name||"").localeCompare(a.name||"","ja"); },
+      "start": function(a,b){ return dt(a,b,"startDate",false)||cr(a,b); },
+      "startr": function(a,b){ return dt(a,b,"startDate",true)||cr(a,b); },
+      "end": function(a,b){ return dt(a,b,"endDate",false)||cr(a,b); },
+      "endr": function(a,b){ return dt(a,b,"endDate",true)||cr(a,b); },
+      "amount": function(a,b){ return (Number(b.amount)||0)-(Number(a.amount)||0)||cr(a,b); },
+      "amountr": function(a,b){ return (Number(a.amount)||0)-(Number(b.amount)||0)||cr(a,b); },
+      "status": function(a,b){ var i=STATUS_LIST.indexOf(a.status), j=STATUS_LIST.indexOf(b.status); return (i<0?99:i)-(j<0?99:j)||cr(a,b); },
+      "cust": function(a,b){ var x=a.customerName||"", y=b.customerName||""; if(!x&&!y) return cr(a,b); if(!x) return 1; if(!y) return -1; return x.localeCompare(y,"ja")||cr(a,b); }
+    };
+    return f[k] || cr;
+  }
   function filterProjects(mode){
     var f = mode==="sales" ? state.salesFilter : state.constFilter;
     return state.projects.filter(function(p){
@@ -5593,7 +5618,7 @@
         if(!names.some(function(n){return f.assignees.indexOf(n)!==-1;})) return false;
       }
       return true;
-    }).sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");});
+    }).sort(projSortFn(projSortKey()));
   }
   var CUST_SORTS = [["new","登録日（新しい順）"],["old","登録日（古い順）"],["kana","顧客名（五十音順）"],["kanar","顧客名（逆順）"],["proj","案件数（多い順）"],["pref","都道府県順"]];
   function custProjCount(c){ return state.projects.filter(function(p){ return p.customerId===c.id; }).length; }
@@ -6596,9 +6621,12 @@
       var filterCard = c.querySelector("[data-filter-mode]");
       var mode = filterCard.getAttribute("data-filter-mode");
       var f = mode==="sales"?state.salesFilter:state.constFilter;
+      var sortSel = document.getElementById("flt-sort");
+      if(sortSel) sortSel.addEventListener("change", function(){ try{ localStorage.setItem("gc_projsort", sortSel.value); }catch(e){} f.page = 1; render(); });
       searchBtn.addEventListener("click", function(){
         f.name = document.getElementById("flt-name").value.trim();
         f.type = document.getElementById("flt-type").value;
+        try{ localStorage.setItem("gc_projsort", document.getElementById("flt-sort").value); }catch(e){}
         f.noSched = document.getElementById("flt-nosched").checked;
         f.status = Array.prototype.slice.call(c.querySelectorAll(".flt-status:checked")).map(function(x){return x.value;});
         f.page = 1;
