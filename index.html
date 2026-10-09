@@ -3041,7 +3041,7 @@
       var cnt = {}; state.projects.forEach(function(p){ if(p.customerId) cnt[p.customerId] = (cnt[p.customerId]||0)+1; });
       html += '<div class="tablewrap"><table><thead><tr><th>顧客名</th>'+cols.map(function(k){ return '<th>'+esc(CUST_COLS[k].label)+'</th>'; }).join("")+'<th></th></tr></thead><tbody>';
       html += list.map(function(c){
-        return '<tr class="rowhover" data-row-id="'+esc(c.id)+'"><td class="cell-name cell-main">'+esc(c.name)+'</td>'+
+        return '<tr class="rowhover" data-row-id="'+esc(c.id)+'"><td class="cell-name cell-main"><a href="#" data-cust-projects="'+esc(c.id)+'" style="color:inherit;font-weight:700">'+esc(c.name)+'</a></td>'+
           cols.map(function(k){ var d = CUST_COLS[k]; return '<td'+(d.num?' class="num"':'')+' data-label="'+esc(d.label)+'">'+d.html(c,cnt)+'</td>'; }).join("")+
           '<td class="cell-actions" style="white-space:nowrap">'+(cnt[c.id]?'<button class="btn sm" data-cust-projects="'+c.id+'">案件 '+cnt[c.id]+'</button> ':'')+'<button class="btn sm" data-edit-customer="'+c.id+'">'+iEdit()+' 編集</button> <button class="iconbtn" data-del-customer="'+c.id+'">'+iTrash()+'</button></td></tr>';
       }).join("");
@@ -4968,13 +4968,16 @@
   }
   function openCustomerProjects(cid){
     var c = state.customers.find(function(x){ return x.id===cid; }); if(!c) return;
-    var ps = state.projects.filter(function(p){ return p.customerId===cid; });
-    if(!ps.length){ toast("この顧客の案件はまだありません"); return; }
-    if(ps.length===1){ goProjectDetail(ps[0].id); return; }
-    ps.sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
-    openModal((c.name||"顧客")+" の案件（"+ps.length+"件）", '<div style="max-height:55vh;overflow:auto">'+ps.map(function(p){
-      return '<a href="#" data-cust-proj="'+esc(p.id)+'" style="display:flex;gap:10px;justify-content:space-between;align-items:center;padding:9px 4px;border-bottom:1px solid var(--border);color:inherit;text-decoration:none"><span style="font-weight:700;font-size:12.5px">'+esc(p.name)+'</span><span style="font-size:11.5px;color:var(--ink-faint);white-space:nowrap">'+esc(p.status||"")+(p.amount?'　¥'+Number(p.amount).toLocaleString():'')+'</span></a>';
-    }).join("")+'</div>', '<button class="btn" data-close-modal>閉じる</button>');
+    var ps = state.projects.filter(function(p){ return p.customerId===cid; }).sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
+    var total = ps.reduce(function(n,p){ return n+(Number(p.amount)||0); }, 0);
+    var info = [CUST_COLS.address.html(c).replace(/^—$/,""), c.phone?esc(c.phone):"", CUST_COLS.contact.html(c).replace(/^—$/,"")].filter(Boolean).join("　");
+    var list = ps.length ? ps.map(function(p){
+      return '<a href="#" data-cust-proj="'+esc(p.id)+'" style="display:flex;gap:10px;justify-content:space-between;align-items:center;padding:9px 4px;border-bottom:1px solid var(--border);color:inherit;text-decoration:none"><span><span style="font-weight:700;font-size:12.5px;display:block">'+esc(p.name)+'</span><span style="font-size:11px;color:var(--ink-faint)">'+esc(p.type||"")+(p.startDate?'　'+esc(p.startDate)+(p.endDate?'〜'+esc(p.endDate):''):'')+'</span></span><span style="font-size:11.5px;color:var(--ink-faint);white-space:nowrap;text-align:right">'+(p.status?'<span class="tag muted">'+esc(p.status)+'</span>':'')+(p.amount?'<span style="display:block;margin-top:2px">¥'+Number(p.amount).toLocaleString()+'</span>':'')+'</span></a>';
+    }).join("") : '<div style="font-size:12.5px;color:var(--ink-faint);padding:14px 4px">この顧客の案件はまだありません</div>';
+    openModal(c.name||"顧客", (info?'<div style="font-size:12px;color:var(--ink-soft);line-height:1.6;margin-bottom:8px">'+info+'</div>':'')+
+      '<div style="font-size:12.5px;font-weight:700;margin-bottom:4px">案件一覧（'+ps.length+'件'+(total?'・合計 ¥'+total.toLocaleString():'')+'）</div><div style="max-height:50vh;overflow:auto;border-top:1px solid var(--border)">'+list+'</div>',
+      '<button class="btn" data-close-modal>閉じる</button><button class="btn" id="cust-modal-edit">'+iEdit()+' 顧客情報を編集</button>');
+    document.getElementById("cust-modal-edit").onclick = function(){ closeModal(); openCustomerForm(cid); };
     document.querySelectorAll("#modal-box [data-cust-proj]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var id = el.getAttribute("data-cust-proj"); closeModal(); goProjectDetail(id); }); });
   }
   function openCustomerForm(editId){
@@ -6054,6 +6057,9 @@
       writeDoc("members", id, permissionFields(newPerm), "権限を「"+permissionLabel(newPerm)+"」に変更しました");
     }); });
     c.querySelectorAll("[data-cust-projects]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); openCustomerProjects(el.getAttribute("data-cust-projects")); }); });
+    c.querySelectorAll("tr.rowhover[data-row-id]").forEach(function(tr){ tr.style.cursor = "pointer"; tr.addEventListener("click", function(ev){
+      if(!document.getElementById("cust-search") || ev.target.closest("a,button,input,select")) return;
+      openCustomerProjects(tr.getAttribute("data-row-id")); }); });
     var dupScan = document.getElementById("cust-dup-scan"); if(dupScan) dupScan.addEventListener("click", openCustomerDupScan);
     c.querySelectorAll("[data-edit-customer]").forEach(function(el){ el.addEventListener("click", function(){ openCustomerForm(el.getAttribute("data-edit-customer")); }); });
     c.querySelectorAll("[data-del-customer]").forEach(function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-del-customer"); confirmDelete("この顧客を削除しますか？",function(){deleteDoc("customers",id,"顧客を削除しました");}); }); });
