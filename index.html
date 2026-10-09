@@ -2987,7 +2987,7 @@
     contact:{label:"担当者", html:function(c){ var t=[c.department,c.contactName?c.contactName+(c.contactHonorific&&c.contactHonorific!=="未選択"?c.contactHonorific:""):""].filter(Boolean).join(" "); return esc(t||"—"); }},
     phone:{label:"電話番号", num:true, html:function(c){ return c.phone?'<a href="tel:'+esc(c.phone)+'">'+esc(c.phone)+'</a>':"—"; }},
     email:{label:"メール", html:function(c){ return c.email?'<a href="mailto:'+esc(c.email)+'">'+esc(c.email)+'</a>':"—"; }},
-    projects:{label:"案件数", num:true, html:function(c,cnt){ return String((cnt&&cnt[c.id])||0); }},
+    projects:{label:"案件数", num:true, html:function(c,cnt){ var n=(cnt&&cnt[c.id])||0; return n?'<a href="#" data-cust-projects="'+esc(c.id)+'">'+n+'</a>':"0"; }},
     invoice:{label:"インボイス", html:function(c){ var t=(c.invoiceIssuer&&c.invoiceIssuer!=="未選択"?c.invoiceIssuer:"")+(c.invoiceNumber?" "+c.invoiceNumber:""); return esc(t||"—"); }},
     freee:{label:"freee", html:function(c){ return c.freeePartnerId?'<span class="tag">連携済み</span>':'<span class="tag muted">未連携</span>'; }},
     notes:{label:"備考", html:function(c){ var t=String(c.notes||"").replace(/\s+/g," "); return esc(t.length>40?t.slice(0,40)+"…":(t||"—")); }},
@@ -3015,7 +3015,7 @@
     var list = filterCustomers();
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">'+
       '<h1 class="pagetitle">顧客管理</h1>'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-open="customer-form">'+iPlus()+' 顧客登録</button>'+custColsPicker()+csvToolbar("customers")+'</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-open="customer-form">'+iPlus()+' 顧客登録</button><button class="btn" id="cust-dup-scan">重複チェック</button>'+custColsPicker()+csvToolbar("customers")+'</div>'+
       '</div><div style="height:14px"></div>';
     var optsOf = function(arr, cur, all){ return '<option value="all"'+(cur==="all"?" selected":"")+'>'+all+'</option>'+arr.map(function(x){ return '<option value="'+esc(x[0])+'"'+(cur===x[0]?" selected":"")+'>'+esc(x[1])+'</option>'; }).join(""); };
     var prefsUsed = {}; state.customers.forEach(function(c){ prefsUsed[c.prefecture||"未選択"] = 1; });
@@ -3043,7 +3043,7 @@
       html += list.map(function(c){
         return '<tr class="rowhover" data-row-id="'+esc(c.id)+'"><td class="cell-name cell-main">'+esc(c.name)+'</td>'+
           cols.map(function(k){ var d = CUST_COLS[k]; return '<td'+(d.num?' class="num"':'')+' data-label="'+esc(d.label)+'">'+d.html(c,cnt)+'</td>'; }).join("")+
-          '<td class="cell-actions" style="white-space:nowrap"><button class="btn sm" data-edit-customer="'+c.id+'">'+iEdit()+' 編集</button> <button class="iconbtn" data-del-customer="'+c.id+'">'+iTrash()+'</button></td></tr>';
+          '<td class="cell-actions" style="white-space:nowrap">'+(cnt[c.id]?'<button class="btn sm" data-cust-projects="'+c.id+'">案件 '+cnt[c.id]+'</button> ':'')+'<button class="btn sm" data-edit-customer="'+c.id+'">'+iEdit()+' 編集</button> <button class="iconbtn" data-del-customer="'+c.id+'">'+iTrash()+'</button></td></tr>';
       }).join("");
       html += '</tbody></table></div>';
     }
@@ -4910,6 +4910,56 @@
     });
   }
 
+  /* ---- 顧客の重複チェック／顧客から案件へ ---- */
+  function custNormName(x){ return String(x||"").normalize("NFKC").toLowerCase().replace(/株式会社|有限会社|合同会社|\(株\)|\(有\)|㈱|㈲|御中|様|殿/g,"").replace(/[\s\u3000・\-ー_.,、。()（）]/g,""); }
+  function custMatchReasons(a, b){
+    var r = [], na = custNormName(a.name), nb = custNormName(b.name);
+    if(na && nb){
+      if(na===nb) r.push("名前が同じ");
+      else if(Math.min(na.length,nb.length)>=3 && (na.indexOf(nb)!==-1 || nb.indexOf(na)!==-1)) r.push("名前が似ている");
+    }
+    var pa = normPhone(a.phone), pb = normPhone(b.phone);
+    if(pa && pb && pa===pb) r.push("電話番号が同じ");
+    var ea = String(a.email||"").trim().toLowerCase(), eb = String(b.email||"").trim().toLowerCase();
+    if(ea && eb && ea===eb) r.push("メールが同じ");
+    return r;
+  }
+  function findCustomerDuplicates(data, excludeId){
+    var out = [];
+    state.customers.forEach(function(c){ if(c.id===excludeId) return; var r = custMatchReasons(data, c); if(r.length) out.push({c:c, reasons:r}); });
+    return out;
+  }
+  function dupWarnHtml(dups){
+    return '<div id="cust-dup-warn" style="background:#fff4e0;border:1px solid #f0c36d;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.7"><b>すでに登録されている顧客と重複している可能性があります</b>'+
+      dups.slice(0,5).map(function(d){ return '<div>・<a href="#" data-dup-edit="'+esc(d.c.id)+'">'+esc(d.c.name)+'</a>'+(d.c.phone?'（'+esc(d.c.phone)+'）':'')+' <span style="color:var(--ink-faint)">'+esc(d.reasons.join("・"))+'</span></div>'; }).join("")+
+      '<div style="margin-top:4px;color:var(--ink-faint)">問題なければ、もう一度「登録」を押すと登録します。</div></div>';
+  }
+  function openCustomerDupScan(){
+    var groups = [], seen = {};
+    state.customers.forEach(function(a, i){
+      var members = [a];
+      state.customers.forEach(function(b, j){ if(j>i && custMatchReasons(a,b).length) members.push(b); });
+      if(members.length>1 && !seen[a.id]){ members.forEach(function(m){ seen[m.id]=1; }); groups.push(members); }
+    });
+    var body = groups.length ? groups.map(function(g, gi){
+      return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px">'+g.map(function(c){
+        return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;padding:3px 0"><span style="font-size:12.5px"><b>'+esc(c.name)+'</b> <span style="color:var(--ink-faint)">'+esc([c.phone,c.email,c.address].filter(Boolean).join("　"))+'（案件 '+custProjCount(c)+'件）</span></span><button class="btn sm" data-dup-edit="'+esc(c.id)+'">開く</button></div>';
+      }).join("")+'</div>';
+    }).join("") : '<div style="font-size:13px">重複している可能性のある顧客は見つかりませんでした。</div>';
+    openModal("重複チェック", '<div style="font-size:12px;color:var(--ink-faint);margin-bottom:8px">名前（株式会社などを除く）・電話番号・メールが同じか似ている顧客をまとめています。'+(groups.length?'（'+groups.length+'組）':'')+'</div><div style="max-height:55vh;overflow:auto">'+body+'</div>', '<button class="btn" data-close-modal>閉じる</button>');
+    document.querySelectorAll("#modal-box [data-dup-edit]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var id = el.getAttribute("data-dup-edit"); closeModal(); openCustomerForm(id); }); });
+  }
+  function openCustomerProjects(cid){
+    var c = state.customers.find(function(x){ return x.id===cid; }); if(!c) return;
+    var ps = state.projects.filter(function(p){ return p.customerId===cid; });
+    if(!ps.length){ toast("この顧客の案件はまだありません"); return; }
+    if(ps.length===1){ goProjectDetail(ps[0].id); return; }
+    ps.sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
+    openModal((c.name||"顧客")+" の案件（"+ps.length+"件）", '<div style="max-height:55vh;overflow:auto">'+ps.map(function(p){
+      return '<a href="#" data-cust-proj="'+esc(p.id)+'" style="display:flex;gap:10px;justify-content:space-between;align-items:center;padding:9px 4px;border-bottom:1px solid var(--border);color:inherit;text-decoration:none"><span style="font-weight:700;font-size:12.5px">'+esc(p.name)+'</span><span style="font-size:11.5px;color:var(--ink-faint);white-space:nowrap">'+esc(p.status||"")+(p.amount?'　¥'+Number(p.amount).toLocaleString():'')+'</span></a>';
+    }).join("")+'</div>', '<button class="btn" data-close-modal>閉じる</button>');
+    document.querySelectorAll("#modal-box [data-cust-proj]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var id = el.getAttribute("data-cust-proj"); closeModal(); goProjectDetail(id); }); });
+  }
   function openCustomerForm(editId){
     var cu = editId ? state.customers.find(function(x){ return x.id===editId; }) : null;
     if(editId && !cu) return;
@@ -4925,6 +4975,16 @@
     nameEl.addEventListener("input", refresh); refresh();
     submit.onclick = function(){
       var data = readCustomerForm(); if(!data) return;
+      if(!submit.getAttribute("data-dup-ok")){
+        var dups = findCustomerDuplicates(data, cu && cu.id);
+        if(dups.length){
+          var oldW = document.getElementById("cust-dup-warn"); if(oldW) oldW.remove();
+          var bodyEl = document.querySelector("#modal-box .modal-body"); bodyEl.insertAdjacentHTML("afterbegin", dupWarnHtml(dups)); bodyEl.scrollTop = 0;
+          bodyEl.querySelectorAll("[data-dup-edit]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var id = el.getAttribute("data-dup-edit"); closeModal(); openCustomerForm(id); }); });
+          submit.setAttribute("data-dup-ok","1"); submit.textContent = cu ? "重複を承知で保存" : "重複を承知で登録";
+          return;
+        }
+      }
       if(!cu){ data.registeredDate = todayISO(); writeDoc("customers", null, data, "顧客を登録しました"); return; }
       writeDoc("customers", cu.id, data, "顧客情報を更新しました", function(){
         // Projects keep a copy of the customer name; keep them in step.
@@ -5976,6 +6036,8 @@
       }
       writeDoc("members", id, permissionFields(newPerm), "権限を「"+permissionLabel(newPerm)+"」に変更しました");
     }); });
+    c.querySelectorAll("[data-cust-projects]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); openCustomerProjects(el.getAttribute("data-cust-projects")); }); });
+    var dupScan = document.getElementById("cust-dup-scan"); if(dupScan) dupScan.addEventListener("click", openCustomerDupScan);
     c.querySelectorAll("[data-edit-customer]").forEach(function(el){ el.addEventListener("click", function(){ openCustomerForm(el.getAttribute("data-edit-customer")); }); });
     c.querySelectorAll("[data-del-customer]").forEach(function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-del-customer"); confirmDelete("この顧客を削除しますか？",function(){deleteDoc("customers",id,"顧客を削除しました");}); }); });
     c.querySelectorAll("[data-done-task]").forEach(function(el){ el.addEventListener("click", function(){ writeDoc("tasks", el.getAttribute("data-done-task"), {done:true}, "タスクを完了しました"); }); });
