@@ -2981,22 +2981,31 @@
   /* ============ CUSTOMERS ============ */
   function renderCustomers(){
     if(!state.loaded.customers) return skeleton();
-    var q = state.custQuery||"";
-    var list = state.customers.filter(function(c){
-      if(!q) return true;
-      return (c.name||"").indexOf(q)!==-1 || (c.address||"").indexOf(q)!==-1 || (c.phone||"").indexOf(q)!==-1;
-    });
+    var q = state.custQuery||"", cf = custFilterState();
+    var list = filterCustomers();
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">'+
       '<h1 class="pagetitle">顧客管理</h1>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-open="customer-form">'+iPlus()+' 顧客登録</button>'+csvToolbar("customers")+'</div>'+
       '</div><div style="height:14px"></div>';
+    var optsOf = function(arr, cur, all){ return '<option value="all"'+(cur==="all"?" selected":"")+'>'+all+'</option>'+arr.map(function(x){ return '<option value="'+esc(x[0])+'"'+(cur===x[0]?" selected":"")+'>'+esc(x[1])+'</option>'; }).join(""); };
+    var prefsUsed = {}; state.customers.forEach(function(c){ prefsUsed[c.prefecture||"未選択"] = 1; });
+    var prefOpts = PREFS.concat(["未選択"]).filter(function(x){ return prefsUsed[x]; }).map(function(x){ return [x,x]; });
+    var etypes = {}; state.customers.forEach(function(c){ etypes[c.entityType||"未選択"] = 1; });
+    var etOpts = Object.keys(etypes).map(function(x){ return [x,x]; });
+    var active = (cf.pref!=="all")+(cf.etype!=="all")+(cf.freee!=="all")+(cf.proj!=="all")+(q?1:0);
     html += '<div class="card filter-card"><div class="filter-line">'+
-      '<div class="fitem" style="min-width:260px"><span>顧客名、住所、電話番号</span><input type="text" id="cust-search" value="'+esc(q)+'"></div>'+
+      '<div class="fitem" style="min-width:260px"><span>顧客名、住所、電話番号など</span><input type="text" id="cust-search" value="'+esc(q)+'"></div>'+
+      '<div class="fitem"><span>都道府県</span><select data-cflt="pref">'+optsOf(prefOpts,cf.pref,"すべて")+'</select></div>'+
+      '<div class="fitem"><span>事業所種別</span><select data-cflt="etype">'+optsOf(etOpts,cf.etype,"すべて")+'</select></div>'+
+      '<div class="fitem"><span>案件</span><select data-cflt="proj">'+optsOf([["has","案件あり"],["none","案件なし"]],cf.proj,"すべて")+'</select></div>'+
+      '<div class="fitem"><span>freee連携</span><select data-cflt="freee">'+optsOf([["yes","連携済み"],["no","未連携"]],cf.freee,"すべて")+'</select></div>'+
+      '<div class="fitem"><span>並び替え</span><select data-cflt="sort">'+CUST_SORTS.map(function(x){ return '<option value="'+x[0]+'"'+(cf.sort===x[0]?" selected":"")+'>'+x[1]+'</option>'; }).join("")+'</select></div>'+
       '<button class="btn primary" id="cust-search-btn">'+iSearch()+' 検索する</button>'+
+      (active?'<button class="btn" id="cust-flt-clear">条件をクリア</button>':'')+
     '</div></div>';
-    html += '<div class="summary-line"><span>顧客数 <b>'+list.length+'</b>件</span></div>';
+    html += '<div class="summary-line"><span>顧客数 <b>'+list.length+'</b>件'+(list.length!==state.customers.length?'（全'+state.customers.length+'件中）':'')+'</span></div>';
     if(list.length===0){
-      html += emptyState(iBriefcase2,"顧客が登録されていません","");
+      html += state.customers.length ? emptyState(iBriefcase2,"条件に一致する顧客がありません","条件を変えるか「条件をクリア」を押してください") : emptyState(iBriefcase2,"顧客が登録されていません","");
     }else{
       html += '<div class="tablewrap"><table><thead><tr><th>顧客名</th><th>住所</th><th>電話番号</th><th>登録日</th><th></th></tr></thead><tbody>';
       html += list.map(function(c){
@@ -5229,12 +5238,32 @@
       return true;
     }).sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");});
   }
+  var CUST_SORTS = [["new","登録日（新しい順）"],["old","登録日（古い順）"],["kana","顧客名（五十音順）"],["kanar","顧客名（逆順）"],["proj","案件数（多い順）"],["pref","都道府県順"]];
+  function custProjCount(c){ return state.projects.filter(function(p){ return p.customerId===c.id; }).length; }
+  function custFilterState(){ return state.custFlt = state.custFlt || {pref:"all", etype:"all", freee:"all", proj:"all", sort:"new"}; }
   function filterCustomers(){
-    var q = state.custQuery||"";
-    return state.customers.filter(function(c){
-      if(!q) return true;
-      return (c.name||"").indexOf(q)!==-1 || (c.address||"").indexOf(q)!==-1 || (c.phone||"").indexOf(q)!==-1;
+    var q = (state.custQuery||"").toLowerCase(), f = custFilterState();
+    var cnt = {}; state.projects.forEach(function(p){ if(p.customerId) cnt[p.customerId] = (cnt[p.customerId]||0)+1; });
+    var list = state.customers.filter(function(c){
+      if(q && [c.name,c.kana,c.address,c.building,c.phone,c.email].join("\n").toLowerCase().indexOf(q)===-1) return false;
+      if(f.pref!=="all" && (c.prefecture||"未選択")!==f.pref) return false;
+      if(f.etype!=="all" && (c.entityType||"未選択")!==f.etype) return false;
+      if(f.freee==="yes" && !c.freeePartnerId) return false;
+      if(f.freee==="no" && c.freeePartnerId) return false;
+      if(f.proj==="has" && !cnt[c.id]) return false;
+      if(f.proj==="none" && cnt[c.id]) return false;
+      return true;
     });
+    var key = function(c){ return (c.kana||c.name||""); };
+    var cmp = {
+      "new": function(a,b){ return (b.registeredDate||b.createdAt||"").localeCompare(a.registeredDate||a.createdAt||""); },
+      "old": function(a,b){ return (a.registeredDate||a.createdAt||"").localeCompare(b.registeredDate||b.createdAt||""); },
+      "kana": function(a,b){ return key(a).localeCompare(key(b),"ja"); },
+      "kanar": function(a,b){ return key(b).localeCompare(key(a),"ja"); },
+      "proj": function(a,b){ return (cnt[b.id]||0)-(cnt[a.id]||0) || key(a).localeCompare(key(b),"ja"); },
+      "pref": function(a,b){ var ia=PREFS.indexOf(a.prefecture), ib=PREFS.indexOf(b.prefecture); return (ia<0?99:ia)-(ib<0?99:ib) || key(a).localeCompare(key(b),"ja"); }
+    }[f.sort] || null;
+    return cmp ? list.sort(cmp) : list;
   }
   function filterMembers(){
     return state.members.filter(function(m){
@@ -5991,6 +6020,11 @@
       });
     }
 
+    c.querySelectorAll("[data-cflt]").forEach(function(el){ el.addEventListener("change", function(){ custFilterState()[el.getAttribute("data-cflt")] = el.value; render(); }); });
+    var custClr = document.getElementById("cust-flt-clear");
+    if(custClr) custClr.addEventListener("click", function(){ state.custQuery = ""; var o = custFilterState(); o.pref = o.etype = o.freee = o.proj = "all"; render(); });
+    var custSearchInp = document.getElementById("cust-search");
+    if(custSearchInp) custSearchInp.addEventListener("keydown", function(e){ if(e.key==="Enter"){ state.custQuery = custSearchInp.value.trim(); render(); } });
     var custSearchBtn = document.getElementById("cust-search-btn");
     if(custSearchBtn){ custSearchBtn.addEventListener("click", function(){ state.custQuery = document.getElementById("cust-search").value.trim(); render(); }); }
 
