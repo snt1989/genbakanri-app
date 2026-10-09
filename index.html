@@ -2537,6 +2537,7 @@
     var pickBtn = document.getElementById("pick-customer-btn");
     if(pickBtn) pickBtn.addEventListener("click", openCustomerPicker);
     bindCustomerFormEvents();
+    attachCustomerSuggest(document.getElementById("f-cname"));
     bindPropertyFormEvents(c);
 
     var submit = document.getElementById("f-submit");
@@ -2597,19 +2598,54 @@
       .then(function(ref){ cb(ref.id); }).catch(function(){ cb(""); });
   }
 
+  // 顧客名の入力欄に、登録済み顧客の候補を出す（選ぶと顧客情報をまとめて入力）
+  function attachCustomerSuggest(inp){
+    if(!inp || !state.customers.length) return;
+    var wrap = inp.parentNode; if(wrap && getComputedStyle(wrap).position==="static") wrap.style.position = "relative";
+    var box = document.createElement("div");
+    box.style.cssText = "display:none;position:absolute;left:0;right:0;top:100%;z-index:60;background:var(--surface,#fff);border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.15);max-height:260px;overflow:auto;margin-top:2px";
+    wrap.appendChild(box);
+    var nz = function(x){ return String(x||"").normalize("NFKC").toLowerCase().replace(/[\s\u3000]/g,""); };
+    var hide = function(){ box.style.display = "none"; };
+    var show = function(){
+      var q = nz(inp.value), cnt = {}; state.projects.forEach(function(p){ if(p.customerId) cnt[p.customerId] = (cnt[p.customerId]||0)+1; });
+      var list = state.customers.filter(function(c){ return !q || nz([c.name,c.kana,c.phone,c.address].join(" ")).indexOf(q)!==-1; }).slice(0, 8);
+      if(!list.length || (list.length===1 && nz(list[0].name)===q)){ hide(); return; }
+      box.innerHTML = '<div style="font-size:10.5px;color:var(--ink-faint);padding:6px 10px 2px">登録済みの顧客から選べます（新しい顧客はそのまま入力）</div>'+list.map(function(c){
+        return '<div data-sug="'+esc(c.id)+'" style="padding:7px 10px;cursor:pointer;border-top:1px solid var(--border)"><div style="font-weight:700;font-size:12.5px">'+esc(c.name)+(cnt[c.id]?' <span style="font-weight:400;font-size:10.5px;color:var(--ink-faint)">案件'+cnt[c.id]+'件</span>':'')+'</div><div style="font-size:11px;color:var(--ink-faint)">'+esc([c.phone,c.address].filter(Boolean).join("　"))+'</div></div>';
+      }).join("");
+      box.style.display = "block";
+      box.querySelectorAll("[data-sug]").forEach(function(el){
+        el.addEventListener("mousedown", function(ev){ ev.preventDefault(); var c = state.customers.find(function(x){ return x.id===el.getAttribute("data-sug"); }); if(c) setCustomerFormValues(c); hide(); });
+      });
+    };
+    inp.setAttribute("autocomplete","off");
+    inp.addEventListener("input", show); inp.addEventListener("focus", show);
+    inp.addEventListener("blur", function(){ setTimeout(hide, 120); });
+    inp.addEventListener("keydown", function(e){ if(e.key==="Escape") hide(); });
+  }
+
   function openCustomerPicker(){
+    var item = function(c){ return '<div style="padding:9px 4px;border-bottom:1px solid var(--border);cursor:pointer" data-pick-cust="'+c.id+'"><div style="font-weight:700;font-size:12.5px">'+esc(c.name)+'</div><div style="font-size:11px;color:var(--ink-faint)">'+esc([c.phone,c.address].filter(Boolean).join("　"))+'</div></div>'; };
+    var nz = function(x){ return String(x||"").normalize("NFKC").toLowerCase().replace(/[\s\u3000]/g,""); };
     var body = state.customers.length===0 ? '<div style="font-size:12.5px;color:var(--ink-faint)">登録済みの顧客がありません</div>' :
-      '<div style="display:flex;flex-direction:column;gap:2px">'+state.customers.map(function(c){
-        return '<div style="padding:9px 4px;border-bottom:1px solid var(--border);cursor:pointer" data-pick-cust="'+c.id+'"><div style="font-weight:700;font-size:12.5px">'+esc(c.name)+'</div><div style="font-size:11px;color:var(--ink-faint)">'+esc(c.address||"")+'</div></div>';
-      }).join("")+'</div>';
+      '<input type="text" id="cust-pick-q" placeholder="顧客名・電話番号・住所で検索" style="margin-bottom:8px"><div id="cust-pick-list" style="display:flex;flex-direction:column;gap:2px;max-height:50vh;overflow:auto">'+state.customers.map(item).join("")+'</div>';
     openModal("顧客一覧から選ぶ", body, '<button class="btn" data-close-modal>閉じる</button>');
-    document.getElementById("modal-box").querySelectorAll("[data-pick-cust]").forEach(function(el){
+    var mb = document.getElementById("modal-box");
+    var bind = function(){ mb.querySelectorAll("[data-pick-cust]").forEach(function(el){
       el.addEventListener("click", function(){
         var c = state.customers.find(function(x){return x.id===el.getAttribute("data-pick-cust");});
         if(c) setCustomerFormValues(c);
         closeModal();
       });
-    });
+    }); };
+    bind();
+    var q = document.getElementById("cust-pick-q");
+    if(q){ q.focus(); q.addEventListener("input", function(){
+      var k = nz(q.value), l = state.customers.filter(function(c){ return !k || nz([c.name,c.kana,c.phone,c.address].join(" ")).indexOf(k)!==-1; });
+      document.getElementById("cust-pick-list").innerHTML = l.length ? l.map(item).join("") : '<div style="font-size:12.5px;color:var(--ink-faint);padding:8px 4px">該当する顧客がありません</div>';
+      bind();
+    }); }
   }
 
   /* ============ 詳細画面: 物件情報 / 顧客情報 / メンバーの個別編集 ============ */
