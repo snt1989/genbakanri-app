@@ -2651,7 +2651,7 @@
     var hide = function(){ box.style.display = "none"; };
     var show = function(){
       var q = nz(inp.value), cnt = {}; state.projects.forEach(function(p){ if(p.customerId) cnt[p.customerId] = (cnt[p.customerId]||0)+1; });
-      var list = state.customers.filter(function(c){ return !q || nz([c.name,c.kana,c.phone,c.address].join(" ")).indexOf(q)!==-1; }).slice(0, 8);
+      var list = state.customers.filter(function(c){ return !c.hidden && (!q || nz([c.name,c.kana,c.phone,c.address].join(" ")).indexOf(q)!==-1); }).slice(0, 8);
       if(!list.length || (list.length===1 && nz(list[0].name)===q)){ hide(); return; }
       box.innerHTML = '<div style="font-size:10.5px;color:var(--ink-faint);padding:6px 10px 2px">登録済みの顧客から選べます'+(onPick?'':'（新しい顧客はそのまま入力）')+'</div>'+list.map(function(c){
         return '<div data-sug="'+esc(c.id)+'" style="padding:7px 10px;cursor:pointer;border-top:1px solid var(--border)"><div style="font-weight:700;font-size:12.5px">'+esc(c.name)+(cnt[c.id]?' <span style="font-weight:400;font-size:10.5px;color:var(--ink-faint)">案件'+cnt[c.id]+'件</span>':'')+'</div><div style="font-size:11px;color:var(--ink-faint)">'+esc([c.phone,c.address].filter(Boolean).join("　"))+'</div></div>';
@@ -2671,7 +2671,7 @@
     var item = function(c){ return '<div style="padding:9px 4px;border-bottom:1px solid var(--border);cursor:pointer" data-pick-cust="'+c.id+'"><div style="font-weight:700;font-size:12.5px">'+esc(c.name)+'</div><div style="font-size:11px;color:var(--ink-faint)">'+esc([c.phone,c.address].filter(Boolean).join("　"))+'</div></div>'; };
     var nz = function(x){ return String(x||"").normalize("NFKC").toLowerCase().replace(/[\s\u3000]/g,""); };
     var body = state.customers.length===0 ? '<div style="font-size:12.5px;color:var(--ink-faint)">登録済みの顧客がありません</div>' :
-      '<input type="text" id="cust-pick-q" placeholder="顧客名・電話番号・住所で検索" style="margin-bottom:8px"><div id="cust-pick-list" style="display:flex;flex-direction:column;gap:2px;max-height:50vh;overflow:auto">'+state.customers.map(item).join("")+'</div>';
+      '<input type="text" id="cust-pick-q" placeholder="顧客名・電話番号・住所で検索" style="margin-bottom:8px"><div id="cust-pick-list" style="display:flex;flex-direction:column;gap:2px;max-height:50vh;overflow:auto">'+state.customers.filter(function(c){ return !c.hidden; }).map(item).join("")+'</div>';
     openModal("顧客一覧から選ぶ", body, '<button class="btn" data-close-modal>閉じる</button>');
     var mb = document.getElementById("modal-box");
     var bind = function(){ mb.querySelectorAll("[data-pick-cust]").forEach(function(el){
@@ -2684,7 +2684,7 @@
     bind();
     var q = document.getElementById("cust-pick-q");
     if(q){ q.focus(); q.addEventListener("input", function(){
-      var k = nz(q.value), l = state.customers.filter(function(c){ return !k || nz([c.name,c.kana,c.phone,c.address].join(" ")).indexOf(k)!==-1; });
+      var k = nz(q.value), l = state.customers.filter(function(c){ return !c.hidden && (!k || nz([c.name,c.kana,c.phone,c.address].join(" ")).indexOf(k)!==-1); });
       document.getElementById("cust-pick-list").innerHTML = l.length ? l.map(item).join("") : '<div style="font-size:12.5px;color:var(--ink-faint);padding:8px 4px">該当する顧客がありません</div>';
       bind();
     }); }
@@ -3097,12 +3097,13 @@
     var prefOpts = PREFS.concat(["未選択"]).filter(function(x){ return prefsUsed[x]; }).map(function(x){ return [x,x]; });
     var etypes = {}; state.customers.forEach(function(c){ etypes[c.entityType||"未選択"] = 1; });
     var etOpts = Object.keys(etypes).map(function(x){ return [x,x]; });
-    var active = (cf.pref!=="all")+(cf.etype!=="all")+(cf.freee!=="all")+(cf.proj!=="all")+(q?1:0);
+    var active = (cf.pref!=="all")+(cf.etype!=="all")+(cf.freee!=="all")+(cf.proj!=="all")+((cf.hid||"hide")!=="hide")+(q?1:0);
     html += '<div class="card filter-card"><div class="filter-line">'+
       '<div class="fitem" style="min-width:260px"><span>顧客名、住所、電話番号など</span><input type="text" id="cust-search" value="'+esc(q)+'"></div>'+
       '<div class="fitem"><span>都道府県</span><select data-cflt="pref">'+optsOf(prefOpts,cf.pref,"すべて")+'</select></div>'+
       '<div class="fitem"><span>事業所種別</span><select data-cflt="etype">'+optsOf(etOpts,cf.etype,"すべて")+'</select></div>'+
       '<div class="fitem"><span>案件</span><select data-cflt="proj">'+optsOf([["has","案件あり"],["none","案件なし"]],cf.proj,"すべて")+'</select></div>'+
+      '<div class="fitem"><span>非表示の顧客</span><select data-cflt="hid">'+optsOf([["hide","表示中のみ"],["show","非表示を含む"],["only","非表示のみ"]],cf.hid||"hide","表示中のみ").replace('<option value="all">表示中のみ</option>','').replace('<option value="all" selected>表示中のみ</option>','')+'</select></div>'+
       '<div class="fitem"><span>freee連携</span><select data-cflt="freee">'+optsOf([["yes","連携済み"],["no","未連携"]],cf.freee,"すべて")+'</select></div>'+
       '<div class="fitem"><span>並び替え</span><select data-cflt="sort">'+CUST_SORTS.map(function(x){ return '<option value="'+x[0]+'"'+(cf.sort===x[0]?" selected":"")+'>'+x[1]+'</option>'; }).join("")+'</select></div>'+
       '<button class="btn primary" id="cust-search-btn">'+iSearch()+' 検索する</button>'+
@@ -3121,9 +3122,9 @@
       var cnt = {}; state.projects.forEach(function(p){ if(p.customerId) cnt[p.customerId] = (cnt[p.customerId]||0)+1; });
       html += '<div class="tablewrap"><table><thead><tr><th>顧客名</th>'+cols.map(function(k){ return '<th>'+esc(CUST_COLS[k].label)+'</th>'; }).join("")+'<th></th></tr></thead><tbody>';
       html += list.slice(cStart,cStart+cPer).map(function(c){
-        return '<tr class="rowhover" data-row-id="'+esc(c.id)+'"><td class="cell-name cell-main"><a href="#" data-cust-projects="'+esc(c.id)+'" style="color:inherit;font-weight:700">'+esc(c.name)+'</a></td>'+
+        return '<tr class="rowhover" data-row-id="'+esc(c.id)+'"><td class="cell-name cell-main"><a href="#" data-cust-projects="'+esc(c.id)+'" style="color:inherit;font-weight:700">'+esc(c.name)+'</a>'+(c.hidden?' <span class="tag" style="opacity:.7">非表示</span>':'')+'</td>'+
           cols.map(function(k){ var d = CUST_COLS[k]; return '<td'+(d.num?' class="num"':'')+' data-label="'+esc(d.label)+'">'+d.html(c,cnt)+'</td>'; }).join("")+
-          '<td class="cell-actions" style="white-space:nowrap">'+(cnt[c.id]?'<button class="btn sm" data-cust-projects="'+c.id+'">案件 '+cnt[c.id]+'</button> ':'')+'<button class="btn sm" data-edit-customer="'+c.id+'">'+iEdit()+' 編集</button> <button class="iconbtn" data-del-customer="'+c.id+'">'+iTrash()+'</button></td></tr>';
+          '<td class="cell-actions" style="white-space:nowrap">'+(cnt[c.id]?'<button class="btn sm" data-cust-projects="'+c.id+'">案件 '+cnt[c.id]+'</button> ':'')+'<button class="btn sm" data-edit-customer="'+c.id+'">'+iEdit()+' 編集</button> <button class="btn sm" data-hide-customer="'+c.id+'">'+(c.hidden?'再表示':'非表示')+'</button> <button class="iconbtn" data-del-customer="'+c.id+'">'+iTrash()+'</button></td></tr>';
       }).join("");
       html += '</tbody></table></div>';
       html += renderPager(state.custPage, cTotal, "cust");
@@ -5430,7 +5431,8 @@
         {key:"email",label:"メールアドレス"},
         {key:"phone",label:"電話番号",bulk:true},
         {key:"notes",label:"社内メモ",bulk:true},
-        {key:"registeredDate",label:"登録日",type:"date",bulk:true}
+        {key:"registeredDate",label:"登録日",type:"date",bulk:true},
+        {key:"hidden",label:"非表示",type:"bool",bulk:true}
       ],
       sample:{name:"山田 太郎",kana:"やまだ たろう",entityType:"個人",region:"国内",postalCode:"020-0866",prefecture:"岩手県",address:"盛岡市本宮7丁目7番41号",contactName:"山田 花子",contactHonorific:"様",email:"yamada@example.com",phone:"090-0000-0000",notes:"昼間は仕事のため連絡NG",registeredDate:"2026-10-06"},
       all:function(){ return state.customers; },
@@ -5595,7 +5597,7 @@
   }
   var CUST_SORTS = [["new","登録日（新しい順）"],["old","登録日（古い順）"],["kana","顧客名（五十音順）"],["kanar","顧客名（逆順）"],["proj","案件数（多い順）"],["pref","都道府県順"]];
   function custProjCount(c){ return state.projects.filter(function(p){ return p.customerId===c.id; }).length; }
-  function custFilterState(){ return state.custFlt = state.custFlt || {pref:"all", etype:"all", freee:"all", proj:"all", sort:"new"}; }
+  function custFilterState(){ return state.custFlt = state.custFlt || {pref:"all", etype:"all", freee:"all", proj:"all", sort:"new", hid:"hide"}; }
   function filterCustomers(){
     var q = (state.custQuery||"").toLowerCase(), f = custFilterState();
     var cnt = {}; state.projects.forEach(function(p){ if(p.customerId) cnt[p.customerId] = (cnt[p.customerId]||0)+1; });
@@ -5607,6 +5609,8 @@
       if(f.freee==="no" && c.freeePartnerId) return false;
       if(f.proj==="has" && !cnt[c.id]) return false;
       if(f.proj==="none" && cnt[c.id]) return false;
+      if((f.hid||"hide")==="hide" && c.hidden) return false;
+      if(f.hid==="only" && !c.hidden) return false;
       return true;
     });
     var key = function(c){ return (c.kana||c.name||""); };
@@ -6527,6 +6531,10 @@
       if(!document.getElementById("cust-search") || ev.target.closest("a,button,input,select")) return;
       openCustomerProjects(tr.getAttribute("data-row-id")); }); });
     var dupScan = document.getElementById("cust-dup-scan"); if(dupScan) dupScan.addEventListener("click", openCustomerDupScan);
+    c.querySelectorAll("[data-hide-customer]").forEach(function(el){ el.addEventListener("click", function(){
+      var cu = state.customers.find(function(x){ return x.id===el.getAttribute("data-hide-customer"); }); if(!cu) return;
+      writeDoc("customers", cu.id, {hidden: !cu.hidden}, cu.hidden ? "顧客を再表示しました" : "顧客を非表示にしました（フィルターで「非表示を含む」にすると確認できます）");
+    }); });
     c.querySelectorAll("[data-edit-customer]").forEach(function(el){ el.addEventListener("click", function(){ openCustomerForm(el.getAttribute("data-edit-customer")); }); });
     c.querySelectorAll("[data-del-customer]").forEach(function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-del-customer"); confirmDelete("この顧客を削除しますか？",function(){deleteDoc("customers",id,"顧客を削除しました");}); }); });
     c.querySelectorAll("[data-done-task]").forEach(function(el){ el.addEventListener("click", function(){ writeDoc("tasks", el.getAttribute("data-done-task"), {done:true}, "タスクを完了しました"); }); });
