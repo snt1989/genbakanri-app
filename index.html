@@ -3847,6 +3847,7 @@
       ["特定の人に気づいてほしい","メッセージに「@名前」を入れると、その人宛てだと分かるようになります。入力欄のメンションボタンから選べます。"]
     ]},
     {t:"顧客管理", items:[
+      ["法人番号から顧客情報を呼び出せますか？","顧客登録（または案件の顧客情報）の「法人番号」欄に13桁を入れて「法人情報を呼び出す」を押すと、国税庁の法人番号公表サイトから、名前・ふりがな・郵便番号・都道府県・市区町村番地を自動入力します。すでに入力してある項目は上書きしません。\n※公開版（Vercel）のアプリで使えます。管理者がVercelの環境変数 HOUJIN_APP_ID に、国税庁から取得したアプリケーションID（無料）を登録しておく必要があります。手順はリポジトリの HOUJIN.md を参照してください。\n※個人事業主には法人番号がありません。登録番号（インボイス）は自動入力されません。"],
       ["顧客を登録するには？","「顧客管理」の「顧客登録」から、名前・住所・連絡先などを入力します。郵便番号を入れると、都道府県と市区町村が自動で入ります。登録すると、同じ名前や電話番号の顧客がすでにないか確認し、重複していそうなら知らせます。"],
       ["重複して登録していないか確認したい","顧客一覧の「重複チェック」を押すと、名前・電話番号・メールが同じか似ている顧客を、組にして表示します。「開く」から内容を確認・修正できます。"],
       ["顧客を探す・並び替える","一覧の上の検索欄と絞り込み（都道府県・案件の有無・freee連携など）、並び替え（登録日・五十音・案件数など）が使えます。「表示項目」で、一覧に出す列を増やしたり減らしたりできます。"],
@@ -5111,7 +5112,7 @@
         cf("適格請求書発行事業者", sel("f-cinvoice", ["未選択","該当する","該当しない"], src.invoiceIssuer||"未選択"), false, 1, "c_invoice")+
         cf("登録番号（13桁）", '<input type="text" id="f-cinvno" placeholder="例：T1234567890123" maxlength="14" value="'+v("invoiceNumber")+'">', false, 2)+
         cf("事業所種別", sel("f-cetype", ["未選択","法人","個人"], src.entityType||"未選択"), false, 1)+
-        cf("法人番号", '<input type="text" id="f-ccorpno" placeholder="13桁" maxlength="13" value="'+v("corporateNumber")+'">', false, 2)+
+        cf("法人番号", '<div style="display:flex;gap:6px"><input type="text" id="f-ccorpno" placeholder="13桁" maxlength="13" inputmode="numeric" value="'+v("corporateNumber")+'" style="flex:1;min-width:0"><button type="button" class="btn sm" id="f-ccorpno-btn" style="white-space:nowrap">法人情報を呼び出す</button></div><div id="f-ccorpno-msg" style="font-size:11px;color:var(--ink-faint);margin-top:3px">法人番号（13桁）を入れて呼び出すと、名前・住所などを自動入力します（空欄の項目のみ）</div>', false, 2)+
         cf("社内メモ", '<textarea id="f-cnotes" placeholder="例：昼間は仕事のため連絡NG" style="min-height:70px">'+v("notes")+'</textarea>', false, 4, "c_notes")
       )+
       sec("取引先住所",
@@ -5132,7 +5133,48 @@
     '</div>';
   }
   //郵便番号→住所の自動入力、登録番号の整形・法人番号の補完。
+  // 法人番号 → 国税庁の法人番号公表サイトから名称・所在地などを呼び出す
+  function houjinAvailable(){ return !!(db && !window.claude && !state.offlineMode && /^https?:$/.test(location.protocol)); }
+  function kataToHira(x){ return String(x||"").replace(/[ァ-ヶ]/g, function(ch){ return String.fromCharCode(ch.charCodeAt(0)-0x60); }); }
+  function bindHoujinLookup(){
+    var btn = document.getElementById("f-ccorpno-btn"), inp = document.getElementById("f-ccorpno"), msg = document.getElementById("f-ccorpno-msg");
+    if(!btn || !inp) return;
+    var say = function(t, bad){ if(msg){ msg.textContent = t; msg.style.color = bad ? "var(--danger)" : "var(--ink-faint)"; } };
+    btn.addEventListener("click", function(){
+      var n = inp.value.normalize("NFKC").replace(/[^0-9]/g,"");
+      if(n.length!==13){ say("法人番号は13桁の数字で入力してください", true); return; }
+      if(!houjinAvailable()){ say("この機能は公開版（Vercel）のアプリで使えます。このプレビューでは利用できません", true); return; }
+      var me = myMember(); if(!me){ say("ログイン情報を確認できません", true); return; }
+      btn.disabled = true; say("呼び出し中…");
+      fetch("/api/houjin", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({auth:{name:me.name, password:me.password||""}, number:n})})
+        .then(function(r){ return r.json().catch(function(){ return {}; }); })
+        .then(function(j){
+          btn.disabled = false;
+          if(j.error==="notconfigured"){ say("管理者の設定が必要です：国税庁のアプリケーションIDを取得し、Vercelの環境変数 HOUJIN_APP_ID に登録してください（使い方・Q&Aに手順があります）", true); return; }
+          if(j.error==="invalid"){ say("法人番号が正しくありません（チェックデジットが一致しません）", true); return; }
+          if(j.error==="notfound"){ say("該当する法人が見つかりませんでした", true); return; }
+          if(j.error || !j.corp){ say("呼び出しに失敗しました。しばらくしてからもう一度お試しください", true); return; }
+          var c = j.corp, filled = [];
+          var put = function(id, val, label, force){
+            var el = document.getElementById(id); if(!el || !val) return;
+            if(force || !String(el.value||"").trim() || el.value==="未選択"){ el.value = val; filled.push(label); }
+          };
+          var addrEl0 = document.getElementById("f-caddress"), addrBlank = !(addrEl0 && String(addrEl0.value||"").trim());
+          put("f-cname", c.name, "名前");
+          put("f-ckana", kataToHira(c.furigana), "ふりがな");
+          put("f-cetype", "法人", "事業所種別");
+          put("f-cregion", "国内", "地域");
+          put("f-cpostal", c.postalCode, "郵便番号");
+          put("f-cpref", c.prefecture, "都道府県", addrBlank);
+          put("f-caddress", (c.city||"")+(c.street||""), "市区町村・番地");
+          var addr = document.getElementById("f-caddress"); if(addr) addr.removeAttribute("data-auto");
+          say((c.name||"")+"（"+(c.kind||"法人")+"）"+(c.closed?"【閉鎖：登記が閉鎖されています】":"")+" を呼び出しました。"+(filled.length?"入力：" + filled.join("、"):"入力済みの項目はそのままです"), c.closed);
+        })
+        .catch(function(){ btn.disabled = false; say("通信に失敗しました", true); });
+    });
+  }
   function bindCustomerFormEvents(){
+    bindHoujinLookup();
     bindPostalLookup("f-cpostal", null, "f-cpref", "f-caddress");
     var invEl = document.getElementById("f-cinvno"), corpEl = document.getElementById("f-ccorpno"), typeEl = document.getElementById("f-cetype");
     invEl.addEventListener("input", function(){
