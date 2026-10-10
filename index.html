@@ -3234,7 +3234,18 @@
       if(f.kind==="image" && !isImageFile(x)) return false;
       if(f.kind==="other" && isImageFile(x)) return false;
       return true;
-    }).sort(function(a,b){return (b.uploadedAt||"").localeCompare(a.uploadedAt||"");});
+    });
+    var fso = state.filesSort || "date_desc";
+    var pname = function(x){ var q = state.projects.find(function(p){ return p.id===x.projectId; }); return q ? (q.name||"") : ""; };
+    list.sort(function(a,b){
+      var c;
+      if(fso==="date_asc") c = (a.uploadedAt||"").localeCompare(b.uploadedAt||"");
+      else if(fso==="name") c = String(a.filename||"").localeCompare(String(b.filename||""), "ja");
+      else if(fso==="project") c = pname(a).localeCompare(pname(b), "ja") || (b.uploadedAt||"").localeCompare(a.uploadedAt||"");
+      else if(fso==="size") c = (b.size||0)-(a.size||0);
+      else c = (b.uploadedAt||"").localeCompare(a.uploadedAt||"");
+      return c;
+    });
 
     var byProject = state.filesView==="project";
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">'+
@@ -3259,7 +3270,8 @@
       '</select></div>'+
     '</div></div>';
 
-    html += '<div class="summary-line"><span><b>'+list.length+'</b>件 / 全'+state.files.length+'件</span></div>';
+    html += '<div class="summary-line" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span><b>'+list.length+'</b>件 / 全'+state.files.length+'件</span><label style="font-size:12px;color:var(--ink-soft)">並び替え <select id="files-sort-all" style="margin-left:4px">'+
+      [["date_desc","追加が新しい順"],["date_asc","追加が古い順"],["name","ファイル名順"],["project","案件名順"],["size","サイズが大きい順"]].map(function(o){ return '<option value="'+o[0]+'"'+(o[0]===fso?" selected":"")+'>'+o[1]+'</option>'; }).join("")+'</select></label></div>';
 
     if(list.length===0){
       html += emptyState(iImage,"写真・ファイルがありません","案件詳細ページ、またはこのページから追加してください");
@@ -3334,13 +3346,13 @@
   var FBP_SORTS = [["created","登録が新しい順","desc"],["created","登録が古い順","asc"],["last","最終追加が新しい順","desc"],["last","最終追加が古い順","asc"],["name","案件名（あいうえお順）","asc"],["status","進捗順","asc"],["imgs","写真が多い順","desc"],["other","その他ファイルが多い順","desc"]];
   function renderFilesByProject(){
     var projects = state.projects.slice();
-    if(projects.length===0) return emptyState(iBriefcase,"案件がありません","");
     var so = state.fbpSort || {k:"created", dir:"desc"};
     var rows = projects.map(function(p){
       var fl = filesForProject(p.id), imgs = fl.filter(isImageFile).length;
       var last = fl.reduce(function(m,f){ return (f.uploadedAt||"")>m ? (f.uploadedAt||"") : m; }, "");
-      return {p:p, imgs:imgs, other:fl.length-imgs, last:last};
-    });
+      return {p:p, imgs:imgs, other:fl.length-imgs, last:last, n:fl.length};
+    }).filter(function(r){ return r.n>0; });   // ファイルがない案件は表示しない
+    if(rows.length===0) return emptyState(iImage,"ファイルのある案件がありません","案件詳細ページ、またはこのページから写真・ファイルを追加してください");
     var val = function(r){
       switch(so.k){
         case "name": return r.p.name||"";
@@ -6908,6 +6920,7 @@
     c.querySelectorAll("[data-fbp-sort]").forEach(function(el){ el.addEventListener("click", function(){
       var k = el.getAttribute("data-fbp-sort"), cur = state.fbpSort || {k:"created", dir:"desc"};
       state.fbpSort = (cur.k===k) ? {k:k, dir:(cur.dir==="asc"?"desc":"asc")} : {k:k, dir:el.getAttribute("data-fbp-dir")||"asc"}; render(); }); });
+    var fsa = document.getElementById("files-sort-all"); if(fsa) fsa.addEventListener("change", function(){ state.filesSort = fsa.value; render(); });
     var fbpSel = document.getElementById("fbp-sort-sel");
     if(fbpSel) fbpSel.addEventListener("change", function(){ var o = FBP_SORTS[Number(fbpSel.value)]; if(o){ state.fbpSort = {k:o[0], dir:o[2]}; render(); } });
     c.querySelectorAll("[data-files-view]").forEach(function(el){ el.addEventListener("click", function(){ bulkReset(); state.filesView = el.getAttribute("data-files-view"); render(); }); });
