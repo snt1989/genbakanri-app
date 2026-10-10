@@ -28,7 +28,8 @@ var HELP = [
   "・案件 キーワード … 案件の詳細(進捗・工期・担当)",
   "・タスク … 期限が近い／過ぎたタスク　「タスク 自分」で自分の担当のみ",
   "・報告 案件名 内容 … 日報を登録(例: 報告 福川 本日は除草を完了)",
-  "・案件登録 … 案件を新規登録(「案件登録」だけ送ると書き方が出ます)"
+  "・案件登録 … 案件を新規登録(「案件登録」だけ送ると書き方が出ます)",
+  "・メンバー登録 … アプリのメンバーを追加(管理者のみ・個別トークで。「メンバー登録」だけ送ると書き方が出ます)"
 ].join("\n");
 
 /* ---- 案件登録（決まった書き方のメッセージ） ---- */
@@ -124,6 +125,55 @@ async function registerProject(src, me, text){
     "\n担当: " + (assignees.map(function(a){ return a.name; }).join("、") || "未設定") + (notes.length ? "\n\n※ " + notes.join("\n※ ") : "") + "\n\n詳しい情報は、アプリの案件画面で追加・修正できます。");
 }
 
+
+/* ---- メンバー登録（管理者のみ・個別トークのみ） ---- */
+var ROLES = ["社長","営業","コーディネーター","施工管理","現場監督","設計","管理部門","事務","大工","塗装","屋根/外装","電気","内装","設備","ガス","水道","とび","外構","ハウスクリーニング","解体","左官","板金","サッシ","基礎","建具/家具","空調","防虫"];
+var MLABELS = {name: ["氏名", "名前", "名"], phone: ["携帯", "携帯番号", "電話", "電話番号", "tel"], kind: ["区分", "種別"], company: ["会社", "所属", "所属会社"], perm: ["権限"],
+  roles: ["職種", "役割"], password: ["パスワード", "初期パスワード", "pw"], email: ["メール", "email", "mail"], kana: ["ふりがな", "フリガナ", "よみ"]};
+var MTEMPLATE = ["メンバー登録", "氏名: 山田 太郎", "携帯: 090-1234-5678", "区分: 自社", "権限: 一般", "職種: 塗装、解体", "パスワード: 1234(省略すると自動で決めて、ここだけに返信します)",
+  "", "社外メンバーの場合", "区分: 社外", "会社: 有限会社○○塗装"].join("\n");
+function parseMemberFields(text){
+  var out = {};
+  String(text).split(/\r?\n/).slice(1).forEach(function(line){
+    var m = /^\s*([^:：]{1,10})[:：]\s*([\s\S]*)$/.exec(line); if(!m) return;
+    var l = String(m[1]).normalize("NFKC").trim().toLowerCase();
+    var keys = Object.keys(MLABELS);
+    for(var i = 0; i < keys.length; i++) if(MLABELS[keys[i]].some(function(x){ return x.toLowerCase() === l; })){ out[keys[i]] = m[2].trim(); break; }
+  });
+  return out;
+}
+async function registerMember(src, me, text){
+  if(!F.isAdminMember(me)) return reply(src, "メンバーの登録は管理者のみ行えます。");
+  if(src.channelId) return reply(src, "パスワードを扱うため、メンバー登録はBotとの個別トーク(1対1)で行ってください。");
+  if(!/\n/.test(String(text).trim())) return reply(src, "メンバーを登録するには、次の形で送ってください(氏名と携帯番号は必須)。\n\n" + MTEMPLATE);
+  var f = parseMemberFields(text), notes = [];
+  var name = String(f.name || "").normalize("NFKC").replace(/[\s　]+/g, " ").trim();
+  var phone = String(f.phone || "").normalize("NFKC").replace(/[^0-9+]/g, ""); if(phone.indexOf("+81") === 0) phone = "0" + phone.slice(3); phone = phone.replace(/\D/g, "");
+  if(!name || phone.length < 10) return reply(src, "「氏名」と「携帯」(10桁以上の番号)は必須です。「メンバー登録」だけを送ると、書き方が出ます。");
+  var ext = /社外|外部|協力|external/i.test(f.kind || "");
+  var company = f.company || (ext ? "" : (me.company || ""));
+  if(ext && !company) return reply(src, "社外メンバーは「会社: ○○」の指定が必要です。");
+  var perm = ext ? "external" : (/管理/.test(f.perm || "") ? "admin" : "general");
+  var members = await W.listDocs("members");
+  if(members.some(function(x){ return W.strip(x.name) === W.strip(name) || String(x.phone || "").replace(/\D/g, "") === phone; }))
+    return reply(src, "同じ氏名または携帯番号のメンバーがすでにいます。二重登録を防ぐため、登録しませんでした。");
+  var roles = [], bad = [];
+  String(f.roles || "").split(/[、,，\/／]/).map(function(x){ return x.trim(); }).filter(Boolean).forEach(function(x){
+    var k = W.strip(x), hit = ROLES.find(function(y){ return W.strip(y) === k; }) || ROLES.find(function(y){ return W.strip(y).indexOf(k) !== -1 || k.indexOf(W.strip(y)) !== -1; });
+    if(hit){ if(roles.indexOf(hit) === -1) roles.push(hit); } else bad.push(x);
+  });
+  if(bad.length) notes.push("職種が一覧にないため外しました: " + bad.join("、"));
+  var pw = String(f.password || "").normalize("NFKC").trim(), generated = false;
+  if(!pw){ pw = String(Math.floor(100000 + Math.random() * 900000)); generated = true; }
+  else if(pw.length < 4) return reply(src, "パスワードは4文字以上にしてください。");
+  var now = new Date().toISOString();
+  await W.createDoc("members", {name: name, phone: phone, kana: f.kana || "", email: f.email || "", company: company, division: "", roles: roles, password: pw,
+    permission: perm, isAdmin: perm === "admin", kind: ext ? "external" : "internal", createdAt: now, updatedAt: now, source: "LINE WORKS"});
+  return reply(src, "メンバーを登録しました。\n氏名: " + name + "\n区分: " + (ext ? "社外(" + company + ")" : "自社") + " ／ 権限: " + (perm === "admin" ? "管理者" : perm === "external" ? "外部" : "一般") +
+    "\n携帯(ログインID): " + phone + "\n" + (generated ? "初期パスワード: " + pw + "\n(本人に伝えて、ログイン後に変更してもらってください)" : "パスワード: 指定どおり設定しました") +
+    (roles.length ? "\n職種: " + roles.join("、") : "\n職種は、アプリの「メンバー編集」で設定できます。") + (notes.length ? "\n\n※ " + notes.join("\n※ ") : ""));
+}
+
 // 受信の状況を1件だけ記録（管理者が設定画面で確認できる。原因調査用）
 async function note(msg){
   try{ await W.patchDoc("settings/worksDebug", {at: new Date().toISOString(), msg: String(msg).slice(0, 300)}); }catch(e){}
@@ -164,6 +214,7 @@ async function handleText(src, text){
   var projects = W.visibleProjects(await W.listDocs("projects"), me);
 
   if(cmd === "案件登録") return registerProject(src, me, t);
+  if(cmd === "メンバー登録") return registerMember(src, me, t);
 
   if(cmd === "案件"){
     if(!rest){
