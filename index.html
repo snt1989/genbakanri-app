@@ -432,6 +432,12 @@
   .bulk-cell{width:34px;text-align:center;}
   .bulk-float{position:absolute;left:6px;top:6px;z-index:3;width:18px;height:18px;cursor:pointer;}
   .row-selected{background:var(--surface-2);outline:2px solid var(--accent);outline-offset:-2px;}
+  #lightbox{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.94);display:flex;align-items:center;justify-content:center;touch-action:pan-y;}
+  #lightbox img{max-width:100vw;max-height:calc(100dvh - 120px);object-fit:contain;user-select:none;-webkit-user-drag:none;}
+  #lightbox .lb-top{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:calc(10px + env(safe-area-inset-top,0px)) 14px 10px;color:#fff;font-size:13px;}
+  #lightbox .lb-btn{background:rgba(255,255,255,.16);color:#fff;border:none;border-radius:20px;min-height:40px;min-width:40px;padding:0 14px;font-size:14px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;}
+  #lightbox .lb-nav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:64px;padding:0;font-size:26px;}
+  #lightbox .lb-nav.prev{left:6px;} #lightbox .lb-nav.next{right:6px;}
   .photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;}
   .photo-thumb{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--surface-2);border:1px solid var(--border);}
   .photo-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
@@ -1015,6 +1021,75 @@
     if(!state.myName) return;
     bulkReset(); state.settingsSeg = "personal"; state.personalOpen = true; state.tab = "settings"; state.sidebarOpen = false; render();
   }
+  /* ---- 写真ビューア（スマホ対策） ----
+     Vercel版では写真をデータURL（data:image/…）で保存しているため、スマホのブラウザは
+     「新しいタブでデータURLを開く」操作を止めてしまい、写真が見られませんでした。
+     データURLのリンクは、アプリ内のビューアで開く（画像以外はBlobにして開く／保存する）ようにします。 */
+  function dataUrlToBlob(u){
+    var i = u.indexOf(","), head = u.slice(5, i), mime = (head.split(";")[0] || "application/octet-stream");
+    var raw = /;base64/i.test(head) ? atob(u.slice(i+1)) : decodeURIComponent(u.slice(i+1));
+    var a = new Uint8Array(raw.length); for(var k=0;k<raw.length;k++) a[k] = raw.charCodeAt(k);
+    return new Blob([a], {type: mime});
+  }
+  function closeLightbox(){ var l = document.getElementById("lightbox"); if(l) l.remove(); document.removeEventListener("keydown", lbKey); }
+  var lbState = null;
+  function lbKey(e){ if(!lbState) return; if(e.key==="Escape") closeLightbox(); else if(e.key==="ArrowLeft") lbGo(-1); else if(e.key==="ArrowRight") lbGo(1); }
+  function lbGo(d){
+    if(!lbState) return; var n = lbState.list.length; lbState.i = (lbState.i + d + n) % n; lbPaint();
+  }
+  function lbPaint(){
+    var l = document.getElementById("lightbox"); if(!l || !lbState) return;
+    var it = lbState.list[lbState.i], n = lbState.list.length;
+    l.querySelector("img").src = it.href;
+    l.querySelector(".lb-count").textContent = n>1 ? (lbState.i+1)+" / "+n : "";
+    var dl = l.querySelector(".lb-dl"); dl.href = it.href; dl.setAttribute("download", it.name || "photo.jpg");
+    l.querySelectorAll(".lb-nav").forEach(function(b){ b.style.display = n>1 ? "" : "none"; });
+  }
+  function openLightbox(list, i){
+    closeLightbox();
+    lbState = {list:list, i:i};
+    var l = document.createElement("div"); l.id = "lightbox";
+    l.innerHTML = '<div class="lb-top"><span class="lb-count"></span><span style="display:flex;gap:8px"><a class="lb-btn lb-dl" title="保存">保存</a><button class="lb-btn lb-x" title="閉じる">✕ 閉じる</button></span></div>'+
+      '<button class="lb-btn lb-nav prev" aria-label="前へ">‹</button><img alt=""><button class="lb-btn lb-nav next" aria-label="次へ">›</button>';
+    document.body.appendChild(l);
+    l.querySelector(".lb-x").addEventListener("click", closeLightbox);
+    l.querySelector(".prev").addEventListener("click", function(e){ e.stopPropagation(); lbGo(-1); });
+    l.querySelector(".next").addEventListener("click", function(e){ e.stopPropagation(); lbGo(1); });
+    l.addEventListener("click", function(e){ if(e.target===l) closeLightbox(); });
+    var sx = null;
+    l.addEventListener("touchstart", function(e){ sx = e.touches.length===1 ? e.touches[0].clientX : null; }, {passive:true});
+    l.addEventListener("touchend", function(e){ if(sx==null) return; var dx = (e.changedTouches[0].clientX - sx); sx = null; if(Math.abs(dx) > 60) lbGo(dx<0 ? 1 : -1); }, {passive:true});
+    document.addEventListener("keydown", lbKey);
+    lbPaint();
+  }
+  document.addEventListener("click", function(ev){
+    if(ev.defaultPrevented) return;   // 一括選択モードなどで処理済み
+    var a = ev.target.closest && ev.target.closest('a[href^="data:"]'); if(!a) return;
+    if(ev.target.closest("[data-del-file]")) return;
+    var href = a.getAttribute("href");
+    ev.preventDefault();
+    var nameOf = function(el){ var f = el.querySelector(".fname"); return (el.getAttribute("download") || (f && f.textContent) || "").trim(); };
+    try{
+      if(/^data:image\//i.test(href) && !a.hasAttribute("download")){
+        var root = document.getElementById("content") || document;
+        var seen = {}, list = [];
+        Array.prototype.forEach.call(root.querySelectorAll('a[href^="data:image/"]:not([download])'), function(x){
+          var h = x.getAttribute("href"); if(seen[h]) return; seen[h] = 1; list.push({href:h, name:nameOf(x)});
+        });
+        var idx = list.findIndex(function(x){ return x.href===href; }); if(idx<0){ list.push({href:href, name:""}); idx = list.length-1; }
+        openLightbox(list, idx);
+        return;
+      }
+      var blob = dataUrlToBlob(href), url = URL.createObjectURL(blob);
+      if(a.hasAttribute("download")){
+        var d = document.createElement("a"); d.href = url; d.download = a.getAttribute("download") || "file"; document.body.appendChild(d); d.click(); d.remove();
+        setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
+      }else{
+        var w = window.open(url, "_blank"); if(!w) location.href = url;
+        setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+      }
+    }catch(e){ toast("ファイルを開けませんでした"); }
+  });
   function bindLoginAndTopbarEvents(){
     ["user-avatar","user-name"].forEach(function(id){
       var el = document.getElementById(id);
