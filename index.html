@@ -3331,17 +3331,44 @@
     return (n/1024/1024).toFixed(1)+" MB";
   }
   // 写真・ファイル > 案件別: one row per project with its file counts.
+  var FBP_SORTS = [["created","登録が新しい順","desc"],["created","登録が古い順","asc"],["last","最終追加が新しい順","desc"],["last","最終追加が古い順","asc"],["name","案件名（あいうえお順）","asc"],["status","進捗順","asc"],["imgs","写真が多い順","desc"],["other","その他ファイルが多い順","desc"]];
   function renderFilesByProject(){
-    var projects = state.projects.slice().sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");});
+    var projects = state.projects.slice();
     if(projects.length===0) return emptyState(iBriefcase,"案件がありません","");
-    var html = '<div class="tablewrap"><table><thead><tr><th>案件名</th><th>進捗</th><th>写真</th><th>その他</th><th>最終追加</th><th></th></tr></thead><tbody>';
-    html += projects.map(function(p){
-      var fl = filesForProject(p.id);
-      var imgs = fl.filter(isImageFile).length;
-      var last = fl.length ? fl[fl.length-1].uploadedAt : "";
+    var so = state.fbpSort || {k:"created", dir:"desc"};
+    var rows = projects.map(function(p){
+      var fl = filesForProject(p.id), imgs = fl.filter(isImageFile).length;
+      var last = fl.reduce(function(m,f){ return (f.uploadedAt||"")>m ? (f.uploadedAt||"") : m; }, "");
+      return {p:p, imgs:imgs, other:fl.length-imgs, last:last};
+    });
+    var val = function(r){
+      switch(so.k){
+        case "name": return r.p.name||"";
+        case "status": return String(STATUS_LIST.indexOf(r.p.status)===-1?99:STATUS_LIST.indexOf(r.p.status)).padStart(3,"0");
+        case "imgs": return r.imgs; case "other": return r.other;
+        case "last": return r.last||"";
+        default: return r.p.createdAt||"";
+      }
+    };
+    rows.sort(function(a,b){
+      var x = val(a), y = val(b), c = (typeof x==="number") ? x-y : String(x).localeCompare(String(y), "ja");
+      if(c===0) c = String(b.p.createdAt||"").localeCompare(String(a.p.createdAt||""));
+      else if(so.dir==="desc") c = -c;
+      return c;
+    });
+    var cur = FBP_SORTS.findIndex(function(o){ return o[0]===so.k && o[2]===so.dir; });
+    var th = function(label, k, dir0){
+      var on = so.k===k, arrow = on ? (so.dir==="desc"?" ▼":" ▲") : "";
+      return '<th style="cursor:pointer;white-space:nowrap" data-fbp-sort="'+k+'" data-fbp-dir="'+dir0+'" title="クリックで並び替え">'+label+'<span style="color:var(--green)">'+arrow+'</span></th>';
+    };
+    var html = '<div class="summary-line" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><span>案件 <b>'+rows.length+'</b>件</span><label style="font-size:12px;color:var(--ink-soft)">並び替え '+
+      '<select id="fbp-sort-sel" style="margin-left:4px">'+(cur===-1?'<option selected>—</option>':'')+FBP_SORTS.map(function(o,n){ return '<option value="'+n+'"'+(n===cur?" selected":"")+'>'+o[1]+'</option>'; }).join("")+'</select></label></div>';
+    html += '<div class="tablewrap"><table><thead><tr>'+th("案件名","name","asc")+th("進捗","status","asc")+th("写真","imgs","desc")+th("その他","other","desc")+th("最終追加","last","desc")+'<th></th></tr></thead><tbody>';
+    html += rows.map(function(r){
+      var p = r.p;
       return '<tr class="rowhover"><td><div class="cell-name"><a href="#" data-open-files="'+esc(p.id)+'" data-files-from="files">'+esc(p.name)+'</a></div><div class="cell-sub">'+esc(propertyAddressOf(p).full)+'</div></td>'+
         '<td><span class="badge '+statusStyle(p.status)+'">'+esc(p.status||"未入力")+'</span></td>'+
-        '<td class="num">'+imgs+'</td><td class="num">'+(fl.length-imgs)+'</td><td class="num">'+(last?fmtDateTime(last):"—")+'</td>'+
+        '<td class="num">'+r.imgs+'</td><td class="num">'+r.other+'</td><td class="num">'+(r.last?fmtDateTime(r.last):"—")+'</td>'+
         '<td style="white-space:nowrap"><button class="btn sm" data-open-files="'+esc(p.id)+'" data-files-from="files">ファイル管理を開く</button></td></tr>';
     }).join("");
     return html+'</tbody></table></div>';
@@ -6878,6 +6905,11 @@
       c.querySelectorAll("["+t[0]+"]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var x=state[t[1]].find(function(y){return y.id===el.getAttribute(t[0]);}); if(x) t[2](x); }); });
     });
     c.querySelectorAll("[data-open-files]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); goProjectFiles(el.getAttribute("data-open-files"), el.getAttribute("data-files-from")||"detail"); }); });
+    c.querySelectorAll("[data-fbp-sort]").forEach(function(el){ el.addEventListener("click", function(){
+      var k = el.getAttribute("data-fbp-sort"), cur = state.fbpSort || {k:"created", dir:"desc"};
+      state.fbpSort = (cur.k===k) ? {k:k, dir:(cur.dir==="asc"?"desc":"asc")} : {k:k, dir:el.getAttribute("data-fbp-dir")||"asc"}; render(); }); });
+    var fbpSel = document.getElementById("fbp-sort-sel");
+    if(fbpSel) fbpSel.addEventListener("change", function(){ var o = FBP_SORTS[Number(fbpSel.value)]; if(o){ state.fbpSort = {k:o[0], dir:o[2]}; render(); } });
     c.querySelectorAll("[data-files-view]").forEach(function(el){ el.addEventListener("click", function(){ bulkReset(); state.filesView = el.getAttribute("data-files-view"); render(); }); });
     var pfInput = document.getElementById("pf-input");
     if(pfInput) pfInput.addEventListener("change", function(){
