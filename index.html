@@ -1079,6 +1079,12 @@
     else if(kind==="auto"){ try{ var lastA = Number(localStorage.getItem("gc_lastauto_log")||0); if(Date.now()-lastA > 6*3600*1000){ recordLogin("auto", m.name, m.name); localStorage.setItem("gc_lastauto_log", String(Date.now())); } }catch(e){} }
     state.myName = m.name;
     state.isAdmin = memberPermission(m)==="admin";
+    // 案件一覧の担当者の絞り込みは、ログインしている担当者を初期値にする（ログインごとに1回）
+    if(state.assigneeInitFor!==m.name){
+      state.assigneeInitFor = m.name;
+      state.salesFilter.assignees = [m.name]; state.constFilter.assignees = [m.name];
+      state.salesFilter.page = 1; state.constFilter.page = 1;
+    }
     try{
       localStorage.removeItem("gc_login_name"); localStorage.removeItem("gc_login_phone");
       if(remember){
@@ -2347,12 +2353,13 @@
     html += '<div class="fitem"><span>案件の進捗</span><div class="checkgroup">'+STATUS_LIST.map(function(s){
       return '<label class="checkopt"><input type="checkbox" class="flt-status" value="'+esc(s)+'"'+(f.status.indexOf(s)!==-1?" checked":"")+'>'+esc(s)+'</label>';
     }).join("")+'</div></div>';
-    html += '<div class="fitem"><span>担当者で絞り込み</span><div class="checkgroup">'+state.members.map(function(m){
+    html += '<div class="fitem"><span>担当者で絞り込み</span><div style="display:flex;gap:6px;margin:2px 0 6px"><button type="button" class="btn sm" data-assignee-me>自分の案件のみ</button><button type="button" class="btn sm" data-assignee-all>全員を表示</button></div><div class="checkgroup">'+state.members.map(function(m){
       return '<span class="chip-toggle'+(f.assignees.indexOf(m.name)!==-1?" on":"")+'" data-assignee-chip="'+esc(m.name)+'">'+esc(m.name)+'</span>';
     }).join("")+'</div></div>';
     html += '</div></details>';
     html += '</div>';
 
+    if(f.assignees.length) html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:var(--accent-soft);border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:12.5px"><span>担当者：<b>'+esc(f.assignees.join("、"))+'</b> の案件を表示中</span><button type="button" class="btn sm" data-assignee-all>全員を表示</button></div>';
     html += '<div class="summary-line">'+
       '<span><b>'+filtered.length+'</b>件 / 全'+state.projects.length+'件</span>'+
       STATUS_LIST.slice(0,4).map(function(s){return '<span>'+s+' <b style="font-size:13px">'+counts[s]+'</b></span>';}).join("")+
@@ -6789,6 +6796,8 @@
         f.page = 1;
         render();
       });
+      c.querySelectorAll("[data-assignee-me]").forEach(function(b){ b.addEventListener("click", function(){ f.assignees = state.myName ? [state.myName] : []; f.page = 1; render(); }); });
+      c.querySelectorAll("[data-assignee-all]").forEach(function(b){ b.addEventListener("click", function(){ f.assignees = []; f.page = 1; render(); }); });
       c.querySelectorAll("[data-assignee-chip]").forEach(function(chip){
         chip.addEventListener("click", function(){
           var name = chip.getAttribute("data-assignee-chip");
