@@ -637,6 +637,13 @@
     .card[style*="padding:6px 18px"]{padding:6px 12px 2px !important;}
     /* photos */
     .photo-grid{grid-template-columns:repeat(2,1fr);}
+    /* カレンダー: スマホでも7日分が横スクロールなしで収まるように */
+    .cal{min-width:0;}
+    .cal-day{padding:2px 2px;}
+    .cal-day .dn{font-size:11px;}
+    .cal-chip{font-size:9px;line-height:14px;height:14px;padding:0 2px;margin:1px 1px;}
+    .cal-more{font-size:9px;padding:0 2px;line-height:14px;}
+    .cal-dow{font-size:10.5px;}
     /* forms */
     .form-row{padding:14px 14px;gap:8px;}
     .radiogroup{gap:12px;}
@@ -2333,7 +2340,8 @@
     html += '<div class="summary-line"><span><b>'+list.length+'</b>件 / 全'+all.length+'件</span></div>';
     if(!list.length){ return html + emptyState(iTaskList,"タスクがありません","「タスクを追加」から登録できます"); }
     html += '<div class="tablewrap"><table><thead><tr><th style="width:44px">完了</th><th>タスク</th><th>案件</th><th>担当者</th><th>期限</th><th></th></tr></thead><tbody>';
-    html += list.map(function(t){
+    var tkLimit = state.tkLimit || 100;
+    html += list.slice(0, tkLimit).map(function(t){
       var d = t.dueDate ? daysUntil(t.dueDate) : 0;
       var rel = t.done ? '<span style="color:var(--ink-faint)">完了</span>' : (d<0 ? '<span style="color:var(--danger);font-weight:700">'+Math.abs(d)+'日超過</span>' : (d===0 ? '<span style="color:var(--danger);font-weight:700">本日</span>' : '<span style="color:var(--ink-faint)">あと'+d+'日</span>'));
       return '<tr class="rowhover" data-row-id="'+esc(t.id)+'"><td><input type="checkbox" data-task-toggle="'+esc(t.id)+'"'+(t.done?' checked':'')+' style="width:auto"></td>'+
@@ -2342,7 +2350,9 @@
         '<td>'+esc(t.assignee||"—")+'</td><td class="num">'+esc(fmtDate(t.dueDate))+'<div class="cell-sub">'+rel+'</div></td>'+
         '<td style="white-space:nowrap"><button class="btn sm" data-task-edit="'+esc(t.id)+'">'+iEdit()+' 編集</button> <button class="iconbtn" data-task-del="'+esc(t.id)+'" title="削除">'+iTrash()+'</button></td></tr>';
     }).join("");
-    return html + '</tbody></table></div>';
+    html += '</tbody></table></div>';
+    if(list.length>tkLimit) html += '<div style="text-align:center;margin:12px 0"><button class="btn" id="tk-more">さらに表示する（残り'+(list.length-tkLimit)+'件）</button></div>';
+    return html;
   }
   function openTaskModal(t){
     var x = t || {dueDate:todayISO(), done:false};
@@ -7150,6 +7160,7 @@
     c.querySelectorAll("[data-fbp-sort]").forEach(function(el){ el.addEventListener("click", function(){
       var k = el.getAttribute("data-fbp-sort"), cur = state.fbpSort || {k:"created", dir:"desc"};
       state.fbpSort = (cur.k===k) ? {k:k, dir:(cur.dir==="asc"?"desc":"asc")} : {k:k, dir:el.getAttribute("data-fbp-dir")||"asc"}; render(); }); });
+    var tkMore = document.getElementById("tk-more"); if(tkMore) tkMore.addEventListener("click", function(){ state.tkLimit = (state.tkLimit||100) + 200; render(); });
     var fsa = document.getElementById("files-sort-all"); if(fsa) fsa.addEventListener("change", function(){ state.filesSort = fsa.value; render(); });
     var fbpSel = document.getElementById("fbp-sort-sel");
     if(fbpSel) fbpSel.addEventListener("change", function(){ var o = FBP_SORTS[Number(fbpSel.value)]; if(o){ state.fbpSort = {k:o[0], dir:o[2]}; render(); } });
