@@ -550,6 +550,16 @@
     .summary-line > span.summary-pager{display:none;}
     .summary-line label.summary-pager{display:none !important;}
     .tablewrap td[data-label="作業"]{display:none !important;}
+    /* タップしやすい大きさ（目安 44px） */
+    .cell-name a,.tablewrap td a{display:inline-block;padding:11px 0;font-size:15px;line-height:1.4;}
+    select{min-height:44px;}
+    .summary-line select{min-height:40px;}
+    input[type=checkbox],input[type=radio]{width:22px;height:22px;}
+    .checkopt{min-height:40px;display:flex;align-items:center;gap:8px;}
+    .chat-pin{min-width:40px;min-height:40px;}
+    .gt-tg{min-width:40px;min-height:40px;}
+    details>summary{padding-top:12px;padding-bottom:12px;}
+    .content{padding-bottom:96px;}
     .filter-line{gap:10px;}
     .filter-line .fitem{min-width:0 !important;flex:1 1 100%;}
     .filter-line .btn{flex:1 1 100%;}
