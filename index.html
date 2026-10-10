@@ -578,7 +578,7 @@
     .tablewrap table,.tablewrap thead,.tablewrap tbody,.tablewrap tr,.tablewrap td{display:block;width:100%;}
     .tablewrap thead{display:none;}
     .tablewrap tr{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;padding:10px 14px;}
-    .tablewrap td[data-label="作成日"]{display:none;}
+    .tablewrap td[data-label="更新日"]{display:none;}
     .tablewrap td{border:none;padding:3px 0;display:flex;justify-content:space-between;align-items:flex-start;gap:14px;text-align:right;}
     .tablewrap td[data-label]::before{content:attr(data-label);flex:none;color:var(--ink-faint);font-size:11.5px;font-weight:600;text-align:left;padding-top:2px;}
     .tablewrap td.cell-main{display:block;text-align:left;padding:2px 0 8px;border-bottom:1px dashed var(--border);margin-bottom:4px;padding-right:30px;}
@@ -2372,7 +2372,7 @@
     if(pageItems.length===0){
       html += emptyState(iBriefcase,"該当する案件がありません","条件を変更するか、新規案件を登録してください");
     }else{
-      html += '<div class="tablewrap proj-list"><table><thead><tr>'+sortTh('案件名 / 物件住所','name','namer')+sortTh('顧客','cust')+sortTh('進捗','status')+'<th>工程・予定・報告</th>'+sortTh('施工開始日','start','startr')+sortTh('施工完了予定日','end','endr')+sortTh('金額','amount','amountr')+sortTh('作成日','new','old')+'<th></th></tr></thead><tbody>';
+      html += '<div class="tablewrap proj-list"><table><thead><tr>'+sortTh('案件名 / 物件住所','name','namer')+sortTh('顧客','cust')+sortTh('進捗','status')+'<th>工程・予定・報告</th>'+sortTh('施工開始日','start','startr')+sortTh('施工完了予定日','end','endr')+sortTh('金額','amount','amountr')+sortTh('更新日','upd','updr')+'<th></th></tr></thead><tbody>';
       html += pageItems.map(function(p){
         var names = normalizeAssignees(p.assignees).map(function(a){return a.name;});
         return '<tr class="rowhover" data-row-id="'+esc(p.id)+'" style="'+statusColorStyle(p.status)+'"><td class="cell-main">'+
@@ -2386,7 +2386,7 @@
           '<td class="num" data-label="施工開始日">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.startDate))+'</td>'+
           '<td class="num" data-label="施工完了予定日">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.endDate))+'</td>'+
           '<td class="num" data-label="金額">'+(hiddenFor(p,"p_amount")?"—":fmtYen(p.amount))+'</td>'+
-          '<td class="num" data-label="作成日">'+fmtDate((p.createdAt||"").slice(0,10))+'</td>'+
+          '<td class="num" data-label="更新日">'+fmtDate((p.updatedAt||p.createdAt||"").slice(0,10))+'</td>'+
           '<td class="cell-actions" style="white-space:nowrap"><button class="btn sm" data-edit-project="'+p.id+'">編集</button> <button class="iconbtn" data-del-project="'+p.id+'">'+iTrash()+'</button></td>'+
         '</tr>';
       }).join("");
@@ -3060,7 +3060,7 @@
       var list = normalizeAssignees(p.assignees);
       if(!list.some(function(a){ return a.name===oldName; })) return;
       var updated = list.map(function(a){ return a.name===oldName ? Object.assign({}, a, {name:newName}) : a; });
-      if(db) db.collection("projects").doc(p.id).update({assignees:updated}).catch(function(){});
+      if(db) db.collection("projects").doc(p.id).update({assignees:updated, updatedAt:new Date().toISOString()}).catch(function(){});
       else p.assignees = updated;
     });
   }
@@ -5699,15 +5699,18 @@
   };
 
   /* ---- what each screen currently shows (export / "select all" use these) ---- */
-  var PROJ_SORTS = [["new","作成日（新しい順）"],["old","作成日（古い順）"],["name","案件名（五十音順）"],["namer","案件名（逆順）"],["start","施工開始日（近い順）"],["startr","施工開始日（遠い順）"],["end","施工完了予定日（近い順）"],["endr","施工完了予定日（遠い順）"],["amount","金額（高い順）"],["amountr","金額（低い順）"],["status","進捗順"],["cust","顧客名順"]];
+  var PROJ_SORTS = [["upd","更新日（新しい順）"],["updr","更新日（古い順）"],["new","作成日（新しい順）"],["old","作成日（古い順）"],["name","案件名（五十音順）"],["namer","案件名（逆順）"],["start","施工開始日（近い順）"],["startr","施工開始日（遠い順）"],["end","施工完了予定日（近い順）"],["endr","施工完了予定日（遠い順）"],["amount","金額（高い順）"],["amountr","金額（低い順）"],["status","進捗順"],["cust","顧客名順"]];
   function projSortKey(){
     var v = state.projSort || ""; if(!v){ try{ v = localStorage.getItem("gc_projsort")||""; }catch(e){} }
-    return PROJ_SORTS.some(function(x){ return x[0]===v; }) ? v : "new";
+    return PROJ_SORTS.some(function(x){ return x[0]===v; }) ? v : "upd";
   }
   function projSortFn(k){
     var dt = function(a,b,key,desc){ var x=a[key]||"", y=b[key]||""; if(!x&&!y) return 0; if(!x) return 1; if(!y) return -1; return desc ? y.localeCompare(x) : x.localeCompare(y); };
     var cr = function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); };
+    var up = function(a,b){ return (b.updatedAt||b.createdAt||"").localeCompare(a.updatedAt||a.createdAt||""); };
     var f = {
+      "upd": up,
+      "updr": function(a,b){ return -up(a,b); },
       "new": cr,
       "old": function(a,b){ return -cr(a,b); },
       "name": function(a,b){ return (a.name||"").localeCompare(b.name||"","ja"); },
@@ -5726,7 +5729,7 @@
   function sortTh(label, k1, k2){
     var cur = projSortKey(), on = cur===k1 || (k2 && cur===k2);
     var arrow = on ? (cur===k1 ? " ▲" : " ▼") : ' <span style="opacity:.35">⇅</span>';
-    if(k1==="new"||k1==="amount") arrow = on ? (cur===k1 ? " ▼" : " ▲") : arrow;
+    if(k1==="new"||k1==="amount"||k1==="upd") arrow = on ? (cur===k1 ? " ▼" : " ▲") : arrow;
     return '<th data-sortcol="'+k1+'" data-sortcol2="'+(k2||"")+'" style="cursor:pointer;user-select:none;white-space:nowrap'+(on?';color:var(--accent)':'')+'" title="クリックで並び替え">'+label+arrow+'</th>';
   }
   function filterProjects(mode){
