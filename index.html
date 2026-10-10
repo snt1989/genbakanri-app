@@ -1011,7 +1011,15 @@
   var db=null, downloadsCap=null, assetsCap=null;
 
   /* ============ login ============ */
+  function goPersonalSettings(){
+    if(!state.myName) return;
+    state.settingsSeg = "personal"; setTab("settings");
+  }
   function bindLoginAndTopbarEvents(){
+    ["user-avatar","user-name"].forEach(function(id){
+      var el = document.getElementById(id);
+      if(el){ el.style.cursor = "pointer"; el.setAttribute("title","個人情報を開く"); el.addEventListener("click", goPersonalSettings); }
+    });
     var submit = document.getElementById("login-submit");
     if(submit) submit.addEventListener("click", attemptLogin);
     ["login-name","login-password"].forEach(function(id){
