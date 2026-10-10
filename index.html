@@ -6731,9 +6731,16 @@
     if(!p) return;
     var pa = propertyAddressOf(p); if(!pa.text) return;
     var canMove = !isExternalViewer();
-    var gIframe = function(){
-      var q = (typeof p.mapLat==="number" && typeof p.mapLng==="number") ? (p.mapLat+","+p.mapLng) : encodeURIComponent(pa.text);
-      return '<iframe title="物件の地図" loading="lazy" referrerpolicy="no-referrer-when-downgrade" style="display:block;width:100%;height:260px;border:0" src="https://www.google.com/maps?q='+q+'&z=16&hl=ja&output=embed"></iframe>';
+    var gFrame = function(q){
+      return '<iframe title="物件の地図" loading="lazy" referrerpolicy="no-referrer-when-downgrade" style="display:block;width:100%;height:260px;border:0" src="https://www.google.com/maps?q='+q+'&z=17&hl=ja&output=embed"></iframe>';
+    };
+    // Googleマップにもピンを出すため、位置（保存済み→住所から検索した座標）を緯度経度で渡す。見つからなければ住所で表示。
+    var showGoogle = function(){
+      var token = (box._gtok = (box._gtok||0)+1);
+      var put = function(q){ if(box._gtok===token && document.body.contains(box) && state.propMapMode==="google") box.innerHTML = gFrame(q); };
+      if(typeof p.mapLat==="number" && typeof p.mapLng==="number") return put(p.mapLat+","+p.mapLng);
+      box.innerHTML = gFrame(encodeURIComponent(pa.text));
+      geocodeJp(pa.text).then(function(g){ if(g) put(g.lat+","+g.lng); }).catch(function(){});
     };
     document.querySelectorAll("#pm-mode [data-pmmode]").forEach(function(o){
       if(o._pmBound) return; o._pmBound = true;
@@ -6742,10 +6749,10 @@
         state.propMapMode = m;
         document.querySelectorAll("#pm-mode [data-pmmode]").forEach(function(x){ x.classList.toggle("active", x===o); });
         var ctl0 = document.getElementById("propmap-ctl"); if(ctl0) ctl0.innerHTML = "";
-        if(m==="google"){ box.innerHTML = gIframe(); } else { box.innerHTML = gIframe(); initPropMap(box); }
+        if(m==="google"){ showGoogle(); } else { initPropMap(box); }
       });
     });
-    if(state.propMapMode==="google"){ box.innerHTML = gIframe(); return; }
+    if(state.propMapMode==="google"){ showGoogle(); return; }
     loadLeaflet().then(function(){
       if(!document.body.contains(box)) return;
       var saved = (typeof p.mapLat==="number" && typeof p.mapLng==="number") ? {lat:p.mapLat,lng:p.mapLng} : null;
