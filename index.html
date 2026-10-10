@@ -2913,10 +2913,13 @@
     if(p.propertyNotes) prows += kvRow("備考", esc(p.propertyNotes), "pr_notes", p);
     if(pa.text && !hiddenFor(p,"pr_addr")){
       var mq = encodeURIComponent(pa.text);
-      prows += '<div class="kv" style="display:block;padding:12px 16px"><div class="propmap" style="border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--surface-2)">'+
-        '<iframe title="物件の地図" loading="lazy" referrerpolicy="no-referrer-when-downgrade" style="display:block;width:100%;height:240px;border:0" src="https://www.google.com/maps?q='+mq+'&z=16&hl=ja&output=embed"></iframe></div>'+
-        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+mq+'">'+iMap()+' Googleマップで開く（経路・ストリートビュー）</a>'+
-        '<a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination='+mq+'">経路を調べる</a></div></div>';
+      var hasPin = (typeof p.mapLat==="number" && typeof p.mapLng==="number");
+      var mq2 = hasPin ? (p.mapLat+","+p.mapLng) : mq;
+      prows += '<div class="kv" style="display:block;padding:12px 16px"><div class="propmap" id="propmap-live" data-pid="'+esc(p.id)+'" style="border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--surface-2)">'+
+        '<iframe title="物件の地図" loading="lazy" referrerpolicy="no-referrer-when-downgrade" style="display:block;width:100%;height:240px;border:0" src="https://www.google.com/maps?q='+mq2+'&z=16&hl=ja&output=embed"></iframe></div>'+
+        '<div id="propmap-ctl"></div>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:flex-start"><a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+mq2+'">'+iMap()+' Googleマップで開く（経路・ストリートビュー）</a>'+
+        '<a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination='+mq2+'">経路を調べる</a></div></div>';
     }
     html += section("物件情報", prows, "property");
 
@@ -6696,8 +6699,86 @@
 
 
   /* ============ events ============ */
+
+  // ---- 物件の地図（ピン付き）。住所から自動で位置を探し、特定できない・ずれている場合はピンを動かして保存できる ----
+  var __leafletP = null;
+  function loadLeaflet(){
+    if(window.L) return Promise.resolve();
+    if(__leafletP) return __leafletP;
+    __leafletP = new Promise(function(res, rej){
+      var l = document.createElement("link"); l.rel="stylesheet"; l.href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"; document.head.appendChild(l);
+      var sc = document.createElement("script"); sc.src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";
+      sc.onload=function(){ window.L ? res() : rej(); }; sc.onerror=function(){ __leafletP=null; rej(); };
+      document.head.appendChild(sc);
+      setTimeout(function(){ if(!window.L) rej(); }, 8000);
+    });
+    return __leafletP;
+  }
+  var __geoCache = {};
+  function geocodeJp(q){
+    if(__geoCache[q]) return Promise.resolve(__geoCache[q]);
+    return fetch("https://msearch.gsi.go.jp/address-search/AddressSearch?q="+encodeURIComponent(q))
+      .then(function(r){ return r.json(); })
+      .then(function(a){
+        if(!a || !a.length) return null;
+        var c = a[0].geometry.coordinates; var o = {lat:c[1], lng:c[0], title:(a[0].properties||{}).title||""};
+        __geoCache[q]=o; return o;
+      });
+  }
+  function initPropMap(box){
+    var p = state.projects.find(function(x){ return x.id===box.getAttribute("data-pid"); });
+    if(!p) return;
+    var pa = propertyAddressOf(p); if(!pa.text) return;
+    var canMove = !isExternalViewer();
+    loadLeaflet().then(function(){
+      if(!document.body.contains(box)) return;
+      var saved = (typeof p.mapLat==="number" && typeof p.mapLng==="number") ? {lat:p.mapLat,lng:p.mapLng} : null;
+      var pre = saved ? Promise.resolve(saved) : geocodeJp(pa.text).catch(function(){ return null; });
+      return pre.then(function(pos){
+        if(!document.body.contains(box)) return;
+        box.innerHTML = '<div id="propmap-canvas" style="height:260px;width:100%"></div>';
+        var found = !!pos, cur = pos || {lat:36.2, lng:138.25}, dirty = false;
+        var map = L.map("propmap-canvas", {scrollWheelZoom:false}).setView([cur.lat,cur.lng], found?17:5);
+        L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", {maxZoom:18, attribution:"地理院タイル"}).addTo(map);
+        var icon = L.divIcon({className:"", iconSize:[30,40], iconAnchor:[15,38],
+          html:'<svg width="30" height="40" viewBox="0 0 30 40"><path d="M15 1C7.8 1 2 6.8 2 14c0 9.5 13 25 13 25s13-15.500 13-25C28 6.800 22.200 1 15 1z" fill="#d93025" stroke="#fff" stroke-width="2"/><circle cx="15" cy="14" r="5" fill="#fff"/></svg>'});
+        var mk = L.marker([cur.lat,cur.lng], {icon:icon, draggable:canMove}).addTo(map);
+        var ctl = document.getElementById("propmap-ctl");
+        var paint = function(){
+          var msg = dirty ? '<span style="color:var(--danger);font-weight:700">ピンの位置を変更しました。保存してください。</span>'
+            : (saved ? '<span style="color:var(--ink-soft)">ピンの位置は保存済みです。</span>'
+            : (found ? '<span style="color:var(--ink-soft)">住所から位置を自動で表示しています。'+(canMove?'ずれている場合はピンを動かしてください。':'')+'</span>'
+            : '<span style="color:var(--danger);font-weight:700">住所から場所を特定できませんでした。'+(canMove?'地図をタップするか、ピンを動かして位置を指定してください。':'')+'</span>'));
+          ctl.innerHTML = '<div style="font-size:12px;margin-top:8px;line-height:1.6">'+msg+'</div>'+(canMove ?
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;align-items:flex-start">'+
+            (dirty?'<button class="btn sm primary" id="pm-save">この位置で保存</button><button class="btn sm" id="pm-cancel">元に戻す</button>':'')+
+            (saved&&!dirty?'<button class="btn sm" id="pm-reset">保存した位置を解除（住所から再検索）</button>':'')+'</div>' : '');
+          var b;
+          if((b=document.getElementById("pm-save"))) b.onclick=function(){
+            var ll = mk.getLatLng(), lat = Math.round(ll.lat*1e6)/1e6, lng = Math.round(ll.lng*1e6)/1e6;
+            p.mapLat = lat; p.mapLng = lng; saved = {lat:lat,lng:lng}; dirty = false; paint();
+            if(db) db.collection("projects").doc(p.id).update({mapLat:lat, mapLng:lng}).then(function(){ toast("ピンの位置を保存しました"); }).catch(function(){ toast("保存できませんでした"); });
+          };
+          if((b=document.getElementById("pm-cancel"))) b.onclick=function(){ mk.setLatLng([cur.lat,cur.lng]); map.panTo([cur.lat,cur.lng]); dirty=false; paint(); };
+          if((b=document.getElementById("pm-reset"))) b.onclick=function(){
+            p.mapLat = null; p.mapLng = null; saved = null;
+            if(db) db.collection("projects").doc(p.id).update({mapLat:null, mapLng:null}).catch(function(){});
+            geocodeJp(pa.text).catch(function(){return null;}).then(function(g){ found=!!g; if(g){ cur=g; mk.setLatLng([g.lat,g.lng]); map.setView([g.lat,g.lng],17);} paint(); });
+          };
+        };
+        if(canMove){
+          mk.on("dragend", function(){ dirty = true; paint(); });
+          map.on("click", function(e){ mk.setLatLng(e.latlng); dirty = true; paint(); });
+        }
+        paint();
+        setTimeout(function(){ map.invalidateSize(); }, 200);
+      });
+    }).catch(function(){ /* 読み込めない環境では、従来のGoogleマップ表示のまま */ });
+  }
+
   function bindEvents(){
     var c = document.getElementById("content");
+    var pmBox = c && c.querySelector("#propmap-live"); if(pmBox) initPropMap(pmBox);
 
     var retryBtn = document.getElementById("retry-sync-btn");
     if(retryBtn) retryBtn.addEventListener("click", retrySync);
