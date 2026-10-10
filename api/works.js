@@ -49,6 +49,10 @@ async function run(b, me, req){
       }
       return out;
     }
+    case "directory": {
+      need(admin, "管理者のみ実行できます");
+      return {users: await W.listUsers()};
+    }
     case "saveSettings": {
       need(admin, "管理者のみ変更できます");
       var d = {};

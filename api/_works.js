@@ -26,9 +26,11 @@ function httpErr(status, message){ var e = new Error(message); e.status = status
 function b64url(b){ return Buffer.from(b).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
 
 /* ---- アクセストークン（サービスアカウントのJWT認証。メモリに短時間キャッシュ） ---- */
-var cache = {token: "", exp: 0};
-async function getToken(){
-  if(cache.token && Date.now() < cache.exp) return cache.token;
+var cache = {};   // スコープごとに保持
+async function getToken(scope){
+  scope = scope || "bot";
+  var c = cache[scope];
+  if(c && c.token && Date.now() < c.exp) return c.token;
   var now = Math.floor(Date.now() / 1000);
   var head = b64url(JSON.stringify({alg: "RS256", typ: "JWT"}));
   var claim = b64url(JSON.stringify({iss: env("WORKS_CLIENT_ID"), sub: env("WORKS_SERVICE_ACCOUNT"), iat: now, exp: now + 3600}));
@@ -37,12 +39,32 @@ async function getToken(){
   try{ sig = b64url(crypto.sign("RSA-SHA256", Buffer.from(head + "." + claim), key)); }
   catch(e){ throw httpErr(500, "WORKS_PRIVATE_KEY を読み取れません（PEM形式か確認してください）"); }
   var body = new URLSearchParams({assertion: head + "." + claim + "." + sig, grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-    client_id: env("WORKS_CLIENT_ID"), client_secret: env("WORKS_CLIENT_SECRET"), scope: "bot"});
+    client_id: env("WORKS_CLIENT_ID"), client_secret: env("WORKS_CLIENT_SECRET"), scope: scope});
   var r = await fetch(AUTH_URL, {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: body.toString()});
   var j = await r.json().catch(function(){ return {}; });
   if(!r.ok || !j.access_token) throw httpErr(502, "LINE WORKS 認証に失敗: " + (j.error_description || j.error || r.status));
-  cache = {token: j.access_token, exp: Date.now() + (Number(j.expires_in) || 3600) * 1000 - 120000};
-  return cache.token;
+  cache[scope] = {token: j.access_token, exp: Date.now() + (Number(j.expires_in) || 3600) * 1000 - 120000};
+  return cache[scope].token;
+}
+
+/* ---- メンバー一覧（Directory API。Developer Console のアプリに user.read スコープが必要） ---- */
+async function listUsers(){
+  var tk;
+  try{ tk = await getToken("user.read"); }
+  catch(e){ throw httpErr(e.status || 502, e.message + "（Developer Console のアプリで OAuth Scopes に user.read（または directory.read）を追加し、保存してから再度お試しください）"); }
+  var out = [], cursor = "";
+  for(var i = 0; i < 30; i++){
+    var r = await fetch(API + "/users?count=100" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""), {headers: {Authorization: "Bearer " + tk}});
+    var j = await r.json().catch(function(){ return {}; });
+    if(!r.ok) throw httpErr(502, "LINE WORKS メンバー取得に失敗（" + r.status + "）: " + (j.description || j.message || j.code || ""));
+    (j.users || []).forEach(function(u){
+      var n = u.userName || {};
+      out.push({userId: u.userId, name: [n.lastName, n.firstName].filter(Boolean).join(" "), kana: [n.phoneticLastName, n.phoneticFirstName].filter(Boolean).join(" "),
+        email: u.email || "", phone: u.cellPhone || u.telephone || "", suspended: !!u.isSuspended});
+    });
+    cursor = (j.responseMetaData || {}).nextCursor || ""; if(!cursor) break;
+  }
+  return out;
 }
 
 /* ---- メッセージ送信（text） ---- */
@@ -133,5 +155,5 @@ function visibleProjects(projects, member){
   return projects.filter(function(p){ return assigneeNames(p).some(function(n){ return strip(n) === strip(member.name); }); });
 }
 
-module.exports = {configured: configured, httpErr: httpErr, sendChannel: sendChannel, sendUser: sendUser, getDoc: getDoc, listDocs: listDocs, patchDoc: patchDoc, createDoc: createDoc,
+module.exports = {listUsers: listUsers, configured: configured, httpErr: httpErr, sendChannel: sendChannel, sendUser: sendUser, getDoc: getDoc, listDocs: listDocs, patchDoc: patchDoc, createDoc: createDoc,
   getSettings: getSettings, userKey: userKey, linkedName: linkedName, jstToday: jstToday, assigneeNames: assigneeNames, strip: strip, visibleProjects: visibleProjects, env: env};

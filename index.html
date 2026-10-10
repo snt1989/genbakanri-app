@@ -3114,6 +3114,7 @@
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
           '<button class="btn primary" data-goto-memberform="1">'+iAdmin()+iPlus()+' 自社メンバー登録</button>'+
           '<button class="btn primary" data-goto-memberform="ext">'+iAdmin()+iPlus()+' 社外メンバー登録</button>'+
+          (worksAvailable()?'<button class="btn outline" data-open="works-import">'+iAdmin()+iPlus()+' LINE WORKSから登録</button>':'')+
           '<button class="btn outline" data-open="member-invite">'+iAdmin()+iPlus()+' 社外メンバーの登録URLを発行</button>'+
           csvToolbar("members")+
         '</div>' : ''
@@ -5194,6 +5195,65 @@
   // 社外メンバーの登録URLを発行する（管理者）。URLは7日間・1回だけ使えます。
   var INVITE_API = "/api/invite";
   function inviteAvailable(){ return !!db && !window.claude && !state.offlineMode; }
+  // ---- LINE WORKSのメンバーを、このアプリのメンバーとして一括登録（管理者） ----
+  function openWorksImport(){
+    if(!state.isAdmin){ toast("管理者のみ行えます"); return; }
+    if(!worksAvailable()){ toast("この機能はVercel版（Firebase接続）でのみ使えます"); return; }
+    openModal("LINE WORKSからメンバー登録", '<div id="wi-body" style="font-size:12.5px;color:var(--ink-soft)">LINE WORKSのメンバーを読み込み中…</div>', '<button class="btn" data-close-modal>閉じる</button>');
+    var mb = document.getElementById("modal-box"); if(mb) mb.style.maxWidth = "680px";
+    worksCall("directory").then(function(j){
+      var body = document.getElementById("wi-body"); if(!body) return;
+      var users = (j.users||[]).filter(function(u){ return u.name && !u.suspended; });
+      var mem = state.members;
+      var exists = function(u){
+        return mem.some(function(m){ return normName(m.name)===normName(u.name) || (u.phone && normPhone(m.phone)===normPhone(u.phone)); });
+      };
+      var rows = users.map(function(u,i){
+        var ex = exists(u), noPhone = !normPhone(u.phone);
+        return '<label style="display:flex;gap:10px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--border);'+((ex||noPhone)?'opacity:.55':'')+'"><input type="checkbox" data-wi="'+i+'"'+((ex||noPhone)?' disabled':' checked')+'>'+
+          '<span style="flex:1;min-width:0"><b style="font-size:13px">'+esc(u.name)+'</b><br><span style="font-size:11.5px;color:var(--ink-faint)">'+esc(u.phone||"携帯番号なし")+(u.email?' / '+esc(u.email):'')+'</span></span>'+
+          '<span class="tag muted" style="font-size:11px">'+(ex?'登録済み':(noPhone?'携帯番号なし（登録不可）':'未登録'))+'</span></label>';
+      }).join("");
+      if(!users.length){ body.innerHTML = '<div style="color:var(--ink-faint)">LINE WORKSにメンバーが見つかりませんでした。</div>'; return; }
+      body.innerHTML = '<div style="line-height:1.7;margin-bottom:10px">LINE WORKSに登録されているメンバーから、このアプリに追加する人を選びます。ログインには「携帯番号」と、下で決める「初期パスワード」を使います（本人に伝えて、ログイン後に変更してもらってください）。</div>'+
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">'+
+        '<label style="font-size:12px">区分<br><select id="wi-kind"><option value="internal">自社メンバー</option><option value="external">社外メンバー</option></select></label>'+
+        '<label style="font-size:12px" id="wi-permwrap">権限<br><select id="wi-perm"><option value="general">一般</option><option value="admin">管理者</option></select></label>'+
+        '<label style="font-size:12px">所属会社<br><input id="wi-company" type="text" value="'+esc(state.orgSettings.companyName||"")+'" style="width:200px"></label>'+
+        '<label style="font-size:12px">初期パスワード（4文字以上）<br><input id="wi-pw" type="text" autocomplete="off" style="width:170px"></label></div>'+
+        '<div style="max-height:40vh;overflow:auto;border:1px solid var(--border);border-radius:10px;padding:2px 10px">'+rows+'</div>'+
+        '<div id="wi-msg" style="font-size:12px;color:var(--danger);margin-top:8px"></div>'+
+        '<div style="margin-top:10px;text-align:right"><button class="btn primary" id="wi-go">選んだメンバーを登録する</button></div>';
+      var kind = document.getElementById("wi-kind"), comp = document.getElementById("wi-company");
+      var company0 = state.orgSettings.companyName||"";
+      kind.addEventListener("change", function(){
+        var ext = kind.value==="external";
+        document.getElementById("wi-permwrap").style.display = ext ? "none" : "";
+        comp.value = ext ? "" : company0; comp.placeholder = ext ? "例: 有限会社○○塗装" : "";
+      });
+      document.getElementById("wi-go").addEventListener("click", function(){
+        var msg = document.getElementById("wi-msg"); msg.textContent = "";
+        var pw = document.getElementById("wi-pw").value.trim();
+        var picked = Array.prototype.slice.call(body.querySelectorAll("[data-wi]:checked")).map(function(c){ return users[Number(c.getAttribute("data-wi"))]; });
+        if(!picked.length){ msg.textContent = "登録するメンバーを選んでください"; return; }
+        if(pw.length<4){ msg.textContent = "初期パスワードは4文字以上で入力してください"; return; }
+        var ext = kind.value==="external", company = comp.value.trim();
+        if(ext && !company){ msg.textContent = "社外メンバーは所属会社を入力してください"; return; }
+        var perm = ext ? "external" : document.getElementById("wi-perm").value;
+        var btn = document.getElementById("wi-go"); btn.disabled = true; btn.textContent = "登録中…";
+        var now = new Date().toISOString(), done = 0, failed = 0;
+        var one = function(u){
+          var data = Object.assign({name:u.name, phone:u.phone, kana:u.kana||"", email:u.email||"", company:company||state.orgSettings.companyName||"", division:"", roles:[], password:pw, createdAt:now, updatedAt:now, source:"lineworks"}, permissionFields(perm));
+          return db.collection("members").add(data).then(function(){ done++; }, function(){ failed++; });
+        };
+        Promise.all(picked.map(one)).then(function(){
+          closeModal(); toast(done+"人を登録しました"+(failed?"（"+failed+"人は失敗）":"")+"。職種は「メンバー編集」から設定できます");
+        });
+      });
+    }, function(e){
+      var body = document.getElementById("wi-body"); if(body) body.innerHTML = '<div style="color:var(--danger);line-height:1.7">'+esc(e.message||"読み込めませんでした")+'</div>';
+    });
+  }
   function openMemberInvite(){
     if(!state.isAdmin){ toast("管理者のみ行えます"); return; }
     var intro = '<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.7">社外の方に送る「登録URL」を発行します。相手がそのURLを開いて、氏名・携帯番号・所属会社・パスワードを自分で入力すると、<b>社外メンバー</b>として登録されます。</div>'+
@@ -7518,6 +7578,7 @@
     if(openBtn){
       var what = openBtn.getAttribute("data-open");
       if(what==="member-invite") openMemberInvite();
+      if(what==="works-import") openWorksImport();
       else if(what==="customer-form") openCustomerForm();
       else if(what==="chat-form") openChatForm();
       return;
