@@ -1064,17 +1064,25 @@
   }
   document.addEventListener("click", function(ev){
     if(ev.defaultPrevented) return;   // 一括選択モードなどで処理済み
-    var a = ev.target.closest && ev.target.closest('a[href^="data:"]'); if(!a) return;
+    var a = ev.target.closest && ev.target.closest('a[href]'); if(!a) return;
     if(ev.target.closest("[data-del-file]")) return;
-    var href = a.getAttribute("href");
+    var href = a.getAttribute("href") || "";
+    var isData = /^data:/i.test(href);
+    // 画像（サムネイル）のリンクは、データURLでもそうでなくても、アプリ内ビューアで開く（スマホで新しいタブが白い画面になるため）
+    var thumbImg = a.querySelector("img:not(.lb-img)");
+    var isImgLink = !!thumbImg && !a.hasAttribute("download") && !a.closest("#lightbox") && (isData ? /^data:image\//i.test(href) : a.getAttribute("target")==="_blank" && /^(https?:|\/|blob:)/i.test(href));
+    if(!isData && !isImgLink) return;
     ev.preventDefault();
     var nameOf = function(el){ var f = el.querySelector(".fname"); return (el.getAttribute("download") || (f && f.textContent) || "").trim(); };
     try{
-      if(/^data:image\//i.test(href) && !a.hasAttribute("download")){
+      if(isImgLink){
         var root = document.getElementById("content") || document;
         var seen = {}, list = [];
-        Array.prototype.forEach.call(root.querySelectorAll('a[href^="data:image/"]:not([download])'), function(x){
-          var h = x.getAttribute("href"); if(seen[h]) return; seen[h] = 1; list.push({href:h, name:nameOf(x)});
+        Array.prototype.forEach.call(root.querySelectorAll("a[href]"), function(x){
+          var h = x.getAttribute("href") || "", im = x.querySelector("img:not(.lb-img)");
+          if(!im || x.hasAttribute("download") || seen[h]) return;
+          var ok = /^data:image\//i.test(h) || (x.getAttribute("target")==="_blank" && /^(https?:|\/|blob:)/i.test(h));
+          if(!ok) return; seen[h] = 1; list.push({href:h, name:nameOf(x)});
         });
         var idx = list.findIndex(function(x){ return x.href===href; }); if(idx<0){ list.push({href:href, name:""}); idx = list.length-1; }
         openLightbox(list, idx);
