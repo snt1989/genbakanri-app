@@ -1013,7 +1013,7 @@
   /* ============ login ============ */
   function goPersonalSettings(){
     if(!state.myName) return;
-    state.settingsSeg = "personal"; setTab("settings");
+    bulkReset(); state.settingsSeg = "personal"; state.personalOpen = true; state.tab = "settings"; state.sidebarOpen = false; render();
   }
   function bindLoginAndTopbarEvents(){
     ["user-avatar","user-name"].forEach(function(id){
@@ -1628,7 +1628,7 @@
   function overdueOrToday(t){ return !t.done && t.dueDate<=todayISO(); }
 
   function setTab(id){
-    bulkReset(); state.tab=id; state.sidebarOpen=false; if(!SUBPAGES[id]) state.returnTab=id; render();
+    bulkReset(); state.personalOpen=false; state.tab=id; state.sidebarOpen=false; if(!SUBPAGES[id]) state.returnTab=id; render();
   }
   function goProjectForm(mode, project){ state.formMode=mode||state.returnTab; state.editingProject=project||null; state.tab="project-form"; render(); }
   function goProjectDetail(id){ state.viewingProjectId=id; state.tab="project-detail"; render(); }
@@ -3740,10 +3740,13 @@
   }
   function renderSettings(){
     var sections = settingsSections();
+    // 「個人情報」は設定のタブには出さず、画面右上の名前から開く
+    var tabs = sections.filter(function(x){ return x[0]!=="personal"; });
+    if(state.settingsSeg==="personal" && !state.personalOpen && tabs.length) state.settingsSeg = tabs[0][0];
     if(!sections.some(function(x){return x[0]===state.settingsSeg;})) state.settingsSeg = sections[0][0];
     if(state.settingsSeg!=="admin") state.navDraft = null;
-    var html = '<h1 class="pagetitle">設定</h1><div style="height:14px"></div>';
-    html += '<div class="segmented" style="margin-bottom:16px">'+sections.map(function(x){
+    var html = '<h1 class="pagetitle">'+(state.settingsSeg==="personal"?"個人情報":"設定")+'</h1><div style="height:14px"></div>';
+    if(tabs.length && state.settingsSeg!=="personal") html += '<div class="segmented" style="margin-bottom:16px">'+tabs.map(function(x){
       return '<div class="segopt'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+((x[0]==="company"||x[0]==="admin"||x[0]==="loginlog"||x[0]==="freee"||x[0]==="master"||x[0]==="trash"||x[0]==="backup")?iAdmin():'')+x[1]+'</div>';
     }).join("")+'</div>';
     if(state.settingsSeg==="personal") html += renderSettingsPersonal();
@@ -4022,7 +4025,7 @@
   var HELP = [
     {t:"はじめに", items:[
       ["ログインするには？","ログイン画面で、電話番号（または氏名）とパスワードを入力します。管理者から教えてもらった情報を使ってください。「ログイン情報を保存する」にチェックすると、次回から自動で入れます（共有のパソコンではチェックしないでください）。"],
-      ["パスワードを忘れました／変えたい","変えたいときは「設定 → 個人情報 → パスワードの変更」から、現在のパスワードを入れて新しいものに変更できます。忘れたときは管理者に連絡してください。管理者がメンバー管理から再設定します。"],
+      ["パスワードを忘れました／変えたい","変えたいときは「画面右上の名前 → 個人情報 → パスワードの変更」から、現在のパスワードを入れて新しいものに変更できます。忘れたときは管理者に連絡してください。管理者がメンバー管理から再設定します。"],
       ["権限（管理者・一般・社外）の違いは？","管理者はすべての操作ができます。一般メンバーは自分が担当する案件を中心に使えます。社外メンバー（協力会社など）は、自分が担当する案件だけが見え、社外秘に設定された情報・フォルダは見えません。"],
       ["自分の担当ではない案件が見えません","一般・社外メンバーには、担当者に入っている案件だけが表示されます。見たい案件がある場合は、管理者に担当者へ追加してもらってください。"],
       ["スマホで使うには？","スマホのブラウザでアプリのURLを開き、「ホーム画面に追加」するとアプリのように使えます（iPhoneはSafariの「共有 → ホーム画面に追加」）。画面下のメニューバーで主な画面を切り替えられます。"]
@@ -4043,7 +4046,7 @@
     {t:"チャット", items:[
       ["チャットの種類は？","案件ごとのチャット（担当メンバーが参加）と、グループチャット（参加者を選べる）があります。案件のチャットは、その案件の担当メンバーが参加します。"],
       ["写真やファイル、現在地も送れますか？","入力欄の横のボタンから、写真・ファイルの添付と現在地の共有ができます。現在地は、確認画面で送信すると、地図で開けるリンクとして届きます。写真は自動で小さくして送るので、大きなファイルは届かないことがあります（画像以外は約650KBまで）。"],
-      ["通知を受け取りたい","「設定 → 個人情報 → スマホ通知」で、この端末の通知をオンにします。チャットの新着、新規案件、進捗の変更、報告書の提出、自分のタスク追加のうち、受け取りたいものを選べます。iPhoneはホーム画面に追加したアプリから設定してください。通知を使うには、管理者の事前設定が必要です。"],
+      ["通知を受け取りたい","「画面右上の名前 → 個人情報 → スマホ通知」で、この端末の通知をオンにします。チャットの新着、新規案件、進捗の変更、報告書の提出、自分のタスク追加のうち、受け取りたいものを選べます。iPhoneはホーム画面に追加したアプリから設定してください。通知を使うには、管理者の事前設定が必要です。"],
       ["特定の人に気づいてほしい","メッセージに「@名前」を入れると、その人宛てだと分かるようになります。入力欄のメンションボタンから選べます。"]
     ]},
     {t:"顧客管理", items:[
@@ -4068,7 +4071,7 @@
       ["CSVでまとめて出し入れしたい（管理者）","各一覧の「CSV出力」「CSV入力」で、案件・顧客・メンバーなどを一括で出力・取り込みできます。他のシステム（クラフタなど）の現場一覧は、施工案件一覧の「他システムから取込」で、列を対応付けて取り込めます。取り込みは取り消せないので、プレビューの件数を確認してから実行してください。"],
       ["freeeと連携したい（管理者）","「設定 → freee連携」で連携します。顧客を取引先として登録、案件を売上取引として登録、入金状況の取得、freeeの取引先を顧客へ取り込み（見積書の履歴での絞り込みも可）ができます。設定の手順は連携画面に表示されます。"],
       ["LINE WORKSと連携したい（管理者）","「設定 → LINE WORKS」で、案件・報告書・タスクの通知、アプリからの共有、LINE WORKSのBotからの案件登録・照会ができます。連携の準備（Botの作成、環境変数の登録）が必要です。"],
-      ["スマホ通知を使えるようにしたい（管理者）","「設定 → 個人情報 → スマホ通知」で通知用のキーを作成し、表示された2つの値を、Vercelの環境変数（VAPID_PUBLIC_KEY・VAPID_PRIVATE_KEY）に登録して再デプロイします。そのあと、各メンバーが自分の端末で通知をオンにします。"],
+      ["スマホ通知を使えるようにしたい（管理者）","「画面右上の名前 → 個人情報 → スマホ通知」で通知用のキーを作成し、表示された2つの値を、Vercelの環境変数（VAPID_PUBLIC_KEY・VAPID_PRIVATE_KEY）に登録して再デプロイします。そのあと、各メンバーが自分の端末で通知をオンにします。"],
       ["バックアップを取りたい（管理者）","「設定 → バックアップ」から、データをファイルに書き出せます。大きな変更（CSVの一括取り込みなど）の前に取ることをおすすめします。書き出したファイルから復元もできます。"],
       ["会社情報を変更したい（管理者）","「設定 → 会社情報」で、会社名・住所・電話番号などを編集できます。郵便番号を入れると住所が自動で入ります。管理者以外には編集できません。"]
     ]},
@@ -4076,7 +4079,7 @@
       ["画面が古い／表示がおかしい","ブラウザを再読み込みしてください。スマホのホーム画面アプリは、一度閉じて開き直すと最新になります。それでも直らないときは、管理者に連絡してください。"],
       ["写真・ファイルがアップできない","画像は自動で小さくなりますが、PDFなど画像以外は約650KBまでです。それより大きいときは、サイズを小さくするか、管理者に相談してください。"],
       ["郵便番号を入れても住所が出ない","7桁を入力すると自動で入ります。すでに住所を手入力している場合は上書きしません。ネットワークの状態によっては取得できないことがあり、そのときは手入力してください。"],
-      ["通知が届かない","通知がオンか（設定 → 個人情報 → スマホ通知）、受け取りたい項目にチェックがあるか、端末の通知がブロックされていないか確認してください。管理者の事前設定がまだの場合は、通知は使えません。"],
+      ["通知が届かない","通知がオンか（画面右上の名前 → 個人情報 → スマホ通知）、受け取りたい項目にチェックがあるか、端末の通知がブロックされていないか確認してください。管理者の事前設定がまだの場合は、通知は使えません。"],
       ["操作を間違えて消した／変えた","削除したものは、管理者が「ゴミ箱」から戻せます。内容の変更は元に戻す機能がないため、重要な変更の前には管理者にバックアップを依頼してください。"]
     ]}
   ];
