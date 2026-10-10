@@ -1618,9 +1618,9 @@
   function goProjectDetail(id){ state.viewingProjectId=id; state.tab="project-detail"; render(); }
   // 案件別ファイル管理ページ. from: "detail" (案件詳細) or "files" (写真・ファイル一覧)
   function goProjectFiles(id, from){ bulkReset(); state.filesProjectId=id; state.filesBack=from||"detail"; state.projectFilesKind="all"; state.pfFolder=""; state.pfSel={}; state.pfMine=false; state.tab="project-files"; render(); }
-  function goMemberForm(){
+  function goMemberForm(ext){
     if(!state.isAdmin){ toast("メンバーの追加は管理者のみ行えます"); return; }
-    state.editingMember=null;
+    state.editingMember=null; state.newMemberExt = (ext===true);
     state.tab="member-form"; render();
   }
   function editMember(id){
@@ -2970,7 +2970,7 @@
     var v = function(k){ return esc(m && m[k]!=null ? m[k] : ""); };
     var picked0 = (m && m.roles) || [];
     var html = crumb("メンバー管理に戻る", "members");
-    var isExt = !!m && memberPermission(m)==="external";
+    var isExt = m ? memberPermission(m)==="external" : !!state.newMemberExt;
     html += '<h1 class="pagetitle" style="margin-top:8px" id="f-mtitle">'+(m?"メンバー編集":(isExt?"社外メンバー登録":"自社メンバー登録"))+'</h1><div style="height:12px"></div>';
     html += '<div class="segmented" style="margin-bottom:14px;max-width:360px" id="f-mkind"><div class="segopt'+(isExt?"":" active")+'" data-mkind="internal">自社メンバー</div><div class="segopt'+(isExt?" active":"")+'" data-mkind="external">社外メンバー</div></div>';
     html += '<div class="form-shell"><div class="form-card">';
@@ -3006,7 +3006,7 @@
     ["f-mphone","f-mname","f-mpassword"].forEach(function(id){ var el=document.getElementById(id); if(el) el.addEventListener("input", refreshEnabled); });
     bindPwToggle("f-mpassword-toggle", "f-mpassword");
     // 自社メンバー / 社外メンバーの切り替え（権限の選択肢・事業部・所属会社の入力欄が切り替わる）
-    var mkind = (editing && memberPermission(editing)==="external") ? "external" : "internal";
+    var mkind = editing ? (memberPermission(editing)==="external" ? "external" : "internal") : (state.newMemberExt ? "external" : "internal");
     var applyKind = function(){
       var ext = mkind==="external", sel = document.getElementById("f-mpermission");
       document.querySelectorAll("#f-mkind [data-mkind]").forEach(function(o){ o.classList.toggle("active", o.getAttribute("data-mkind")===mkind); });
@@ -3101,6 +3101,7 @@
       (state.isAdmin ?
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
           '<button class="btn primary" data-goto-memberform="1">'+iAdmin()+iPlus()+' 自社メンバー登録</button>'+
+          '<button class="btn primary" data-goto-memberform="ext">'+iAdmin()+iPlus()+' 社外メンバー登録</button>'+
           '<button class="btn outline" data-open="member-invite">'+iAdmin()+iPlus()+' 社外メンバーの登録URLを発行</button>'+
           csvToolbar("members")+
         '</div>' : ''
@@ -6838,7 +6839,7 @@
     c.querySelectorAll("[data-csv-import]").forEach(function(el){ el.addEventListener("click", function(){ openCsvImport(el.getAttribute("data-csv-import")); }); });
     c.querySelectorAll("[data-bulk-toggle]").forEach(function(el){ el.addEventListener("click", function(){ bulkToggle(el.getAttribute("data-bulk-toggle")); }); });
     c.querySelectorAll("[data-edit-member]").forEach(function(el){ el.addEventListener("click", function(){ editMember(el.getAttribute("data-edit-member")); }); });
-    c.querySelectorAll("[data-goto-memberform]").forEach(function(el){ el.addEventListener("click", goMemberForm); });
+    c.querySelectorAll("[data-goto-memberform]").forEach(function(el){ el.addEventListener("click", function(){ goMemberForm(el.getAttribute("data-goto-memberform")==="ext"); }); });
     c.querySelectorAll("[data-copy-summary]").forEach(function(el){ el.addEventListener("click", function(){ copyProjectSummary(el.getAttribute("data-copy-summary")); }); });
     c.querySelectorAll("[data-toggle-assignee]").forEach(function(el){
       el.addEventListener("click", function(){
