@@ -6324,8 +6324,42 @@
       '<button class="btn outline'+sm+'" data-csv-export="'+entity+'">'+iAdmin()+iDownload()+' CSV出力</button>'+
       '<button class="btn'+(on?' primary':' outline')+sm+'" data-bulk-toggle="'+entity+'">'+iAdmin()+'一括編集'+(on?'（終了）':'')+'</button>';
   }
+  // 担当者・職種などの複数選択項目：チェック式で選ぶ
+  function bulkIsMulti(c){ return !!c && (c.type==="names" || (c.type==="list" && c.options)); }
+  function bulkCheckOptions(c){
+    if(c.type==="names") return state.members.filter(function(m){ return m.kind==="internal" || m.kind==="external"; }).map(function(m){ return m.name; });
+    return c.options.slice();
+  }
+  function bulkCurrent(c, existing){
+    existing = existing || {};
+    if(c.type==="names") return normalizeAssignees(existing.assignees).map(function(a){ return a.name; });
+    return Array.isArray(existing[c.key]) ? existing[c.key].slice() : [];
+  }
+  function bulkApplyChecks(cur, picked, mode){
+    if(mode==="add") return cur.concat(picked.filter(function(n){ return cur.indexOf(n)===-1; }));
+    if(mode==="remove") return cur.filter(function(n){ return picked.indexOf(n)===-1; });
+    return picked.slice();
+  }
+  var BULK_MODES = [["add","追加する"],["remove","外す"],["replace","この内容に置き換える"]];
+  function bulkPickerOpen(c, done){
+    var opts = bulkCheckOptions(c), cur = (state.bulk.picked||[]).slice();
+    openModal(c.label+"を選ぶ",
+      '<div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:8px">チェックを入れた'+esc(c.label)+'が対象です。</div><div style="display:flex;flex-direction:column;gap:2px;max-height:55vh;overflow:auto">'+
+      opts.map(function(n){ return '<label style="display:flex;align-items:center;gap:10px;padding:10px 6px;border-bottom:1px solid var(--border);font-size:14px;cursor:pointer"><input type="checkbox" data-bp value="'+esc(n)+'"'+(cur.indexOf(n)!==-1?' checked':'')+'> '+esc(n)+'</label>'; }).join("")+'</div>',
+      '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="bp-ok">決定</button>');
+    document.getElementById("bp-ok").onclick = function(){
+      state.bulk.picked = Array.prototype.slice.call(document.querySelectorAll("#modal-box [data-bp]:checked")).map(function(x){ return x.value; });
+      closeModal(); done();
+    };
+  }
   function bulkValueControl(c){
     if(!c) return "";
+    if(bulkIsMulti(c)){
+      var pk = state.bulk.picked||[];
+      return '<select id="bulk-mode">'+BULK_MODES.map(function(m){ return '<option value="'+m[0]+'"'+((state.bulk.mode||"add")===m[0]?" selected":"")+'>'+m[1]+'</option>'; }).join("")+'</select>'+
+        '<button type="button" class="btn sm" id="bulk-pick">'+esc(c.label)+'を選ぶ'+(pk.length?'（'+pk.length+'件）':'')+'</button>'+
+        (pk.length?'<span style="font-size:11.5px;color:var(--ink-soft);max-width:260px">'+esc(pk.join("、"))+'</span>':'');
+    }
     var opts = null;
     if(c.key==="customerName") return '<span style="position:relative;display:inline-block"><input type="text" id="bulk-value" autocomplete="off" placeholder="顧客名を入力して候補から選択（空欄で顧客なし）" value="'+esc(state.bulk.value||"")+'" style="min-width:260px"></span>';
     if(c.options && c.type!=="list") opts = c.options.map(function(o){ return [o,o]; });
@@ -6469,7 +6503,7 @@
     var fieldSel = document.getElementById("bulk-field");
     if(fieldSel){
       fieldSel.onchange = function(){
-        state.bulk.field = fieldSel.value; state.bulk.value = "";
+        state.bulk.field = fieldSel.value; state.bulk.value = ""; state.bulk.picked = []; state.bulk.mode = "add";
         document.getElementById("bulk-value-wrap").innerHTML = bulkValueControl(E.columns.find(function(x){return x.key===state.bulk.field;}));
         bindBulkValue();
       };
@@ -6481,6 +6515,13 @@
     bulkRefreshCount();
   }
   function bindBulkValue(){
+    var pickBtn = document.getElementById("bulk-pick");
+    if(pickBtn){
+      var col0 = CSV_ENTITIES[state.bulk.entity].columns.find(function(x){ return x.key===state.bulk.field; });
+      pickBtn.onclick = function(){ bulkPickerOpen(col0, function(){ document.getElementById("bulk-value-wrap").innerHTML = bulkValueControl(col0); bindBulkValue(); }); };
+      var ms = document.getElementById("bulk-mode"); if(ms){ state.bulk.mode = ms.value; ms.onchange = function(){ state.bulk.mode = ms.value; }; }
+      return;
+    }
     var v = document.getElementById("bulk-value");
     if(v && v.tagName==="INPUT" && state.bulk.field==="customerName") attachCustomerSuggest(v, function(cu){ v.value = cu.name; state.bulk.value = cu.name; });
     if(v){ v.addEventListener("input", function(){ state.bulk.value = v.value; }); v.addEventListener("change", function(){ state.bulk.value = v.value; }); if(v.tagName==="SELECT") state.bulk.value = v.value; }
@@ -6500,6 +6541,26 @@
     if(!ids.length){ toast("変更する行を選択してください"); return; }
     var col = E.columns.find(function(c){ return c.key===state.bulk.field; });
     if(!col) return;
+    if(bulkIsMulti(col)){
+      var picked = state.bulk.picked||[], mode = state.bulk.mode||"add";
+      if(!picked.length && mode!=="replace"){ toast(col.label+"を選んでください"); return; }
+      var modeLabel = (BULK_MODES.find(function(m){ return m[0]===mode; })||[])[1];
+      openModal("一括編集の確認",
+        '<div style="font-size:13px;line-height:1.7">選択した <b>'+ids.length+'</b> 件の「'+esc(col.label)+'」に<br><b>'+esc(picked.join("、")||"（なし）")+'</b><br>を「'+esc(modeLabel)+'」で変更します。よろしいですか？</div>',
+        '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="bulk-apply-ok">変更する</button>');
+      document.getElementById("bulk-apply-ok").onclick = function(){
+        document.getElementById("bulk-apply-ok").disabled = true;
+        var list = E.all();
+        var jobs = ids.map(function(id){
+          var existing = list.find(function(x){ return x.id===id; }) || {};
+          var patch = {}; patch[col.key] = bulkApplyChecks(bulkCurrent(col, existing), picked, mode);
+          return saveRaw(E.col, id, E.finalize(patch, existing));
+        });
+        state.bulk.selected = {};
+        runBatch(jobs, "変更");
+      };
+      return;
+    }
     var raw = (document.getElementById("bulk-value")||{}).value || "";
     var res = parseCell(col, raw, null), value;
     if(res.error){ toast(res.error); return; }
@@ -6537,10 +6598,9 @@
     var cols = E.columns.filter(function(c){ return c.bulk; });
     var rows = cols.map(function(c,i){
       var ctl;
-      if(c.type==="names"){
-        var ms = state.members.filter(function(m){ return m.kind==="internal" || m.kind==="external"; });
+      if(bulkIsMulti(c)){
         ctl = '<select id="bm-mode-'+i+'" style="margin-bottom:6px"><option value="add">追加する</option><option value="remove">外す</option><option value="replace">この内容に置き換える</option></select>'+
-          '<div style="display:flex;flex-wrap:wrap;gap:6px 12px;max-height:130px;overflow:auto">'+ms.map(function(m){ return '<label style="font-size:12.5px;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" data-bm-name="'+i+'" value="'+esc(m.name)+'"> '+esc(m.name)+'</label>'; }).join("")+'</div>';
+          '<div style="display:flex;flex-wrap:wrap;gap:6px 14px;max-height:150px;overflow:auto">'+bulkCheckOptions(c).map(function(n){ return '<label style="font-size:13px;display:inline-flex;align-items:center;gap:6px;min-height:34px"><input type="checkbox" data-bm-name="'+i+'" value="'+esc(n)+'"> '+esc(n)+'</label>'; }).join("")+'</div>';
       }else if(c.key==="customerName"){
         ctl = '<span style="position:relative;display:block"><input type="text" id="bm-val-'+i+'" data-bm-cust="1" autocomplete="off" placeholder="顧客名を入力して候補から選択（空欄で顧客なし）"></span>';
       }else if(c.options && c.type!=="list"){
@@ -6562,7 +6622,7 @@
         var on = box.querySelector('[data-bm-on="'+i+'"]');
         if(!on || !on.checked) continue;
         var c = cols[i];
-        if(c.type==="names"){
+        if(bulkIsMulti(c)){
           var picked = Array.prototype.slice.call(box.querySelectorAll('[data-bm-name="'+i+'"]:checked')).map(function(x){ return x.value; });
           var mode = document.getElementById("bm-mode-"+i).value;
           if(!picked.length && mode!=="replace"){ toast("「"+c.label+"」の対象者を選んでください"); return; }
@@ -6583,11 +6643,7 @@
         var patch = {};
         plan.forEach(function(p){
           if(p.names){
-            var cur = normalizeAssignees(existing.assignees).map(function(a){ return a.name; }), out;
-            if(p.mode==="add") out = cur.concat(p.names.filter(function(n){ return cur.indexOf(n)===-1; }));
-            else if(p.mode==="remove") out = cur.filter(function(n){ return p.names.indexOf(n)===-1; });
-            else out = p.names;
-            patch[p.col.key] = out;
+            patch[p.col.key] = bulkApplyChecks(bulkCurrent(p.col, existing), p.names, p.mode);
           }else patch[p.col.key] = p.value;
         });
         return saveRaw(E.col, id, E.finalize(patch, existing));
