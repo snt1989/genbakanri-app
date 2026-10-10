@@ -523,6 +523,7 @@
   }
   /* ---- Mobile ---- */
   .chat-backbar{display:none;}
+  .chat-backbar .btn{height:auto;min-height:32px;width:auto;}
   .chat-back{display:none;border:none;background:transparent;color:var(--accent);font-weight:700;font-size:12.5px;padding:4px 8px 4px 0;margin-right:6px;cursor:pointer;align-items:center;gap:3px;}
   @media (max-width:640px){
     body{font-size:14px;}
@@ -3641,7 +3642,7 @@
     if(!chat){
       html += '<div class="chat-empty">左のリストからチャットを選択してください</div></div>';
     }else{
-      html += '<div class="chat-backbar"><button class="chat-back" data-chat-back="1">'+iBack()+' 一覧</button><span>'+esc(chat.name)+'</span></div>';
+      html += '<div class="chat-backbar"><button class="chat-back" data-chat-back="1">'+iBack()+' 一覧</button><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(chat.name)+'</span>'+(chatProject(chat)?'<a class="btn sm primary" href="#" data-open-project="'+esc(chatProject(chat).id)+'" style="flex:none">'+iDoc()+' 案件詳細へ</a>':'')+'</div>';
       html += '<div class="chat-msgs" id="chat-msgs">';
       var msgs = state.chatMsgs[chat.id] || [];
       if(msgs.length===0){ html += '<div style="color:var(--ink-faint);font-size:12px;text-align:center;margin-top:20px">まだメッセージはありません</div>'; }
