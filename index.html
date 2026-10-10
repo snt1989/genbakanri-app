@@ -592,12 +592,16 @@
     .proj-list td.cell-main{grid-column:1/3;grid-row:1;padding:0 0 2px;border:none;margin:0;}
     .proj-list td.cell-main .cell-name a{padding:4px 0;font-size:14.5px;}
     .proj-list td.cell-main .cell-sub{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
-    .proj-list td.cell-main .tagrow{display:none;}
+    .proj-list td.cell-main .tagrow,.proj-list td.cell-main .cell-sub,.proj-list td.cell-actions,.proj-list td[data-label="顧客"] .btn{display:none !important;}
+    .proj-list tr{border:2px solid var(--st,var(--border));border-left-width:8px;background:var(--stbg,var(--surface));padding:6px 10px;margin-bottom:6px;cursor:pointer;}
+    .proj-list tr:active{filter:brightness(.96);}
+    .proj-list td.cell-main .cell-name{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;-webkit-line-clamp:unset;}
+    .proj-list td.cell-main .cell-name a{font-size:15px;font-weight:700;}
     .proj-list td[data-label="進捗"]{grid-column:3;grid-row:1;justify-self:end;display:block;}
     .proj-list td[data-label="進捗"] > *{width:auto !important;min-width:0 !important;display:inline-block !important;padding:3px 10px !important;font-size:11px !important;white-space:nowrap;}
     .proj-list td[data-label="進捗"] > div{display:none !important;}
     .proj-list select.badge{min-height:30px !important;height:30px;padding:0 10px !important;}
-    .proj-list td.cell-main .cell-name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+    
     .proj-list td[data-label="顧客"]{grid-column:1/3;grid-row:2;display:flex;align-items:center;gap:8px;font-size:12px;min-width:0;}
     .proj-list td[data-label="顧客"]>div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0 !important;}
     .proj-list td[data-label="顧客"] .btn{margin:0 !important;min-height:28px;padding:2px 8px;font-size:11px;flex:none;}
@@ -605,9 +609,9 @@
     .proj-list td.cell-actions .btn{min-height:30px;padding:2px 12px;}
     .proj-list tr{row-gap:2px;}
     .proj-list td[data-label="施工開始日"],.proj-list td[data-label="施工完了予定日"],.proj-list td[data-label="金額"]{grid-row:3;display:flex;flex-direction:row;align-items:baseline;gap:4px;font-size:11px;padding-top:3px;margin-top:3px;border-top:1px dashed var(--border);white-space:nowrap;}
-    .proj-list td[data-label="施工開始日"]{grid-column:1;}
+    .proj-list td[data-label="施工開始日"]{grid-column:1 / 2;}
     .proj-list td[data-label="施工完了予定日"]{grid-column:2;}
-    .proj-list td[data-label="金額"]{grid-column:3;justify-content:flex-end;font-weight:700;}
+    .proj-list td[data-label="金額"]{grid-column:3;grid-row:2;justify-content:flex-end;font-weight:700;font-size:13px;border-top:none;margin-top:0;padding-top:0;}
     .proj-list td[data-label="施工開始日"]::after{content:"開始";}
     .proj-list td[data-label="施工完了予定日"]::after{content:"完了予定";}
     .proj-list td[data-label="施工開始日"]::after,.proj-list td[data-label="施工完了予定日"]::after{order:-1;font-size:10px;color:var(--ink-faint);font-weight:600;}
@@ -917,6 +921,12 @@
     if(!state.canWrite || isExternalViewer()) return '<span class="badge '+statusStyle(cur)+'">'+esc(cur||"未入力")+'</span>';
     var opts = STATUS_LIST.slice(); if(cur && opts.indexOf(cur)===-1) opts.push(cur); if(!cur) opts.unshift("");
     return '<select class="badge status-quick '+statusStyle(cur)+'" data-status-quick="'+esc(p.id)+'" title="クリックして進捗を変更">'+opts.map(function(o){ return '<option value="'+esc(o)+'"'+(o===cur?" selected":"")+'>'+esc(o||"未入力")+'</option>'; }).join("")+'</select>';
+  }
+  var STATUS_COLORS = {"現地調査前":["#8A938D","#F3F5F4"],"現地調査済":["#0E8C8C","#E4F4F3"],"見積提出済":["#B9800F","#FBF2DC"],"契約済":["#4FA36B","#E6F4EB"],"施工中":["#1E8449","#D9EEDF"],"施工完了":["#5E7C8B","#E6EEF2"],"清算済":["#2F6FA8","#E1ECF6"],"失注":["#C1443C","#F9E4E1"]};
+  function statusColorStyle(st){
+    var c = STATUS_COLORS[st];
+    if(!c){ var h=0; for(var i=0;i<(st||"").length;i++) h=(h*31+st.charCodeAt(i))%AVA_COLORS.length; c=[AVA_COLORS[h],"#F3F5F4"]; }
+    return '--st:'+c[0]+';--stbg:'+c[1]+';';
   }
   function statusStyle(st){
     if(STATUS_STYLE[st]) return STATUS_STYLE[st];
@@ -2352,7 +2362,7 @@
       html += '<div class="tablewrap proj-list"><table><thead><tr>'+sortTh('案件名 / 物件住所','name','namer')+sortTh('顧客','cust')+sortTh('進捗','status')+'<th>工程・予定・報告</th>'+sortTh('施工開始日','start','startr')+sortTh('施工完了予定日','end','endr')+sortTh('金額','amount','amountr')+sortTh('作成日','new','old')+'<th></th></tr></thead><tbody>';
       html += pageItems.map(function(p){
         var names = normalizeAssignees(p.assignees).map(function(a){return a.name;});
-        return '<tr class="rowhover" data-row-id="'+esc(p.id)+'"><td class="cell-main">'+
+        return '<tr class="rowhover" data-row-id="'+esc(p.id)+'" style="'+statusColorStyle(p.status)+'"><td class="cell-main">'+
             '<div class="cell-name"><a href="#" data-open-project="'+p.id+'">'+esc(p.name)+'</a></div>'+
             '<div class="cell-sub">'+(hiddenFor(p,"pr_addr")?"":esc(propertyAddressOf(p).full))+'</div>'+
             '<div class="tagrow">'+names.map(function(a){return '<span class="tag">'+esc(a)+'</span>';}).join("")+'</div>'+
@@ -6570,6 +6580,10 @@
     if(retryBtn) retryBtn.addEventListener("click", retrySync);
 
     c.querySelectorAll("[data-goto]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); setTab(el.getAttribute("data-goto")); }); });
+    if(isPhone()) c.querySelectorAll(".proj-list tr[data-row-id]").forEach(function(tr){ tr.addEventListener("click", function(ev){
+      if(state.bulk && state.bulk.on) return;
+      if(ev.target.closest("select,button,a,input,label,.bulk-cell")) return;
+      goProjectDetail(tr.getAttribute("data-row-id")); }); });
     c.querySelectorAll("[data-open-project]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var id=el.getAttribute("data-open-project"); if(id) goProjectDetail(id); }); });
     c.querySelectorAll("[data-status-quick]").forEach(function(el){
       el.addEventListener("click", function(ev){ ev.stopPropagation(); });
