@@ -4001,6 +4001,48 @@
     if(!shown) html += emptyState(iBox,"該当する項目がありません","別のキーワードで探してみてください");
     return html+'</div>';
   }
+  // サーバー（Firestore等）の容量の目安：読み込み済みデータからの概算
+  var STORAGE_COLS = [["projects","案件"],["customers","顧客"],["members","メンバー"],["tasks","タスク"],["chats","チャット（一覧）"],["files","写真・ファイル"],["reports","報告書"],["events","予定"],["steps","工程"],["folders","フォルダ"],["trash","ゴミ箱"]];
+  function fmtBytes(n){ n = Number(n)||0; if(n<1024) return n+" B"; if(n<1048576) return (n/1024).toFixed(1)+" KB"; if(n<1073741824) return (n/1048576).toFixed(1)+" MB"; return (n/1073741824).toFixed(2)+" GB"; }
+  function storageStats(){
+    var key = STORAGE_COLS.map(function(c){ return (state[c[0]]||[]).length; }).join(",");
+    var now = Date.now(), cache = state.storageCache;
+    if(cache && cache.key===key && now-cache.at<15000) return cache.rows;
+    var enc = (typeof TextEncoder!=="undefined") ? new TextEncoder() : null;
+    var rows = STORAGE_COLS.map(function(c){
+      var arr = state[c[0]]||[], bytes = 0; if(!arr.length) return {key:c[0], label:c[1], count:0, bytes:0};
+      try{ var str = JSON.stringify(arr); bytes = enc ? enc.encode(str).length : str.length*2; }catch(e){}
+      return {key:c[0], label:c[1], count:arr.length, bytes:bytes};
+    });
+    state.storageCache = {key:key, at:now, rows:rows};
+    return rows;
+  }
+  function loadAssetUsage(){
+    if(!assetsCap || state.assetUsageLoading || state.assetUsage) return;
+    state.assetUsageLoading = true;
+    Promise.resolve().then(function(){ return assetsCap.list(); }).then(function(r){ state.assetUsage = r && r.usage || null; }, function(){ state.assetUsage = {error:true}; })
+      .then(function(){ state.assetUsageLoading = false; if(state.tab==="settings" && state.settingsSeg==="admin") render(); });
+  }
+  function renderStorageCard(){
+    var rows = storageStats();
+    var totalB = rows.reduce(function(a,r){ return a+r.bytes; },0), totalN = rows.reduce(function(a,r){ return a+r.count; },0);
+    var LIMIT = 1073741824, pct = Math.min(100, totalB/LIMIT*100);
+    var loads = totalN ? Math.floor(50000/totalN) : 0;
+    var barColor = pct>80 ? "var(--danger)" : (pct>50 ? "var(--warning)" : "var(--accent)");
+    var h = '<h2 style="font-size:13.5px;margin:4px 0 10px">サーバーの容量</h2><div class="card" style="padding:16px 18px;margin-bottom:18px;max-width:760px">';
+    h += '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap"><div><span class="num" style="font-size:22px;font-weight:700">'+fmtBytes(totalB)+'</span> <span style="font-size:12px;color:var(--ink-soft)">／ 無料枠 1 GB（'+pct.toFixed(2)+'%）</span></div><div style="font-size:12px;color:var(--ink-soft)">データ件数 <b>'+totalN.toLocaleString()+'</b> 件</div></div>';
+    h += '<div style="height:10px;border-radius:99px;background:var(--surface-2);overflow:hidden;margin:10px 0 12px"><div style="height:100%;width:'+Math.max(pct,0.5)+'%;background:'+barColor+'"></div></div>';
+    h += '<div class="tablewrap"><table><thead><tr><th>項目</th><th>件数</th><th>容量（概算）</th></tr></thead><tbody>'+
+      rows.map(function(r){ return '<tr><td>'+esc(r.label)+'</td><td class="num" data-label="件数">'+r.count.toLocaleString()+'</td><td class="num" data-label="容量">'+fmtBytes(r.bytes)+'</td></tr>'; }).join("")+'</tbody></table></div>';
+    h += '<div style="margin-top:12px;font-size:12.5px;line-height:1.8;color:var(--ink-soft)"><b>読み取り回数の目安：</b>アプリを開くたびに約 <b>'+totalN.toLocaleString()+'</b> 件を読み取ります。Firestoreの無料枠は1日5万件なので、'+(loads?'1日あたり約 <b>'+loads+'</b> 回の読み込みまでが目安です（全員の合計）。':'十分に余裕があります。')+'</div>';
+    if(assetsCap){
+      loadAssetUsage();
+      var u = state.assetUsage;
+      h += '<div style="margin-top:8px;font-size:12.5px;color:var(--ink-soft)"><b>アップロードしたファイル（プレビュー版）：</b>'+(u && !u.error ? fmtBytes(u.bytes)+' ／ '+fmtBytes(u.maxBytes)+'（'+u.files+' / '+u.maxFiles+' 件）' : (u && u.error ? '取得できませんでした' : '取得中…'))+'</div>';
+    }
+    h += '<div style="margin-top:8px;font-size:11px;color:var(--ink-faint);line-height:1.7">※読み込み済みのデータから計算した概算です。チャットの会話本文やGoogle側の保存分は含みません。正確な使用量は Firebase コンソールの「Usage」で確認できます。</div></div>';
+    return h;
+  }
   function renderSettingsAdmin(){
     if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
     if(!state.loaded.members || !state.loaded.projects) return skeleton();
@@ -4015,6 +4057,7 @@
       stat("案件", state.projects.length)+
       stat("顧客", state.customers.length)+
     '</div>';
+    html += renderStorageCard();
 
     html += '<h2 style="font-size:13.5px;margin:4px 0 10px">メンバー権限・パスワード管理</h2>';
     html += '<div class="tablewrap"><table><thead><tr><th>氏名</th><th>所属会社</th><th>権限</th><th></th></tr></thead><tbody>';
