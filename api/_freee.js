@@ -62,7 +62,7 @@ function fsVal(v){
 async function fsGet(path){
   var r = await fetch(fsBase() + "/" + path + "?key=" + encodeURIComponent(env("FIREBASE_API_KEY")));
   if(r.status === 404) return null;
-  if(!r.ok) throw new Error("firestore " + r.status);
+  if(!r.ok) throw new Error(r.status === 429 ? "Firestoreの無料枠（1日の読み取り上限）を超えています。日本時間の夕方にリセットされます" : "firestore " + r.status);
   var j = await r.json(), o = {};
   Object.keys(j.fields || {}).forEach(function(k){ o[k] = fsVal(j.fields[k]); });
   return o;
@@ -71,7 +71,7 @@ async function fsSet(path, data){
   var fields = {};
   Object.keys(data).forEach(function(k){ fields[k] = {stringValue: String(data[k])}; });
   var r = await fetch(fsBase() + "/" + path + "?key=" + encodeURIComponent(env("FIREBASE_API_KEY")), {method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({fields: fields})});
-  if(!r.ok) throw new Error("firestore " + r.status);
+  if(!r.ok) throw new Error(r.status === 429 ? "Firestoreの無料枠（1日の読み取り上限）を超えています。日本時間の夕方にリセットされます" : "firestore " + r.status);
 }
 async function fsDelete(path){
   await fetch(fsBase() + "/" + path + "?key=" + encodeURIComponent(env("FIREBASE_API_KEY")), {method:"DELETE"});
@@ -80,7 +80,7 @@ async function listMembers(){
   var out = [], token = "";
   for(var i = 0; i < 10; i++){
     var r = await fetch(fsBase() + "/members?pageSize=300&key=" + encodeURIComponent(env("FIREBASE_API_KEY")) + (token ? "&pageToken=" + encodeURIComponent(token) : ""));
-    if(!r.ok) throw new Error("firestore " + r.status);
+    if(!r.ok) throw new Error(r.status === 429 ? "Firestoreの無料枠（1日の読み取り上限）を超えています。日本時間の夕方にリセットされます" : "firestore " + r.status);
     var j = await r.json();
     (j.documents || []).forEach(function(d){ var o = {}; Object.keys(d.fields || {}).forEach(function(k){ o[k] = fsVal(d.fields[k]); }); out.push(o); });
     token = j.nextPageToken || ""; if(!token) break;

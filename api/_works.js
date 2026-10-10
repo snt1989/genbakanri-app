@@ -87,14 +87,14 @@ function decDoc(d){
 async function getDoc(path){
   var r = await fetch(fsBase() + "/" + path + "?" + keyQ());
   if(r.status === 404) return {};
-  if(!r.ok) throw httpErr(502, "firestore " + r.status);
+  if(!r.ok) throw httpErr(502, r.status === 429 ? "Firestoreの無料枠（1日の読み取り上限）を超えています。日本時間の夕方にリセットされます" : "firestore " + r.status);
   return decDoc(await r.json());
 }
 async function listDocs(col){
   var out = [], token = "";
   for(var i = 0; i < 20; i++){
     var r = await fetch(fsBase() + "/" + col + "?pageSize=300&" + keyQ() + (token ? "&pageToken=" + encodeURIComponent(token) : ""));
-    if(!r.ok) throw httpErr(502, "firestore " + r.status);
+    if(!r.ok) throw httpErr(502, r.status === 429 ? "Firestoreの無料枠（1日の読み取り上限）を超えています。日本時間の夕方にリセットされます" : "firestore " + r.status);
     var j = await r.json();
     (j.documents || []).forEach(function(d){ out.push(decDoc(d)); });
     token = j.nextPageToken || ""; if(!token) break;
@@ -108,12 +108,12 @@ async function patchDoc(path, data, removeKeys){
   if(!keys.length) return;   // マスクなしのPATCHは文書全体を置き換えてしまうため何もしない
   var q = keys.map(function(k){ return "updateMask.fieldPaths=" + encodeURIComponent(k); }).join("&");
   var r = await fetch(fsBase() + "/" + path + "?" + (q ? q + "&" : "") + keyQ(), {method: "PATCH", headers: {"Content-Type": "application/json"}, body: JSON.stringify({fields: fields})});
-  if(!r.ok) throw httpErr(502, "firestore " + r.status);
+  if(!r.ok) throw httpErr(502, r.status === 429 ? "Firestoreの無料枠（1日の読み取り上限）を超えています。日本時間の夕方にリセットされます" : "firestore " + r.status);
 }
 async function createDoc(col, data){
   var fields = {}; Object.keys(data).forEach(function(k){ fields[k] = enc(data[k]); });
   var r = await fetch(fsBase() + "/" + col + "?" + keyQ(), {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({fields: fields})});
-  if(!r.ok) throw httpErr(502, "firestore " + r.status);
+  if(!r.ok) throw httpErr(502, r.status === 429 ? "Firestoreの無料枠（1日の読み取り上限）を超えています。日本時間の夕方にリセットされます" : "firestore " + r.status);
   var j = await r.json().catch(function(){ return {}; });
   return String(j.name || "").split("/").pop();
 }

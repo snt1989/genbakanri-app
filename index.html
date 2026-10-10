@@ -779,7 +779,11 @@
       var appMod = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
       var fsMod = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
       var app = appMod.initializeApp(cfg);
-      var fs = fsMod.getFirestore(app);
+      // 端末にデータを保存（再読み込みのたびに全件を読み直さない＝Firestoreの読み取り回数を節約）
+      var fs;
+      try{
+        fs = fsMod.initializeFirestore(app, {localCache: fsMod.persistentLocalCache({tabManager: fsMod.persistentMultipleTabManager()})});
+      }catch(e){ fs = fsMod.getFirestore(app); }
 
       function wrapSnap(qs){
         return { docs: qs.docs.map(function(d){ return { id: d.id, data: function(){ return d.data(); } }; }) };
@@ -1281,7 +1285,8 @@
     }, function(e){ state.loaded.folders=true; state.folders=[]; render(); });
   }
   function onErr(e){
-    toast("同期エラー: "+(e&&e.code||"unknown"));
+    if(e && e.code==="resource-exhausted") toast("Firestoreの無料枠（1日の読み取り上限）を超えました。日本時間の夕方（16時前後）にリセットされます。恒久的にはFirebaseをBlazeプランにしてください");
+    else toast("同期エラー: "+(e&&e.code||"unknown"));
     // A read error on some collection means its onSnapshot will never call
     // back with real data. setPreview() only backfills collections that
     // are still missing (state.loaded.X===false), so calling it here just
