@@ -224,6 +224,9 @@
   .chat-item.active .chat-ava{background:#D5DBD8;}
   .chat-item-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;}
   .chat-item-name{font-weight:700;font-size:13.5px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-all;}
+  .chat-unread{display:inline-block;background:var(--danger);color:#fff;font-size:10px;font-weight:700;border-radius:8px;padding:1px 6px;margin-left:4px;vertical-align:middle;}
+  .cm .cread{font-size:10.5px;color:var(--ink-faint);margin-top:2px;text-align:right;cursor:pointer;}
+  .cm .cread.on{color:var(--accent);font-weight:700;}
   .chat-item-meta{font-size:11px;color:var(--ink-faint);display:flex;justify-content:space-between;gap:6px;}
   .chat-pane{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;}
   .chat-msgs{flex:1;overflow-y:auto;padding:14px 26px 8px;display:flex;flex-direction:column;gap:14px;max-height:calc(100vh - 260px);}
@@ -3562,6 +3565,45 @@
     } else names = Array.isArray(chat.members) && chat.members.length ? chat.members : state.members.map(function(m){return m.name;});
     return names.map(function(n){ return state.members.find(function(m){return m.name===n;}) || {name:n}; });
   }
+  /* ---- 既読（チャットを開いたかの確認） ----
+     chat.reads = {メンバー名: 最後に開いた日時(ISO)}。チャット画面を開いている間、最新メッセージより前の日時ならいまの日時で更新します。 */
+  function chatOthers(chat){ return chatMembers(chat).map(function(m){ return m.name; }).filter(function(n){ return n && n!==state.myName; }); }
+  function readersOf(chat, m){
+    var rd = chat.reads || {}; var names = chatOthers(chat);
+    return {read: names.filter(function(n){ return rd[n] && String(rd[n])>=String(m.ts||""); }), unread: names.filter(function(n){ return !(rd[n] && String(rd[n])>=String(m.ts||"")); })};
+  }
+  function readLine(chat, m, mine){
+    if(!mine || !m.id) return "";
+    var rs = readersOf(chat, m); var total = rs.read.length+rs.unread.length;
+    if(total===0) return "";
+    var label = rs.read.length===0 ? "未読" : (total===1 ? "既読" : "既読 "+rs.read.length+"/"+total);
+    return '<div class="cread'+(rs.read.length?' on':'')+'" data-chat-readers="'+esc(m.id)+'" title="タップで確認">'+label+'</div>';
+  }
+  var __readSent = {};
+  function markChatRead(chat, msgs){
+    if(!state.myName || !chat || !msgs || !msgs.length) return;
+    if(typeof document!=="undefined" && document.visibilityState==="hidden") return;
+    if(isPhone() && !state.chatPaneOpen) return;
+    var latest = msgs.reduce(function(m,x){ return (x.ts||"")>m ? (x.ts||"") : m; }, "");
+    var cur = (chat.reads||{})[state.myName] || "";
+    if(!latest || cur>=latest || __readSent[chat.id]===latest) return;
+    __readSent[chat.id] = latest;
+    var now = new Date().toISOString(), merged = Object.assign({}, chat.reads||{}); merged[state.myName] = now;
+    chat.reads = merged;
+    if(db) db.collection("chats").doc(chat.id).update({reads:merged}).catch(function(){ __readSent[chat.id] = null; });
+    else setTimeout(function(){ if(state.tab==="chat") render(); }, 0);
+  }
+  function openReadersModal(chatId, msgId){
+    var chat = state.chats.find(function(c){ return c.id===chatId; }); var m = ((state.chatMsgs[chatId]||[]).find(function(x){ return x.id===msgId; }));
+    if(!chat || !m) return;
+    var rs = readersOf(chat, m), rd = chat.reads||{};
+    var li = function(n, t){ return '<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><span>'+esc(n)+'</span><span style="color:var(--ink-faint);font-size:11.5px">'+(t||"")+'</span></div>'; };
+    openModal("既読の確認",
+      '<div style="font-size:12px;color:var(--ink-faint);margin-bottom:8px">チャットを開いた時刻を表示しています（このメッセージの送信: '+esc(fmtDateTime(m.ts))+'）</div>'+
+      '<div style="font-weight:700;font-size:12.5px;margin:8px 0 2px">既読 '+rs.read.length+'人</div>'+(rs.read.length?rs.read.map(function(n){ return li(n, esc(fmtDateTime(rd[n]))); }).join(""):'<div style="font-size:12px;color:var(--ink-faint)">まだいません</div>')+
+      '<div style="font-weight:700;font-size:12.5px;margin:14px 0 2px;color:var(--danger)">未読 '+rs.unread.length+'人</div>'+(rs.unread.length?rs.unread.map(function(n){ return li(n, rd[n]?'最後に開いた '+esc(fmtDateTime(rd[n])):'まだ開いていません'); }).join(""):'<div style="font-size:12px;color:var(--ink-faint)">全員が読みました</div>'),
+      '<button class="btn" data-close-modal>閉じる</button>');
+  }
   function renderChat(){
     if(!state.loaded.chats) return skeleton();
     var visibleChats = state.chats.filter(function(c){ return c.kind!=="project" || !c.projectId || projectVisibleId(c.projectId); });
@@ -3590,7 +3632,7 @@
           '<button class="chat-pin'+(isPinned(c)?" on":"")+'" data-chat-pin="'+esc(c.id)+'" title="'+(isPinned(c)?"ピン留めを外す":"ピン留めする")+'">'+iPin(isPinned(c))+'</button>'+
           '<button class="chat-pin chat-hide" data-chat-hide="'+esc(c.id)+'" title="'+(isHidden(c)?"再表示する":"非表示にする")+'">'+iEye(!isHidden(c))+'</button>'+
           '<div class="chat-ava">'+(c.kind==="group"?iUsers():iDoc())+'</div>'+
-          '<div class="chat-item-main"><div class="chat-item-name">'+esc(c.name)+'</div><div class="chat-item-meta"><span>'+(c.kind==="group"?"グループ":"案件")+'</span><span>'+esc(fmtAgo(c.updatedAt))+'</span></div></div>'+
+          '<div class="chat-item-main"><div class="chat-item-name">'+esc(c.name)+((c.id!==state.activeChat && (c.reads||{})[state.myName] && String(c.updatedAt||"")>String((c.reads||{})[state.myName]))?' <span class="chat-unread">未読</span>':'')+'</div><div class="chat-item-meta"><span>'+(c.kind==="group"?"グループ":"案件")+'</span><span>'+esc(fmtAgo(c.updatedAt))+'</span></div></div>'+
         '</div>';
       }).join("");
     }
@@ -3618,7 +3660,7 @@
           return out+'<div class="cm'+(mine?" me":"")+'" id="cm-'+esc(m.id||"")+'">'+(mine?'':'<div class="cav" style="background:'+avaColor(m.author)+'">'+esc(initials(m.author))+'</div>')+
             '<div class="cbody">'+(mine?'':'<div class="cname">'+esc(m.author)+'</div>')+'<div class="crow"><div class="cbub">'+(m.replyTo?'<div class="cquote" data-chat-jump="'+esc(m.replyTo.id||"")+'"><b>'+esc(m.replyTo.author||"")+'</b><span>'+esc(m.replyTo.text||"")+'</span></div>':'')+chatText(m.text)+att+loc+'</div><div class="ctime">'+esc(chatTime(m.ts))+(m.edited?'<span class="cedited">編集済み</span>':'')+'</div>'+
             (m.id ? '<div class="cact"><button data-chat-reply="'+esc(m.id)+'" title="返信">'+iReply()+'</button>'+(mine?'<button data-chat-medit="'+esc(m.id)+'" title="編集">'+iEdit()+'</button>':'')+((mine||state.isAdmin)?'<button class="del" data-chat-mdel="'+esc(m.id)+'" title="削除">'+iTrash()+'</button>':'')+'</div>' : '')+
-            '</div></div></div>';
+            '</div>'+readLine(chat, m, mine)+'</div></div>';
         }).join("");
       }
       html += '</div>';
@@ -3643,12 +3685,13 @@
       html += '<div class="chat-side">'+(chatProject(chat)?'<a class="goproj" href="#" data-open-project="'+esc(chatProject(chat).id)+'">'+iDoc()+' 案件詳細へ</a>':'<div style="height:12px"></div>')+
         '<h3 style="padding-left:12px;display:flex;justify-content:space-between;align-items:center;padding-right:12px">メンバー<button class="btn sm outline" id="chat-edit">'+iEdit()+' チャットを編集</button></h3><div class="mlist">'+
         (mem.length ? mem.map(function(m){
-          return '<div class="mi"><div class="cav" style="background:'+avaColor(m.name)+'">'+esc(initials(m.name))+'</div><div><div class="mn">'+esc(m.name)+'</div><div class="ms">'+esc(m.company||"")+(m.division?'<br>'+esc(m.division):'')+((m.roles||[]).length?'<br>'+esc(m.roles.join(",")):'')+'</div></div></div>';
+          return '<div class="mi"><div class="cav" style="background:'+avaColor(m.name)+'">'+esc(initials(m.name))+'</div><div><div class="mn">'+esc(m.name)+'</div><div class="ms" style="color:'+((chat.reads||{})[m.name]?'var(--ink-faint)':'var(--danger)')+'">'+((chat.reads||{})[m.name]?'最終確認 '+esc(fmtDateTime(chat.reads[m.name])):(m.name===state.myName?'':'まだ開いていません'))+'</div><div class="ms">'+esc(m.company||"")+(m.division?'<br>'+esc(m.division):'')+((m.roles||[]).length?'<br>'+esc(m.roles.join(",")):'')+'</div></div></div>';
         }).join("") : '<div style="padding:16px;font-size:12px;color:var(--ink-faint)">メンバーが登録されていません</div>')+
         '</div><button class="chat-del" data-chat-hide="'+esc(chat.id)+'" style="margin-bottom:0">'+iEye(!isHidden(chat))+' '+(isHidden(chat)?'チャットを再表示する':'チャットを非表示にする')+'</button><button class="chat-del" id="chat-del">'+iTrash()+' チャットを削除する</button></div>';
     }
     html += '</div></div>';
     if(chat && !state.chatMsgs[chat.id]) loadChatMsgs(chat.id);
+    else if(chat) setTimeout(function(){ markChatRead(chat, state.chatMsgs[chat.id]); }, 300);
     return html;
   }
   function loadChatMsgs(chatId){
@@ -7241,6 +7284,7 @@
         });
       });
     }
+    c.querySelectorAll("[data-chat-readers]").forEach(function(el){ el.addEventListener("click", function(){ openReadersModal(state.activeChat, el.getAttribute("data-chat-readers")); }); });
     c.querySelectorAll("[data-chat-reply]").forEach(function(el){ el.addEventListener("click", function(){
       var m = (state.chatMsgs[state.activeChat]||[]).find(function(x){return x.id===el.getAttribute("data-chat-reply");}); if(!m) return;
       var inp = document.getElementById("chat-input"); if(inp) (state.chatDraft = state.chatDraft||{})[state.activeChat] = inp.value;
