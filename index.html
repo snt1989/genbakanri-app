@@ -790,19 +790,23 @@
         return { docs: qs.docs.map(function(d){ return { id: d.id, data: function(){ return d.data(); } }; }) };
       }
       function makeCollectionRef(path){
-        var orderField = null, limitN = null;
+        var orderField = null, orderDir = "asc", limitN = null;
+        var buildQ = function(){
+          var constraints = [];
+          if(orderField) constraints.push(fsMod.orderBy(orderField, orderDir));
+          if(limitN) constraints.push(fsMod.limit(limitN));
+          return constraints.length ? fsMod.query.apply(null, [fsMod.collection(fs, path)].concat(constraints)) : fsMod.collection(fs, path);
+        };
         var api = {
           doc: function(id){ return makeDocRef(path+"/"+id); },
           add: function(data){
             return fsMod.addDoc(fsMod.collection(fs, path), data).then(function(ref){ return { id: ref.id }; });
           },
-          orderBy: function(f){ orderField = f; return api; },
+          orderBy: function(f, dir){ orderField = f; orderDir = dir==="desc" ? "desc" : "asc"; return api; },
+          get: function(){ return fsMod.getDocs(buildQ()).then(wrapSnap); },
           limit: function(n){ limitN = n; return api; },
           onSnapshot: function(cb, errCb){
-            var constraints = [];
-            if(orderField) constraints.push(fsMod.orderBy(orderField));
-            if(limitN) constraints.push(fsMod.limit(limitN));
-            var q = constraints.length ? fsMod.query.apply(null, [fsMod.collection(fs, path)].concat(constraints)) : fsMod.collection(fs, path);
+            var q = buildQ();
             return fsMod.onSnapshot(q, function(qs){ cb(wrapSnap(qs)); }, errCb);
           }
         };
@@ -3861,9 +3865,27 @@
     var L = state.loginLogs = state.loginLogs || {list:null, loading:false, name:"all", kind:"all", days:"30"};
     if(L.loading || (L.list && !force)) return;
     if(!db){ L.list = localLoginLogs.slice(); return; }
-    L.loading = true;
-    db.collection("loginLogs").get().then(function(snap){ L.list = snap.docs.map(toObj); }, function(){ L.list = []; })
-      .then(function(){ L.loading = false; if(state.tab==="settings" && state.settingsSeg==="loginlog") render(); });
+    L.loading = true; L.error = false;
+    var finished = false;
+    var done = function(list, err){
+      if(finished) return; finished = true;
+      L.loading = false; L.error = !!err; if(list) L.list = list; else if(!L.list) L.list = [];
+      if(state.tab==="settings" && state.settingsSeg==="loginlog") render();
+    };
+    var timer = setTimeout(function(){ done(null, true); }, 15000);
+    try{
+      var q = db.collection("loginLogs");
+      try{ q = q.orderBy("at","desc").limit(1000); }catch(e){}
+      var p;
+      if(typeof q.get==="function") p = q.get();
+      else p = new Promise(function(res, rej){   // get() が無い接続方式では onSnapshot を1回だけ使う
+        var un = null, got = false;
+        un = q.onSnapshot(function(snap){ if(got) return; got = true; try{ un&&un(); }catch(e){} res(snap); }, rej);
+        if(got && un){ try{ un(); }catch(e){} }
+      });
+      p.then(function(snap){ clearTimeout(timer); done(snap.docs.map(toObj), false); },
+             function(){ clearTimeout(timer); done(null, true); });
+    }catch(e){ clearTimeout(timer); done(null, true); }
   }
   function renderSettingsLoginLog(){
     if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
@@ -3871,6 +3893,7 @@
     loginLogsLoad();
     var L = state.loginLogs;
     if(!L.list) return skeleton();
+    var errBar = L.error ? '<div class="card" style="padding:12px 14px;max-width:760px;margin-bottom:12px;border-color:var(--danger);font-size:12.5px;line-height:1.7">ログイン履歴を読み込めませんでした（通信の混雑や、Firestoreの無料枠の読み取り上限が原因のことがあります）。しばらくしてから「最新の情報に更新」を押してください。</div>' : '';
     var all = L.list.slice().sort(function(a,b){ return String(b.at).localeCompare(String(a.at)); });
     var since = L.days==="all" ? "" : new Date(Date.now()-Number(L.days)*86400000).toISOString();
     var list = all.filter(function(x){
@@ -3884,7 +3907,7 @@
     all.forEach(function(x){ if(x.kind==="fail" || !x.memberName) return; if(!last[x.memberName]) last[x.memberName] = x; if(String(x.at)>=d30) cnt[x.memberName] = (cnt[x.memberName]||0)+1; });
     var failRecent = all.filter(function(x){ return x.kind==="fail" && String(x.at)>=d1; }).length;
     var opt = function(v, cur, label){ return '<option value="'+esc(v)+'"'+(cur===v?" selected":"")+'>'+esc(label)+'</option>'; };
-    var html = '<div style="font-size:12px;color:var(--ink-faint);line-height:1.7;max-width:760px;margin-bottom:12px">メンバーがログインした記録です（日時・端末）。「自動ログイン」は保存済みの情報で開いたときの記録で、同じ端末では6時間に1回までです。失敗は、入力された電話番号（下4桁）または氏名だけを記録し、パスワードは記録しません。'+(db?'':'（この環境では、この画面を開いている間の記録のみです）')+'</div>';
+    var html = errBar+'<div style="font-size:12px;color:var(--ink-faint);line-height:1.7;max-width:760px;margin-bottom:12px">メンバーがログインした記録です（日時・端末）。「自動ログイン」は保存済みの情報で開いたときの記録で、同じ端末では6時間に1回までです。失敗は、入力された電話番号（下4桁）または氏名だけを記録し、パスワードは記録しません。'+(db?'':'（この環境では、この画面を開いている間の記録のみです）')+'</div>';
     html += '<div class="card" style="padding:14px 16px;max-width:760px;margin-bottom:14px"><h2 style="font-size:13.5px;margin-bottom:8px">メンバー別の最終ログイン'+(failRecent?'　<span class="tag" style="background:#fde7e7;color:#a12a2a">直近24時間の失敗 '+failRecent+'件</span>':'')+'</h2>'+
       '<div class="tablewrap"><table><thead><tr><th>メンバー</th><th>最終ログイン</th><th>端末</th><th>30日の回数</th></tr></thead><tbody>'+
       state.members.slice().sort(function(a,b){ return String((last[b.name]||{}).at||"").localeCompare(String((last[a.name]||{}).at||"")); }).map(function(m){
