@@ -2915,7 +2915,8 @@
       var mq = encodeURIComponent(pa.text);
       var hasPin = (typeof p.mapLat==="number" && typeof p.mapLng==="number");
       var mq2 = hasPin ? (p.mapLat+","+p.mapLng) : mq;
-      prows += '<div class="kv" style="display:block;padding:12px 16px"><div class="propmap" id="propmap-live" data-pid="'+esc(p.id)+'" style="border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--surface-2)">'+
+      var pmMode = state.propMapMode==="google" ? "google" : "pin";
+      prows += '<div class="kv" style="display:block;padding:12px 16px"><div class="segmented" id="pm-mode" style="margin-bottom:10px;max-width:340px"><div class="segopt'+(pmMode==="pin"?" active":"")+'" data-pmmode="pin">ピン付き地図（位置を調整）</div><div class="segopt'+(pmMode==="google"?" active":"")+'" data-pmmode="google">Googleマップ</div></div><div class="propmap" id="propmap-live" data-pid="'+esc(p.id)+'" style="border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--surface-2)">'+
         '<iframe title="物件の地図" loading="lazy" referrerpolicy="no-referrer-when-downgrade" style="display:block;width:100%;height:240px;border:0" src="https://www.google.com/maps?q='+mq2+'&z=16&hl=ja&output=embed"></iframe></div>'+
         '<div id="propmap-ctl"></div>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:flex-start"><a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+mq2+'">'+iMap()+' Googleマップで開く（経路・ストリートビュー）</a>'+
@@ -6730,6 +6731,21 @@
     if(!p) return;
     var pa = propertyAddressOf(p); if(!pa.text) return;
     var canMove = !isExternalViewer();
+    var gIframe = function(){
+      var q = (typeof p.mapLat==="number" && typeof p.mapLng==="number") ? (p.mapLat+","+p.mapLng) : encodeURIComponent(pa.text);
+      return '<iframe title="物件の地図" loading="lazy" referrerpolicy="no-referrer-when-downgrade" style="display:block;width:100%;height:260px;border:0" src="https://www.google.com/maps?q='+q+'&z=16&hl=ja&output=embed"></iframe>';
+    };
+    document.querySelectorAll("#pm-mode [data-pmmode]").forEach(function(o){
+      if(o._pmBound) return; o._pmBound = true;
+      o.addEventListener("click", function(){
+        var m = o.getAttribute("data-pmmode"); if(m===(state.propMapMode==="google"?"google":"pin")) return;
+        state.propMapMode = m;
+        document.querySelectorAll("#pm-mode [data-pmmode]").forEach(function(x){ x.classList.toggle("active", x===o); });
+        var ctl0 = document.getElementById("propmap-ctl"); if(ctl0) ctl0.innerHTML = "";
+        if(m==="google"){ box.innerHTML = gIframe(); } else { box.innerHTML = gIframe(); initPropMap(box); }
+      });
+    });
+    if(state.propMapMode==="google"){ box.innerHTML = gIframe(); return; }
     loadLeaflet().then(function(){
       if(!document.body.contains(box)) return;
       var saved = (typeof p.mapLat==="number" && typeof p.mapLng==="number") ? {lat:p.mapLat,lng:p.mapLng} : null;
