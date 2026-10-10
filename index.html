@@ -6735,7 +6735,34 @@
       return '<iframe title="物件の地図" loading="lazy" referrerpolicy="no-referrer-when-downgrade" style="display:block;width:100%;height:260px;border:0" src="https://www.google.com/maps?q='+q+'&z=17&hl=ja&output=embed"></iframe>';
     };
     // Googleマップにもピンを出すため、位置（保存済み→住所から検索した座標）を緯度経度で渡す。見つからなければ住所で表示。
+    var parseLatLng = function(t){
+      t = String(t||"").trim();
+      var m = t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || t.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || t.match(/[?&](?:q|query|ll|destination)=(-?\d+\.\d+)(?:,|%2C)\s*(-?\d+\.\d+)/) || t.match(/^(-?\d+\.\d+)\s*[,，\s]\s*(-?\d+\.\d+)$/);
+      if(!m) return null;
+      var la = parseFloat(m[1]), ln = parseFloat(m[2]);
+      return (la>=20&&la<=46&&ln>=122&&ln<=154) ? {lat:Math.round(la*1e6)/1e6, lng:Math.round(ln*1e6)/1e6} : null;
+    };
+    var googleCtl = function(){
+      var ctl = document.getElementById("propmap-ctl"); if(!ctl) return;
+      var has = (typeof p.mapLat==="number" && typeof p.mapLng==="number");
+      if(!canMove){ ctl.innerHTML = ""; return; }
+      ctl.innerHTML = '<div style="font-size:12px;margin-top:8px;line-height:1.6;color:var(--ink-soft)">Googleマップの埋め込み画面では、ピンを直接ドラッグできません。ピンの位置を直すには、<b>①「Googleマップで開く」で正しい場所を右クリック（スマホは長押し）→ 表示された緯度・経度をコピー</b>（またはその時のURLをコピー）し、<b>②下に貼り付けて「この位置に設定」</b>を押してください。ピン付き地図にも同じ位置が反映されます。'+(has?'（現在：保存したピン位置を使用中）':'')+'</div>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;align-items:flex-start"><input id="pm-gin" type="text" placeholder="例: 39.7036, 141.1527 またはGoogleマップのURL" style="flex:1;min-width:220px;height:34px">'+
+        '<button class="btn sm primary" id="pm-gset">この位置に設定</button>'+(has?'<button class="btn sm" id="pm-greset">保存した位置を解除</button>':'')+'</div><div id="pm-gmsg" style="font-size:12px;margin-top:4px;color:var(--danger)"></div>';
+      var set = function(g){
+        p.mapLat = g ? g.lat : null; p.mapLng = g ? g.lng : null;
+        if(db) db.collection("projects").doc(p.id).update({mapLat:p.mapLat, mapLng:p.mapLng}).then(function(){ toast(g?"ピンの位置を保存しました":"保存した位置を解除しました"); }).catch(function(){ toast("保存できませんでした"); });
+        showGoogle();
+      };
+      document.getElementById("pm-gset").onclick = function(){
+        var g = parseLatLng(document.getElementById("pm-gin").value);
+        if(!g){ document.getElementById("pm-gmsg").textContent = "緯度・経度を読み取れませんでした。「39.7036, 141.1527」の形式か、位置が入ったGoogleマップのURL（短縮URLは不可）を貼り付けてください。"; return; }
+        set(g);
+      };
+      var rb = document.getElementById("pm-greset"); if(rb) rb.onclick = function(){ set(null); };
+    };
     var showGoogle = function(){
+      googleCtl();
       var token = (box._gtok = (box._gtok||0)+1);
       var put = function(q){ if(box._gtok===token && document.body.contains(box) && state.propMapMode==="google") box.innerHTML = gFrame(q); };
       if(typeof p.mapLat==="number" && typeof p.mapLng==="number") return put(p.mapLat+","+p.mapLng);
