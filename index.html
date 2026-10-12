@@ -158,6 +158,7 @@
   .tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px;background:var(--surface);}
   .cell-name{font-weight:700;font-size:13px;}
   .cell-sub{font-size:11.5px;color:var(--ink-faint);margin-top:2px;}
+  .mem-meta{display:none;}
 
   .pager{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:20px;}
   .pagebtn{width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--ink-soft);font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;}
@@ -596,6 +597,24 @@
     .tablewrap td.bulk-cell{position:absolute;top:10px;right:10px;width:auto;padding:0;display:block;}
     .tablewrap td.bulk-cell input{width:22px;height:22px;}
     .tablewrap .perm-select{width:auto;min-width:110px;}
+    /* メンバー管理: 1人を小さく（名前＋操作／会社・職種の1行／権限とアプリ状況の1行） */
+    .tablewrap table.member-list tr{display:grid;grid-template-columns:1fr auto;column-gap:8px;row-gap:0;padding:7px 12px;margin-bottom:6px;align-items:center;}
+    .member-list td{padding:0 !important;margin:0 !important;border:none !important;}
+    .member-list td::before{display:none !important;}
+    .member-list td.cell-main{grid-column:1;grid-row:1;padding:0 !important;border:none !important;}
+    .member-list td.cell-main .member-name{font-size:14px;gap:8px;}
+    .member-list td.cell-main .mini-avatar{width:26px;height:26px;font-size:11px;}
+    .member-list .mem-meta{display:block !important;grid-column:1/-1;grid-row:2;font-size:11px;color:var(--ink-faint);line-height:1.5;margin:1px 0 0 34px;white-space:normal;}
+    .member-list .mem-meta .tag{font-size:10px;padding:0 6px;margin-left:3px;}
+    .member-list td[data-label="所属会社"],.member-list td[data-label="事業部"],.member-list td[data-label="職種"]{display:none !important;}
+    .member-list td.cell-actions{grid-column:2;grid-row:1;border:none !important;justify-content:flex-end;}
+    .member-list td.cell-actions .btn.sm{padding:3px 9px;font-size:11.5px;min-height:30px !important;height:30px;}
+    .member-list td.cell-actions .iconbtn{min-width:30px !important;min-height:30px !important;width:30px;height:30px;}
+    .member-list td[data-label="権限"]{grid-column:1;grid-row:3;justify-content:flex-start;text-align:left;margin-top:5px !important;}
+    .member-list td[data-label="権限"] .perm-select{min-width:96px;padding:2px 6px;font-size:12px;min-height:30px !important;height:30px;}
+    .member-list td[data-label="ホーム画面アプリ"]{grid-column:2;grid-row:3;margin-top:5px !important;display:block;text-align:right;}
+    .member-list td[data-label="ホーム画面アプリ"] .cell-sub{display:none;}
+    .member-list td[data-label="ホーム画面アプリ"] .tag{font-size:10.5px;padding:1px 7px;}
     /* 案件一覧：1件を低く（コンパクトなカード）して、1画面に多く表示 */
     .proj-list tr{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 8px;padding:8px 12px;margin-bottom:6px;align-items:center;}
     .proj-list td{padding:0;border:none;margin:0;text-align:left;}
@@ -3437,7 +3456,7 @@
     if(list.length===0){
       html += emptyState(iUsers,"メンバーが登録されていません","");
     }else{
-      html += '<div class="tablewrap"><table><thead><tr><th>氏名</th><th>所属会社</th><th>事業部</th><th>職種</th><th>'+(state.isAdmin?iAdmin():'')+'権限</th>'+(state.isAdmin?'<th>'+iAdmin()+'ホーム画面アプリ</th><th></th>':'')+'</tr></thead><tbody>';
+      html += '<div class="tablewrap"><table class="member-list"><thead><tr><th>氏名</th><th>所属会社</th><th>事業部</th><th>職種</th><th>'+(state.isAdmin?iAdmin():'')+'権限</th>'+(state.isAdmin?'<th>'+iAdmin()+'ホーム画面アプリ</th><th></th>':'')+'</tr></thead><tbody>';
       html += list.map(function(m){
         var perm = memberPermission(m);
         var permCell = state.isAdmin ?
@@ -3445,7 +3464,8 @@
             return '<option value="'+p[0]+'"'+(p[0]===perm?" selected":"")+'>'+p[1]+'</option>';
           }).join("")+'</select>' :
           '<span class="tag'+(perm==="admin"?"":" muted")+'" style="'+(perm==="admin"?'background:var(--sidebar-active);color:#fff':'')+'">'+esc(permissionLabel(perm))+'</span>';
-        return '<tr class="rowhover" data-row-id="'+esc(m.id)+'"><td class="cell-main"><div class="member-name"><span class="mini-avatar" style="background:'+avaColor(m.name)+'">'+esc(initials(m.name))+'</span>'+esc(m.name)+'</div></td>'+
+        return '<tr class="rowhover" data-row-id="'+esc(m.id)+'"><td class="cell-main"><div class="member-name"><span class="mini-avatar" style="background:'+avaColor(m.name)+'">'+esc(initials(m.name))+'</span>'+esc(m.name)+'</div>'+
+          '<div class="mem-meta">'+esc([m.company,m.division].filter(Boolean).join("・")||"—")+(m.roles&&m.roles.length?' '+m.roles.map(function(r){return '<span class="tag muted">'+esc(r)+'</span>';}).join(""):'')+'</div></td>'+
           '<td data-label="所属会社">'+esc(m.company||"—")+'</td><td data-label="事業部">'+esc(m.division||"—")+'</td>'+
           '<td data-label="職種"><div class="tagrow" style="margin-top:0">'+(m.roles||[]).map(function(r){return '<span class="tag muted">'+esc(r)+'</span>';}).join("")+'</div></td>'+
           '<td data-label="権限">'+permCell+'</td>'+
