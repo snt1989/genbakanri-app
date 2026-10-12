@@ -159,6 +159,8 @@
   .cell-name{font-weight:700;font-size:13px;}
   .cell-sub{font-size:11.5px;color:var(--ink-faint);margin-top:2px;}
   .mem-meta{display:none;}
+  /* ピン付き地図(Leaflet)の内部z-index(最大1000)が上部バー・サイドバー・モーダルより前に出ないよう、地図を独立した重なり順に閉じ込める */
+  .propmap,#propmap-live,.leaflet-container{position:relative;z-index:0;isolation:isolate;}
 
   .pager{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:20px;}
   .pagebtn{width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--ink-soft);font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;}
