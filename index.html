@@ -2296,7 +2296,7 @@
     var today = localToday();
     openModal(st?"工程の編集":"工程の追加",
       field("案件",'<select id="f-sproj">'+state.projects.slice().sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");}).map(function(p){ return '<option value="'+esc(p.id)+'"'+(p.id===s.projectId?" selected":"")+'>'+esc(p.name)+'</option>'; }).join("")+'</select>')+
-      field("工程名",selectHtml("f-sname", STEP_NAMES, selVal(s.name, STEP_NAMES[0])))+
+      field("工程名",'<input type="text" id="f-sname" list="f-sname-list" maxlength="60" autocomplete="off" placeholder="自由に入力（候補から選ぶこともできます）" value="'+esc(s.name||"")+'"><datalist id="f-sname-list">'+STEP_NAMES.map(function(n){ return '<option value="'+esc(n)+'"></option>'; }).join("")+'</datalist>')+
       '<div class="field-row">'+field("開始日",'<input type="date" id="f-sstart" value="'+esc(s.startDate||(st?"":today))+'">')+field("終了日",'<input type="date" id="f-send" value="'+esc(s.endDate||(st?"":today))+'">')+'</div>'+
       '<div class="field-row">'+field("担当者",'<select id="f-sassg"><option value="">（未設定）</option>'+members.map(function(n){ return '<option value="'+esc(n)+'"'+(n===s.assignee?" selected":"")+'>'+esc(n)+'</option>'; }).join("")+'</select>')+
       field("進捗（%）",'<input type="number" id="f-sprog" min="0" max="100" step="5" value="'+(+s.progress||0)+'">')+'</div>'+secretRadio(s.secret),
@@ -2310,7 +2310,7 @@
       var pid = document.getElementById("f-sproj").value, name = document.getElementById("f-sname").value.trim();
       var start = document.getElementById("f-sstart").value, end = document.getElementById("f-send").value;
       if(!pid){ toast("案件を選択してください"); return; }
-      if(!name){ toast("工程名を選択してください"); return; }
+      if(!name){ toast("工程名を入力してください"); return; }
       if(!start || !end){ toast("開始日と終了日を入力してください"); return; }
       if(end<start){ toast("終了日は開始日以降にしてください"); return; }
       var pr = state.projects.find(function(x){return x.id===pid;});
@@ -4155,7 +4155,7 @@
     {key:"roles", label:"職種", arr:ROLES, note:"メンバーの「職種」に出ます"},
     {key:"propertyTypes", label:"物件種類", arr:PROPERTY_TYPES, note:"物件情報の「物件種類」に出ます"},
     {key:"propertyStructures", label:"物件構造", arr:PROPERTY_STRUCTURES, note:"物件情報の「構造」に出ます"},
-    {key:"stepNames", label:"工程名", arr:STEP_NAMES, note:"工程表の「工程を追加」で選ぶ工程名に出ます"},
+    {key:"stepNames", label:"工程名", arr:STEP_NAMES, note:"工程表の「工程を追加」で、入力欄の候補として出ます（工程名は自由に入力できます）"},
     {key:"eventTypes", label:"予定の種類", arr:EVENT_TYPES, note:"カレンダーの「予定を追加」で選ぶ種類に出ます"},
     {key:"reportTypes", label:"報告書の種類", arr:REPORT_TYPES, note:"報告書の「報告書を作成」で選ぶ種類と、一覧の絞り込みに出ます"}
   ];
@@ -4201,7 +4201,6 @@
     else if(m.key==="divisions") n = state.members.filter(function(x){return x.division===name;}).length;
     else if(m.key==="roles") n = state.members.filter(function(x){return (x.roles||[]).indexOf(name)!==-1;}).length;
     else if(m.key==="propertyTypes") n = rawStore.projects.filter(function(p){return p.propertyType===name;}).length;
-    else if(m.key==="stepNames") n = state.steps.filter(function(x){return x.name===name;}).length;
     else if(m.key==="reportTypes") n = state.reports.filter(function(x){return x.type===name;}).length;
     else if(m.key==="eventTypes") n = state.events.filter(function(x){return x.category===name;}).length;
     else if(m.key==="propertyStructures") n = rawStore.projects.filter(function(p){return p.propertyStructure===name;}).length;
@@ -4249,7 +4248,7 @@
   var MASTER_FIELDS = {
     statuses:[["projects","status"]], projectTypes:[["projects","type"]],
     propertyTypes:[["projects","propertyType"]], propertyStructures:[["projects","propertyStructure"]],
-    divisions:[["members","division"]], roles:[["members","roles"]], stepNames:[["steps","name"]], eventTypes:[["events","category"]], reportTypes:[["reports","type"]]
+    divisions:[["members","division"]], roles:[["members","roles"]], eventTypes:[["events","category"]], reportTypes:[["reports","type"]]
   };
   function masterAffected(key, removed){
     var out = [];
@@ -6216,7 +6215,7 @@
       label:"工程", col:"steps", nameKey:"name", importable:true, requiredLabel:"工程名",
       columns:[
         {key:"id",label:"ID",readonly:true},
-        {key:"name",label:"工程名",options:STEP_NAMES,bulk:true},
+        {key:"name",label:"工程名",bulk:true},
         {key:"projectName",label:"案件名"},
         {key:"startDate",label:"開始日",type:"date",bulk:true},
         {key:"endDate",label:"終了日",type:"date",bulk:true},
