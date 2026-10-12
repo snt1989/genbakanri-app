@@ -1187,7 +1187,28 @@
     var ua = navigator.userAgent||"", os = /iPhone|iPad|iPod/.test(ua) ? "iOS" : /Android/.test(ua) ? "Android" : /Windows/.test(ua) ? "Windows" : /Mac OS X|Macintosh/.test(ua) ? "Mac" : /Linux/.test(ua) ? "Linux" : "不明";
     var br = /Edg\//.test(ua) ? "Edge" : /OPR\//.test(ua) ? "Opera" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : /Firefox\//.test(ua) ? "Firefox" : "ブラウザ";
     var mobile = /iPhone|Android.*Mobile|iPod/.test(ua) ? "スマホ" : /iPad|Android/.test(ua) ? "タブレット" : "PC";
-    return mobile+" / "+os+" / "+br;
+    return mobile+" / "+os+" / "+br+(isStandaloneApp()?" / ホーム画面アプリ":"");
+  }
+  // ホーム画面に追加したアプリ（PWA/スタンドアロン）として開いているか
+  function isStandaloneApp(){
+    try{
+      if(window.navigator.standalone===true) return true;
+      if(window.matchMedia && (window.matchMedia("(display-mode: standalone)").matches || window.matchMedia("(display-mode: fullscreen)").matches || window.matchMedia("(display-mode: minimal-ui)").matches)) return true;
+    }catch(e){}
+    return false;
+  }
+  var __appModeSent = {};
+  // ログインしたメンバーが、ホーム画面アプリとブラウザのどちらで開いたかを、メンバー情報に記録する（管理者がメンバー管理で確認できる）
+  function trackAppMode(m){
+    if(!m || !m.id || !db) return;
+    var mode = isStandaloneApp() ? "app" : "browser", now = new Date().toISOString();
+    var key = m.id+"|"+mode;
+    if(__appModeSent[key]) return; __appModeSent[key] = true;
+    var last = m.appModeAt ? new Date(m.appModeAt).getTime() : 0;
+    if(m.appMode===mode && (m.homeAppAt || mode==="browser") && Date.now()-last < 6*3600*1000) return;
+    var upd = {appMode:mode, appModeAt:now, appDevice:deviceSummary()};
+    if(mode==="app") upd.homeAppAt = now;
+    try{ db.collection("members").doc(m.id).update(upd).catch(function(){}); }catch(e){}
   }
   var localLoginLogs = [];
   function recordLogin(kind, name, memberName){
@@ -1214,6 +1235,7 @@
   }
   function completeLogin(m, remember, kind){
     state.authed = true;
+    try{ trackAppMode(m); }catch(e){}
     if(kind==="login") recordLogin("login", m.name, m.name);
     else if(kind==="auto"){ try{ var lastA = Number(localStorage.getItem("gc_lastauto_log")||0); if(Date.now()-lastA > 6*3600*1000){ recordLogin("auto", m.name, m.name); localStorage.setItem("gc_lastauto_log", String(Date.now())); } }catch(e){} }
     state.myName = m.name;
@@ -3257,10 +3279,14 @@
     if(!state.isAdmin){
       html += '<div style="font-size:11.5px;color:var(--ink-faint);margin-bottom:10px">メンバーの追加・削除・権限の変更は管理者のみ行えます</div>';
     }
+    if(state.isAdmin){
+      var nApp = list.filter(function(m){ return !!m.homeAppAt; }).length;
+      html += '<div class="summary-line" style="margin-bottom:8px"><span>ホーム画面アプリの利用 <b>'+nApp+'</b>人 / '+list.length+'人</span><span style="color:var(--ink-faint);font-size:11.5px">ホーム画面のアイコンからアプリを開いてログインすると「利用中」になります。ブラウザだけで開いている人は「未設定」です。</span></div>';
+    }
     if(list.length===0){
       html += emptyState(iUsers,"メンバーが登録されていません","");
     }else{
-      html += '<div class="tablewrap"><table><thead><tr><th>氏名</th><th>所属会社</th><th>事業部</th><th>職種</th><th>'+(state.isAdmin?iAdmin():'')+'権限</th>'+(state.isAdmin?'<th></th>':'')+'</tr></thead><tbody>';
+      html += '<div class="tablewrap"><table><thead><tr><th>氏名</th><th>所属会社</th><th>事業部</th><th>職種</th><th>'+(state.isAdmin?iAdmin():'')+'権限</th>'+(state.isAdmin?'<th>'+iAdmin()+'ホーム画面アプリ</th><th></th>':'')+'</tr></thead><tbody>';
       html += list.map(function(m){
         var perm = memberPermission(m);
         var permCell = state.isAdmin ?
@@ -3272,6 +3298,7 @@
           '<td data-label="所属会社">'+esc(m.company||"—")+'</td><td data-label="事業部">'+esc(m.division||"—")+'</td>'+
           '<td data-label="職種"><div class="tagrow" style="margin-top:0">'+(m.roles||[]).map(function(r){return '<span class="tag muted">'+esc(r)+'</span>';}).join("")+'</div></td>'+
           '<td data-label="権限">'+permCell+'</td>'+
+          (state.isAdmin ? '<td data-label="ホーム画面アプリ">'+homeAppCell(m)+'</td>' : '')+
           (state.isAdmin ?
             '<td class="cell-actions" style="white-space:nowrap"><div style="display:flex;gap:6px;align-items:center"><button class="btn sm" data-edit-member="'+m.id+'">'+iAdmin()+'編集</button><button class="iconbtn" data-del-member="'+m.id+'" title="削除（管理者のみ）">'+iTrash()+'</button></div></td>'
             : ''
@@ -3280,6 +3307,14 @@
       html += '</tbody></table></div>';
     }
     return html;
+  }
+  function homeAppCell(m){
+    if(m.homeAppAt){
+      var recentBrowser = m.appMode==="browser" && String(m.appModeAt||"")>String(m.homeAppAt);
+      return '<span class="tag" style="background:#e3f3ea;color:#1f7a4a">利用中</span><div class="cell-sub">アプリで最終 '+esc(fmtDateTime(m.homeAppAt))+(recentBrowser?'<br>（直近はブラウザで利用）':'')+'</div>';
+    }
+    if(m.appModeAt) return '<span class="tag muted">未設定（ブラウザ）</span><div class="cell-sub">最終 '+esc(fmtDateTime(m.appModeAt))+'</div>';
+    return '<span class="tag muted">未確認</span><div class="cell-sub">ログインすると判定されます</div>';
   }
   function seg(id,label){ return '<div class="segopt'+(state.memberSeg===id?" active":"")+'" data-seg="'+id+'">'+label+'</div>'; }
 
