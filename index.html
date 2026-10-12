@@ -2356,7 +2356,7 @@
       dayCells += '<div class="gt-d'+(dk===today?' today':'')+(dow===0?' sun':(dow===6?' sat':''))+'" style="width:'+dw+'px">'+(showNum?'<span>'+dd.getDate()+'</span>':'')+(dw>=20?'<span class="w">'+WEEKDAYS[dow]+'</span>':'')+'</div>';
     }
     var projs = state.projects.filter(function(p){ return !(state.ganttHideDone && (p.status==="清算済"||p.status==="失注")); });
-    var stepsBy = {}; state.steps.filter(secretVisible).forEach(function(s){ (stepsBy[s.projectId]=stepsBy[s.projectId]||[]).push(s); });
+    var stepsBy = {}; state.steps.filter(secretVisible).forEach(function(s){ if(!s.startDate) return; (stepsBy[s.projectId]=stepsBy[s.projectId]||[]).push(s); });
     projs = projs.filter(function(p){ return !!stepsBy[p.id]; })
       .sort(function(a,b){ return (a.startDate||"9999").localeCompare(b.startDate||"9999"); });
 
