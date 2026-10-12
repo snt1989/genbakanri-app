@@ -1210,6 +1210,61 @@
     if(mode==="app") upd.homeAppAt = now;
     try{ db.collection("members").doc(m.id).update(upd).catch(function(){}); }catch(e){}
   }
+  /* ---- ホーム画面への追加のお願い（使用者向けの案内） ---- */
+  try{ window.addEventListener("beforeinstallprompt", function(e){ e.preventDefault(); state.deferredInstall = e; }); }catch(e){}
+  function a2hsDismissed(){
+    if(state.a2hsDismissed) return true;
+    try{ var t = Number(localStorage.getItem("gc_a2hs_dismiss")||0); return t && Date.now()-t < 7*86400000; }catch(e){ return false; }
+  }
+  function a2hsShow(){
+    if(!state.authed || !state.myName || !db || window.claude) return false;
+    if(isStandaloneApp() || a2hsDismissed()) return false;
+    return isPhone() || (navigator.maxTouchPoints>0 && window.innerWidth<=1100);
+  }
+  function a2hsBanner(){
+    if(!a2hsShow()) return "";
+    return '<div class="card" style="padding:12px 14px;margin-bottom:14px;border-color:var(--accent);background:var(--accent-soft);display:flex;gap:10px;align-items:center;flex-wrap:wrap">'+
+      '<span style="flex:1;min-width:200px;font-size:12.5px;line-height:1.6"><b>ホーム画面に追加すると、</b>アプリのようにすぐ開けて、通知も受け取れます。</span>'+
+      '<button class="btn sm primary" id="a2hs-guide">追加のしかた</button>'+
+      '<button class="iconbtn" id="a2hs-x" title="今日は閉じる（7日間表示しません）" style="min-width:36px;min-height:36px">'+iX()+'</button></div>';
+  }
+  function openA2hsGuide(){
+    var ua = navigator.userAgent||"", ios = /iPhone|iPad|iPod/.test(ua);
+    var steps = ios
+      ? ['Safari でこのページを開きます（Chromeなどでは追加できないことがあります）','画面下の「共有」ボタン（四角から上矢印）をタップ','メニューを下にスクロールして「ホーム画面に追加」をタップ','右上の「追加」をタップ → ホーム画面にアイコンができます','これからは、そのアイコンからアプリを開いてください']
+      : ['Chrome でこのページを開きます','右上の「︙」メニューをタップ','「ホーム画面に追加」（または「アプリをインストール」）をタップ','「追加」をタップ → ホーム画面にアイコンができます','これからは、そのアイコンからアプリを開いてください'];
+    var body = '<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.7;margin-bottom:8px">'+(ios?'iPhone / iPad':'Android')+' の場合の手順です。</div>'+
+      '<ol style="padding-left:20px;margin:0;font-size:13px;line-height:1.9">'+steps.map(function(t){ return '<li>'+esc(t)+'</li>'; }).join("")+'</ol>'+
+      '<div style="font-size:11.5px;color:var(--ink-faint);margin-top:10px;line-height:1.7">追加すると、アイコンから開いたときに全画面で表示され、スマホ通知（設定の「個人情報」）も使えるようになります。</div>';
+    var foot = '<button class="btn" data-close-modal>閉じる</button>'+(state.deferredInstall?'<button class="btn primary" id="a2hs-install">今すぐ追加する</button>':'');
+    openModal("ホーム画面に追加する", body, foot);
+    var ib = document.getElementById("a2hs-install");
+    if(ib) ib.addEventListener("click", function(){
+      var d = state.deferredInstall; if(!d) return; state.deferredInstall = null;
+      try{ d.prompt(); d.userChoice.then(function(c){ if(c && c.outcome==="accepted") toast("ホーム画面に追加しました。アイコンから開いてください"); closeModal(); }); }catch(e){}
+    });
+  }
+  // 管理者: まだホーム画面アプリを使っていない人へ、LINE WORKSのトークルームでお願いを送る
+  function openA2hsAsk(){
+    if(!state.isAdmin) return;
+    var targets = state.members.filter(function(m){ return !m.homeAppAt && m.kind!=="external" && memberPermission(m)!=="external"; });
+    var names = targets.map(function(m){ return m.name; });
+    if(!names.length){ toast("全員がホーム画面アプリを使っています"); return; }
+    var text = "【お願い】現場管理アプリを、スマホのホーム画面に追加してお使いください。\n"+
+      "アプリのようにすぐ開けて、チャットなどの通知も届きます。\n\n"+
+      "▼iPhone: Safariで開く →「共有」→「ホーム画面に追加」\n▼Android: Chromeで開く →「︙」→「ホーム画面に追加」\n\n"+
+      "まだ追加が確認できていない方: "+names.join("、");
+    openModal("ホーム画面追加のお願いを送る",
+      '<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.7;margin-bottom:8px">LINE WORKSの通知先トークルームに、次の内容を送ります（送る前に内容を編集できます）。</div>'+
+      '<textarea id="a2hs-text" style="width:100%;min-height:200px;font-size:12.5px;line-height:1.6">'+esc(text)+'</textarea><div id="a2hs-msg" style="font-size:12px;margin-top:6px;color:var(--danger)"></div>',
+      '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="a2hs-send">LINE WORKSに送る</button>');
+    document.getElementById("a2hs-send").addEventListener("click", function(){
+      var btn = this, t = document.getElementById("a2hs-text").value.trim(), msg = document.getElementById("a2hs-msg");
+      if(!t){ msg.textContent = "内容が空です"; return; }
+      btn.disabled = true; btn.textContent = "送信中…";
+      worksCall("share", {text:t}).then(function(){ closeModal(); toast("LINE WORKSに送りました"); }, function(e){ btn.disabled = false; btn.textContent = "LINE WORKSに送る"; msg.textContent = e.message || "送信できませんでした"; });
+    });
+  }
   var localLoginLogs = [];
   function recordLogin(kind, name, memberName){
     var rec = {at:new Date().toISOString(), kind:kind, name:String(name||"").slice(0,40), memberName:memberName||"", device:deviceSummary()};
@@ -1810,6 +1865,7 @@
         '<span style="font-size:12.5px;color:var(--ink-soft)">データの同期に時間がかかっています。空の状態で表示している可能性があります。</span>'+
         '<button class="btn sm" id="retry-sync-btn">再読み込み</button></div>';
     }
+    if(state.tab==="home" || state.tab==="sales" || state.tab==="construction") banner += a2hsBanner();
     if(state.tab==="home") c.innerHTML = banner+renderHome();
     else if(state.tab==="sales") c.innerHTML = banner+renderProjectList("sales");
     else if(state.tab==="construction") c.innerHTML = banner+renderProjectList("construction");
@@ -3281,7 +3337,7 @@
     }
     if(state.isAdmin){
       var nApp = list.filter(function(m){ return !!m.homeAppAt; }).length;
-      html += '<div class="summary-line" style="margin-bottom:8px"><span>ホーム画面アプリの利用 <b>'+nApp+'</b>人 / '+list.length+'人</span><span style="color:var(--ink-faint);font-size:11.5px">ホーム画面のアイコンからアプリを開いてログインすると「利用中」になります。ブラウザだけで開いている人は「未設定」です。</span></div>';
+      html += '<div class="summary-line" style="margin-bottom:8px"><span>ホーム画面アプリの利用 <b>'+nApp+'</b>人 / '+list.length+'人</span><span style="color:var(--ink-faint);font-size:11.5px">ホーム画面のアイコンからアプリを開いてログインすると「利用中」になります。ブラウザだけで開いている人は「未設定」です。</span>'+(worksAvailable() ? '<button class="btn sm" id="a2hs-ask">未利用の人にお願いを送る（LINE WORKS）</button>' : '')+'</div>';
     }
     if(list.length===0){
       html += emptyState(iUsers,"メンバーが登録されていません","");
@@ -7195,6 +7251,9 @@
     c.querySelectorAll("[data-fbp-sort]").forEach(function(el){ el.addEventListener("click", function(){
       var k = el.getAttribute("data-fbp-sort"), cur = state.fbpSort || {k:"created", dir:"desc"};
       state.fbpSort = (cur.k===k) ? {k:k, dir:(cur.dir==="asc"?"desc":"asc")} : {k:k, dir:el.getAttribute("data-fbp-dir")||"asc"}; render(); }); });
+    var a2g = document.getElementById("a2hs-guide"); if(a2g) a2g.addEventListener("click", openA2hsGuide);
+    var a2x = document.getElementById("a2hs-x"); if(a2x) a2x.addEventListener("click", function(){ state.a2hsDismissed = true; try{ localStorage.setItem("gc_a2hs_dismiss", String(Date.now())); }catch(e){} render(); });
+    var a2a = document.getElementById("a2hs-ask"); if(a2a) a2a.addEventListener("click", openA2hsAsk);
     var tkMore = document.getElementById("tk-more"); if(tkMore) tkMore.addEventListener("click", function(){ state.tkLimit = (state.tkLimit||100) + 200; render(); });
     var fsa = document.getElementById("files-sort-all"); if(fsa) fsa.addEventListener("change", function(){ state.filesSort = fsa.value; render(); });
     var fbpSel = document.getElementById("fbp-sort-sel");
