@@ -64,6 +64,12 @@ module.exports = async function handler(req, res){
         if(b.endpoint){ var cur = (await W.getDoc("settings/push"))[keyOf(b.endpoint)]; if(cur && cur.name === me.name) out.prefs = cur.prefs || null; }
         return res.status(200).json(out);
       }
+      case "subscribers": {
+        if(!admin) return res.status(403).json({error: "管理者のみ実行できます"});
+        var doc2 = await W.getDoc("settings/push"), seen = {};
+        Object.keys(doc2).forEach(function(k){ if(k.indexOf("s_") === 0 && doc2[k] && doc2[k].name) seen[norm(doc2[k].name)] = doc2[k].name; });
+        return res.status(200).json({configured: configured(), names: Object.keys(seen).map(function(k){ return seen[k]; })});
+      }
       case "genkeys": {
         if(!admin) return res.status(403).json({error: "管理者のみ実行できます"});
         var k = webpush.generateVAPIDKeys();

@@ -1210,6 +1210,49 @@
     if(mode==="app") upd.homeAppAt = now;
     try{ db.collection("members").doc(m.id).update(upd).catch(function(){}); }catch(e){}
   }
+  /* ---- 通知オフの人へのお知らせ ---- */
+  function pushOffDismissed(){
+    if(state.pushOffDismissed) return true;
+    try{ var t = Number(localStorage.getItem("gc_pushoff_dismiss")||0); return t && Date.now()-t < 7*86400000; }catch(e){ return false; }
+  }
+  function pushOffBanner(){
+    if(!state.authed || !state.myName || !pushSupported() || pushOffDismissed()) return "";
+    pushLoad();
+    var p = state.push, st = p.status;
+    if(!st || !st.configured || p.sub) return "";
+    return '<div class="card" style="padding:12px 14px;margin-bottom:14px;border-color:var(--accent);background:var(--accent-soft);display:flex;gap:10px;align-items:center;flex-wrap:wrap">'+
+      '<span style="flex:1;min-width:200px;font-size:12.5px;line-height:1.6"><b>スマホ通知がオフです。</b>オンにすると、チャットの新着などをすぐ受け取れます。</span>'+
+      '<button class="btn sm primary" id="pushoff-go">通知をオンにする</button>'+
+      '<button class="iconbtn" id="pushoff-x" title="閉じる（7日間表示しません）" style="min-width:36px;min-height:36px">'+iX()+'</button></div>';
+  }
+  function pushSubsLoad(){
+    var p = state.push;
+    if(!state.isAdmin || !worksAvailable() || p.subs || p.subsLoading || p.subsFailed) return;
+    p.subsLoading = true;
+    pushCall("subscribers").then(function(j){ p.subs = j.names||[]; p.subsConfigured = !!j.configured; }, function(){ p.subsFailed = true; })
+      .then(function(){ p.subsLoading = false; if(state.tab==="settings") render(); });
+  }
+  function openPushAsk(){
+    if(!state.isAdmin) return;
+    var on = {}; (state.push.subs||[]).forEach(function(n){ on[normName(n)] = 1; });
+    var names = state.members.filter(function(m){ return !on[normName(m.name)] && memberPermission(m)!=="external" && m.kind!=="external"; }).map(function(m){ return m.name; });
+    if(!names.length){ toast("全員が通知をオンにしています"); return; }
+    var text = "【お願い】現場管理アプリのスマホ通知をオンにしてください。\n"+
+      "チャットの新着や案件の更新が、すぐ手元に届きます。\n\n"+
+      "▼手順: アプリを開く → 右上の自分の名前 → 「この端末で通知を受け取る」\n"+
+      "（iPhoneは先にホーム画面に追加したアプリから設定してください）\n\n"+
+      "まだオンになっていない方: "+names.join("、");
+    openModal("通知オンのお願いを送る",
+      '<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.7;margin-bottom:8px">LINE WORKSの通知先トークルームに、次の内容を送ります（送る前に編集できます）。</div>'+
+      '<textarea id="pushask-text" style="width:100%;min-height:200px;font-size:12.5px;line-height:1.6">'+esc(text)+'</textarea><div id="pushask-msg" style="font-size:12px;margin-top:6px;color:var(--danger)"></div>',
+      '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="pushask-send">LINE WORKSに送る</button>');
+    document.getElementById("pushask-send").addEventListener("click", function(){
+      var btn = this, t = document.getElementById("pushask-text").value.trim(), msg = document.getElementById("pushask-msg");
+      if(!t){ msg.textContent = "内容が空です"; return; }
+      btn.disabled = true; btn.textContent = "送信中…";
+      worksCall("share", {text:t}).then(function(){ closeModal(); toast("LINE WORKSに送りました"); }, function(e){ btn.disabled = false; btn.textContent = "LINE WORKSに送る"; msg.textContent = e.message || "送信できませんでした"; });
+    });
+  }
   /* ---- ホーム画面への追加のお願い（使用者向けの案内） ---- */
   try{ window.addEventListener("beforeinstallprompt", function(e){ e.preventDefault(); state.deferredInstall = e; }); }catch(e){}
   function a2hsDismissed(){
@@ -1865,7 +1908,7 @@
         '<span style="font-size:12.5px;color:var(--ink-soft)">データの同期に時間がかかっています。空の状態で表示している可能性があります。</span>'+
         '<button class="btn sm" id="retry-sync-btn">再読み込み</button></div>';
     }
-    if(state.tab==="home" || state.tab==="sales" || state.tab==="construction") banner += a2hsBanner();
+    if(state.tab==="home" || state.tab==="sales" || state.tab==="construction") banner += a2hsBanner() + (a2hsShow() ? "" : pushOffBanner());
     if(state.tab==="home") c.innerHTML = banner+renderHome();
     else if(state.tab==="sales") c.innerHTML = banner+renderProjectList("sales");
     else if(state.tab==="construction") c.innerHTML = banner+renderProjectList("construction");
@@ -3338,6 +3381,12 @@
     if(state.isAdmin){
       var nApp = list.filter(function(m){ return !!m.homeAppAt; }).length;
       html += '<div class="summary-line" style="margin-bottom:8px"><span>ホーム画面アプリの利用 <b>'+nApp+'</b>人 / '+list.length+'人</span><span style="color:var(--ink-faint);font-size:11.5px">ホーム画面のアイコンからアプリを開いてログインすると「利用中」になります。ブラウザだけで開いている人は「未設定」です。</span>'+(worksAvailable() ? '<button class="btn sm" id="a2hs-ask">未利用の人にお願いを送る（LINE WORKS）</button>' : '')+'</div>';
+      pushSubsLoad();
+      if(worksAvailable() && state.push.subs){
+        var onP = {}; state.push.subs.forEach(function(n){ onP[normName(n)] = 1; });
+        var nOn = list.filter(function(m){ return onP[normName(m.name)]; }).length;
+        html += '<div class="summary-line" style="margin-bottom:8px"><span>スマホ通知がオン <b>'+nOn+'</b>人 / '+list.length+'人</span><span style="color:var(--ink-faint);font-size:11.5px">個人情報で「この端末で通知を受け取る」をオンにした人です。</span>'+(state.push.subsConfigured ? '<button class="btn sm" id="pushoff-ask">オフの人にお願いを送る（LINE WORKS）</button>' : '')+'</div>';
+      }
     }
     if(list.length===0){
       html += emptyState(iUsers,"メンバーが登録されていません","");
@@ -5121,7 +5170,7 @@
     navigator.serviceWorker.getRegistration().then(function(reg){ return reg && reg.pushManager.getSubscription(); }).catch(function(){ return null; })
       .then(function(sub){ p.sub = sub || null; return pushCall("status", {endpoint: sub ? sub.endpoint : ""}); })
       .then(function(j){ p.status = j; p.prefs = j.prefs || null; }, function(){ p.failed = true; })
-      .then(function(){ p.loading = false; if(state.tab==="settings" && state.settingsSeg==="personal") render(); });
+      .then(function(){ p.loading = false; if((state.tab==="settings" && state.settingsSeg==="personal") || (p.status && p.status.configured && !p.sub && ["home","sales","construction"].indexOf(state.tab)!==-1)) render(); });
   }
   function pushNotify(chatId, text){
     if(!pushSupported() || !chatId) return;
@@ -7253,6 +7302,9 @@
       state.fbpSort = (cur.k===k) ? {k:k, dir:(cur.dir==="asc"?"desc":"asc")} : {k:k, dir:el.getAttribute("data-fbp-dir")||"asc"}; render(); }); });
     var a2g = document.getElementById("a2hs-guide"); if(a2g) a2g.addEventListener("click", openA2hsGuide);
     var a2x = document.getElementById("a2hs-x"); if(a2x) a2x.addEventListener("click", function(){ state.a2hsDismissed = true; try{ localStorage.setItem("gc_a2hs_dismiss", String(Date.now())); }catch(e){} render(); });
+    var pg2 = document.getElementById("pushoff-go"); if(pg2) pg2.addEventListener("click", goPersonalSettings);
+    var px2 = document.getElementById("pushoff-x"); if(px2) px2.addEventListener("click", function(){ state.pushOffDismissed = true; try{ localStorage.setItem("gc_pushoff_dismiss", String(Date.now())); }catch(e){} render(); });
+    var pa2 = document.getElementById("pushoff-ask"); if(pa2) pa2.addEventListener("click", openPushAsk);
     var a2a = document.getElementById("a2hs-ask"); if(a2a) a2a.addEventListener("click", openA2hsAsk);
     var tkMore = document.getElementById("tk-more"); if(tkMore) tkMore.addEventListener("click", function(){ state.tkLimit = (state.tkLimit||100) + 200; render(); });
     var fsa = document.getElementById("files-sort-all"); if(fsa) fsa.addEventListener("change", function(){ state.filesSort = fsa.value; render(); });
