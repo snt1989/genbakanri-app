@@ -2357,7 +2357,7 @@
     }
     var projs = state.projects.filter(function(p){ return !(state.ganttHideDone && (p.status==="清算済"||p.status==="失注")); });
     var stepsBy = {}; state.steps.filter(secretVisible).forEach(function(s){ (stepsBy[s.projectId]=stepsBy[s.projectId]||[]).push(s); });
-    projs = projs.filter(function(p){ return (p.startDate && !hiddenFor(p,"p_period")) || stepsBy[p.id]; })
+    projs = projs.filter(function(p){ return !!stepsBy[p.id]; })
       .sort(function(a,b){ return (a.startDate||"9999").localeCompare(b.startDate||"9999"); });
 
     var bar = function(s,e,cls,text,prog,attr){
@@ -2404,14 +2404,14 @@
       });
     });
     if(!rows){
-      html += emptyState(iBriefcase,"表示できる案件・工程がありません","案件に施工予定日を設定するか、「工程を追加」から工程を登録してください");
+      html += emptyState(iBriefcase,"表示できる工程がありません","「工程を追加」から工程を登録すると、ここに表示されます");
       return html;
     }
     var todayOff = diffDays(start,today);
     html += '<div class="gt-wrap"><div class="gt" style="width:'+(GANTT_LBL+W)+'px">'+
       '<div class="gt-head"><div class="gt-lbl head">案件 ／ 担当</div><div style="width:'+W+'px"><div style="display:flex">'+months+'</div><div style="display:flex">'+dayCells+'</div></div></div>'+
       '<div class="gt-body">'+rows+(todayOff>=0&&todayOff<days?'<div class="gt-todaycol" style="left:'+(GANTT_LBL+todayOff*dw)+'px;width:'+dw+'px"></div><div class="gt-today" style="left:'+(GANTT_LBL+todayOff*dw+Math.floor(dw/2))+'px"></div>':'')+'</div></div></div>';
-    html += '<div class="gt-legend"><span><i style="background:#2f80d8"></i>予定あり</span><span><i style="background:#2f9e63"></i>完了</span><span><i style="background:#e0443c"></i>期限超過（未完了）</span><span><i style="background:#9aa3a0"></i>施工期間のみ（工程未登録）</span><span style="color:var(--ink-faint)">▸ を押すと担当者ごとの工程が開きます。丸や帯を押すと編集できます。</span></div>';
+    html += '<div class="gt-legend"><span><i style="background:#2f80d8"></i>予定あり</span><span><i style="background:#2f9e63"></i>完了</span><span><i style="background:#e0443c"></i>期限超過（未完了）</span><span style="color:var(--ink-faint)">▸ を押すと担当者ごとの工程が開きます。丸や帯を押すと編集できます。</span></div>';
     return html;
   }
   var PPL_SCALES = {"1w":{days:7,label:"1週間"},"2w":{days:14,label:"2週間"},"4w":{days:28,label:"4週間"}};
