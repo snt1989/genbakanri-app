@@ -1230,7 +1230,7 @@
     if(!state.isAdmin || !worksAvailable() || p.subs || p.subsLoading || p.subsFailed) return;
     p.subsLoading = true;
     pushCall("subscribers").then(function(j){ p.subs = j.names||[]; p.subsConfigured = !!j.configured; }, function(){ p.subsFailed = true; })
-      .then(function(){ p.subsLoading = false; if(state.tab==="settings") render(); });
+      .then(function(){ p.subsLoading = false; if(state.tab==="members") render(); });
   }
   function openPushAsk(){
     if(!state.isAdmin) return;
