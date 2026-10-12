@@ -78,7 +78,7 @@
     padding:12px 24px;display:flex;align-items:center;justify-content:flex-end;gap:16px;
   }
   .topbar-user{display:flex;align-items:center;gap:9px;font-size:12.5px;}
-  .bellwrap{position:relative;color:var(--ink-soft);}
+  .bellwrap{position:relative;color:var(--ink-soft);padding:8px;margin:-8px;}
   .bellwrap svg{width:19px;height:19px;}
   .bell-dot{position:absolute;top:-3px;right:-4px;background:var(--warning);color:#3a2a00;font-size:9px;font-weight:800;border-radius:99px;padding:1px 4px;min-width:14px;text-align:center;line-height:1.3;}
   .avatar{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex:none;}
@@ -1138,6 +1138,8 @@
     }catch(e){ toast("ファイルを開けませんでした"); }
   });
   function bindLoginAndTopbarEvents(){
+    var bellEl = document.getElementById("bell-icon");
+    if(bellEl && !bellEl.__bound){ bellEl.__bound = true; bellEl.style.cursor = "pointer"; bellEl.setAttribute("role","button"); bellEl.setAttribute("aria-label","お知らせ"); bellEl.addEventListener("click", openNotices); }
     ["user-avatar","user-name"].forEach(function(id){
       var el = document.getElementById(id);
       if(el){ el.style.cursor = "pointer"; el.setAttribute("title","個人情報を開く"); el.addEventListener("click", goPersonalSettings); }
@@ -1209,6 +1211,50 @@
     var upd = {appMode:mode, appModeAt:now, appDevice:deviceSummary()};
     if(mode==="app") upd.homeAppAt = now;
     try{ db.collection("members").doc(m.id).update(upd).catch(function(){}); }catch(e){}
+  }
+  /* ---- お知らせ（ベルマーク） ---- */
+  function noticeItems(){
+    var items = [], today = todayISO(), tmr = addDays(today,1), me = state.myName;
+    if(!me) return items;
+    var mine = function(t){ return state.isAdmin || t.assignee===me; };
+    state.tasks.filter(function(t){ return !t.done && t.dueDate && t.dueDate<=today && mine(t); }).sort(function(a,b){ return a.dueDate<b.dueDate?-1:1; }).forEach(function(t){
+      items.push({grp:"task", urgent:true, title:t.title||"タスク", sub:(t.dueDate<today?"期限切れ（"+fmtDate(t.dueDate)+"）":"今日が期限")+(t.projectName?" ／ "+t.projectName:"")+(state.isAdmin&&t.assignee?" ／ "+t.assignee:""), go:function(){ setTab("tasks"); }});
+    });
+    state.tasks.filter(function(t){ return !t.done && t.dueDate===tmr && mine(t); }).forEach(function(t){
+      items.push({grp:"task", title:t.title||"タスク", sub:"明日が期限"+(t.projectName?" ／ "+t.projectName:""), go:function(){ setTab("tasks"); }});
+    });
+    var lim = addDays(today,3);
+    state.projects.filter(function(p){ return p.endDate && p.endDate>=today && p.endDate<=lim && (p.status==="施工中"||p.status==="契約済") && (state.isAdmin || isMyProject(p)); }).forEach(function(p){
+      items.push({grp:"project", title:p.name, sub:"工期の終了が近づいています（"+fmtDate(p.endDate)+"）", go:function(){ goProjectDetail(p.id); }});
+    });
+    state.chats.forEach(function(c){
+      var rd = (c.reads||{})[me];
+      if(rd && String(c.updatedAt||"")>String(rd)) items.push({grp:"chat", urgent:true, title:c.name||"チャット", sub:"未読のメッセージがあります（"+fmtAgo(c.updatedAt)+"）", go:function(){ state.activeChat = c.id; state.chatPaneOpen = true; state.viewingProjectId = null; state.tab = "chat"; render(); }});
+    });
+    return items;
+  }
+  function noticeCount(){ return noticeItems().length; }
+  function noticeSetup(){
+    var out = [];
+    if(a2hsShow()) out.push({title:"ホーム画面に追加しましょう", sub:"アプリのようにすぐ開けて、通知も受け取れます", go:openA2hsGuide});
+    else if(pushSupported() && state.push.status && state.push.status.configured && !state.push.sub) out.push({title:"スマホ通知をオンにしましょう", sub:"チャットの新着などをすぐ受け取れます", go:goPersonalSettings});
+    return out;
+  }
+  var __noticeFns = [];
+  function openNotices(){
+    var items = noticeItems(), setup = noticeSetup(); __noticeFns = items.concat(setup);
+    var GL = {task:"タスク", project:"案件", chat:"チャット"}, ic = {task:"✓", project:"🏗", chat:"💬"};
+    var row = function(it, i, g){ return '<button class="notice-row" data-notice="'+i+'" style="display:flex;gap:10px;align-items:flex-start;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--border);padding:10px 2px;cursor:pointer;color:inherit;font:inherit"><span style="width:22px;text-align:center;flex:none">'+(ic[g]||"🔔")+'</span><span style="flex:1;min-width:0"><span style="display:block;font-size:13px;font-weight:700;line-height:1.5;word-break:break-all">'+esc(it.title)+'</span><span style="display:block;font-size:11.5px;color:'+(it.urgent?"var(--danger)":"var(--ink-faint)")+';line-height:1.5">'+esc(it.sub)+'</span></span></button>'; };
+    var body = "";
+    if(!items.length && !setup.length) body = '<div style="padding:26px 6px;text-align:center;color:var(--ink-faint);font-size:13px">新しいお知らせはありません</div>';
+    ["task","project","chat"].forEach(function(g){
+      var xs = items.map(function(it,i){ return [it,i]; }).filter(function(p){ return p[0].grp===g; });
+      if(!xs.length) return;
+      body += '<div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);margin:10px 0 0">'+GL[g]+'（'+xs.length+'）</div>'+xs.map(function(p){ return row(p[0], p[1], g); }).join("");
+    });
+    if(setup.length) body += '<div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);margin:14px 0 0">ご案内</div>'+setup.map(function(it,k){ return row(it, items.length+k, ""); }).join("");
+    openModal("お知らせ", body, '<button class="btn" data-close-modal>閉じる</button>');
+    document.querySelectorAll("#modal-box [data-notice]").forEach(function(el){ el.addEventListener("click", function(){ var f = __noticeFns[+el.getAttribute("data-notice")]; closeModal(); if(f && f.go) f.go(); }); });
   }
   /* ---- 通知オフの人へのお知らせ ---- */
   function pushOffDismissed(){
@@ -1858,7 +1904,7 @@
         return '<button class="bn'+(highlight===x[0]?" on":"")+'" data-tab="'+x[0]+'">'+x[2]()+'<span>'+esc(x[1])+'</span></button>';
       }).join("")+'<button class="bn'+((!inBn||state.sidebarOpen)?" on":"")+'" id="bn-menu">'+iMenu()+'<span>メニュー</span></button>';
     }
-    document.getElementById("bell-icon").innerHTML = iBell()+(state.tasks.filter(overdueOrToday).length? '<span class="bell-dot">'+state.tasks.filter(overdueOrToday).length+'</span>':'');
+    (function(){ var n = noticeCount(); document.getElementById("bell-icon").innerHTML = iBell()+(n? '<span class="bell-dot">'+(n>99?"99+":n)+'</span>':''); })();
     document.getElementById("menu-toggle").innerHTML = iMenu();
     document.getElementById("sidebar").classList.toggle("open", state.sidebarOpen);
     var un = document.getElementById("user-name");
