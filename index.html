@@ -2031,20 +2031,26 @@
   var STEP_NAMES = ["下見","見積","契約","着工準備","施工","検査","清掃・片付け","引渡し"];
   var EVENT_TYPES = ["現地調査","打ち合わせ","見積提出","施工","引渡し","その他"];
   function secretVisible(x){ return !(x.secret && isExternalViewer()); }
+  function eventIsMine(e){ return e.createdBy===state.myName || !!(e.projectId && state.projects.some(function(p){ return p.id===e.projectId && isMyProject(p); })); }
+  function calMineOn(){ if(state.calMine===undefined){ var v=null; try{ v=localStorage.getItem("gc_calmine"); }catch(e){} state.calMine = v!=="0"; } return state.calMine!==false; }
   function scheduleItems(){
-    var items = [];
+    var items = [], me = state.myName, mineOnly = calMineOn() && !!me;
     state.projects.forEach(function(p){
       if(p.status==="失注") return;
+      if(mineOnly && !isMyProject(p)) return;
       if(p.startDate && !hiddenFor(p,"p_period")) items.push({group:"project",kind:"project",id:p.id,title:p.name,start:p.startDate,end:(p.endDate&&p.endDate>=p.startDate)?p.endDate:p.startDate,cls:"k-project"});
       if(p.handoverDate && !hiddenFor(p,"p_handover")) items.push({group:"project",kind:"handover",id:p.id,title:"引渡し："+p.name,start:p.handoverDate,end:p.handoverDate,cls:"k-handover"});
     });
     state.steps.filter(secretVisible).filter(function(s){ return projectVisibleId(s.projectId); }).forEach(function(s){
+      if(mineOnly && s.assignee!==me) return;
       if(s.startDate) items.push({group:"step",kind:"step",id:s.id,title:(s.projectName?s.projectName+"：":"")+(s.name||"工程"),start:s.startDate,end:(s.endDate&&s.endDate>=s.startDate)?s.endDate:s.startDate,cls:"k-step"});
     });
     state.tasks.forEach(function(t){
+      if(mineOnly && t.assignee!==me) return;
       if(t.dueDate) items.push({group:"task",kind:"task",id:t.id,title:t.title||"タスク",start:t.dueDate,end:t.dueDate,cls:"k-task"+(t.done?" done":"")});
     });
     state.events.filter(secretVisible).filter(function(e){ return projectVisibleId(e.projectId); }).forEach(function(e){
+      if(mineOnly && !eventIsMine(e)) return;
       if(e.date) items.push({group:"event",kind:"event",id:e.id,title:eventLabel(e),start:e.date,end:(e.endDate&&e.endDate>=e.date)?e.endDate:e.date,cls:"k-event"});
     });
     return items;
@@ -2077,6 +2083,7 @@
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">カレンダー</h1>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap">'+csvToolbar("events")+'<button class="btn outline" id="gc-open">'+iCalendar()+' Googleカレンダー連携</button><button class="btn primary" data-cal-add="'+today+'">'+iPlus()+' 予定を追加</button></div></div><div style="height:12px"></div>'+
       '<div class="segmented" style="margin-bottom:14px"><div class="segopt'+(state.calView==="grid"?' active':'')+'" data-cal-view="grid">カレンダー</div><div class="segopt'+(state.calView==="list"?' active':'')+'" data-cal-view="list">予定一覧</div></div>';
+    html += '<div style="margin:-4px 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="chip-toggle'+(calMineOn()?' on':' off')+'" id="cal-mine" style="cursor:pointer">自分の予定のみ</span><span style="font-size:11.5px;color:var(--ink-faint)">'+(calMineOn()?'自分が担当の案件・工程・タスクと、自分が登録した予定を表示しています':'全員分を表示しています')+'</span></div>';
     if(state.calView==="list") return html + renderEventList();
     html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
       '<button class="btn sm" data-cal-nav="-1">'+iBack()+'</button><b style="font-size:17px;min-width:110px;text-align:center">'+y+'年'+m+'月</b><button class="btn sm" data-cal-nav="1" style="transform:scaleX(-1)">'+iBack()+'</button>'+
@@ -2225,6 +2232,7 @@
   }
   function renderEventList(){
     var rows = filterEvents().filter(secretVisible).filter(function(e){ return projectVisibleId(e.projectId); });
+    if(calMineOn() && state.myName) rows = rows.filter(eventIsMine);
     if(!rows.length) return emptyState(iCalendar,"予定がありません","「予定を追加」またはCSV入力で登録できます");
     var h = '<div class="summary-line"><span><b>'+rows.length+'</b>件</span></div><div class="tablewrap"><table><thead><tr><th>タイトル</th><th>種類</th><th>開始日</th><th>終了日</th><th>案件</th><th>公開範囲</th><th></th></tr></thead><tbody>';
     h += rows.map(function(e){
@@ -2301,7 +2309,7 @@
       if(!date){ toast("開始日を入力してください"); return; }
       if(end && end<date){ toast("終了日は開始日以降にしてください"); return; }
       var pid = document.getElementById("f-eproj").value, pr = state.projects.find(function(x){return x.id===pid;});
-      writeDoc("events", ev?ev.id:null, {title:title, category:document.getElementById("f-ecat").value, date:date, endDate:end||"", projectId:pid||"", projectName:pr?pr.name:"", note:document.getElementById("f-enote").value.trim(), secret:document.querySelector('input[name="f-sscope"]:checked').value==="secret", createdBy:(ev&&ev.createdBy)||state.myName||""}, ev?"予定を更新しました":"予定を追加しました");
+      writeDoc("events", ev?ev.id:null, {createdBy:(ev&&ev.createdBy)||state.myName||"", title:title, category:document.getElementById("f-ecat").value, date:date, endDate:end||"", projectId:pid||"", projectName:pr?pr.name:"", note:document.getElementById("f-enote").value.trim(), secret:document.querySelector('input[name="f-sscope"]:checked').value==="secret", createdBy:(ev&&ev.createdBy)||state.myName||""}, ev?"予定を更新しました":"予定を追加しました");
     });
   }
   function openStepModal(st, projectId){
@@ -2488,6 +2496,7 @@
       if(n===0) state.calMonth = localToday().slice(0,7);
       else { var d = new Date(+base.slice(0,4), +base.slice(5,7)-1+n, 1); state.calMonth = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
       render(); }); });
+    q("#cal-mine", function(el){ el.addEventListener("click", function(){ state.calMine = !calMineOn(); try{ localStorage.setItem("gc_calmine", state.calMine?"1":"0"); }catch(e){} render(); }); });
     q("[data-cal-filter]", function(el){ el.addEventListener("click", function(){ var g=el.getAttribute("data-cal-filter"); state.calFilter[g]=!state.calFilter[g]; render(); }); });
     var gco = document.getElementById("gc-open"); if(gco) gco.addEventListener("click", openGcalModal);
     q("[data-cal-add]", function(el){ el.addEventListener("click", function(){ openEventModal(null, el.getAttribute("data-cal-add")); }); });
