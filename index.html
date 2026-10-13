@@ -2675,7 +2675,7 @@
     var filtered = state.projects.filter(function(p){
       if(f.name && (p.name||"").indexOf(f.name)===-1 && propertyAddressOf(p).full.indexOf(f.name)===-1 && (p.address||"").indexOf(f.name)===-1) return false;
       if(f.status.length && p.status && f.status.indexOf(p.status)===-1) return false;
-      if(f.type!=="all" && p.type!==f.type) return false;
+      if(f.type!=="all" && p.division!==f.type) return false;
       if(f.noSched){ var wc = projectWorkCounts(p); if(wc.steps>0 && wc.events>0) return false; }
       if(f.assignees.length){
         var names = normalizeAssignees(p.assignees).map(function(a){return a.name;});
@@ -2701,7 +2701,7 @@
     html += '<div class="card filter-card" data-filter-mode="'+mode+'">';
     html += '<div class="filter-line">'+
       '<div class="fitem" style="min-width:220px"><span>案件名・住所で検索</span><input type="text" id="flt-name" value="'+esc(f.name)+'" placeholder="案件名または住所"></div>'+
-      '<div class="fitem"><span>案件種類</span><select id="flt-type"><option value="all">すべて</option>'+PROJECT_TYPES.map(function(t){return '<option value="'+esc(t)+'"'+(f.type===t?" selected":"")+'>'+esc(t)+'</option>';}).join("")+'</select></div>'+
+      '<div class="fitem"><span>事業部</span><select id="flt-type"><option value="all">すべて</option>'+DIVISIONS.map(function(t){return '<option value="'+esc(t)+'"'+(f.type===t?" selected":"")+'>'+esc(t)+'</option>';}).join("")+'</select></div>'+
       '<label class="checkopt" style="align-self:flex-end;padding-bottom:8px"><input type="checkbox" id="flt-nosched"'+(f.noSched?" checked":"")+'>工程表・カレンダー未作成のみ</label>'+
       '<button class="btn primary" id="flt-search">'+iSearch()+' 検索する</button>'+
     '</div>';
@@ -2816,7 +2816,7 @@
     html += '<div class="form-section-title"><span>案件情報</span><span class="lockhint">'+iLock()+' 「社外秘」にチェックした項目は社外に表示されません</span></div>';
     html += '<div class="form-card">';
     html += formRow("案件名", true, false, '<input type="text" id="f-name" value="'+esc(p.name||"")+'" placeholder="例：渋谷区佐藤様邸">');
-    html += formRow("案件種類", false, false, selectHtml("f-type", PROJECT_TYPES, selVal(p.type, PROJECT_TYPES[0])), "p_type");
+    html += formRow("事業部", false, false, selectHtml("f-division", DIVISIONS, selVal(p.division, "")), "p_type");
     html += formRow("案件の進捗", false, false, selectHtml("f-status", STATUS_LIST, selVal(p.status, state.formMode==="construction"?"契約済":"現地調査前")), "p_status");
     html += formRow("契約金額", false, false, '<div class="inline2" style="max-width:260px"><input type="number" id="f-amount" min="0" step="1000" value="'+(p.amount||0)+'"><span>円</span></div>', "p_amount");
     html += formRow("施工予定", false, false, '<div class="inline2" style="max-width:340px"><input type="date" id="f-start" value="'+(p.startDate||"")+'"><span>〜</span><input type="date" id="f-end" value="'+(p.endDate||"")+'"></div>', "p_period");
@@ -2841,7 +2841,7 @@
   var secretCtx = DEFAULT_SECRET.slice();   // set per screen via secretSet()
   // 管理画面で変更した初期設定（settings/secret）。未設定ならDEFAULT_SECRET。
   var SECRET_GROUPS = [
-    ["案件情報", [["p_type","案件種類"],["p_status","進捗"],["p_amount","契約金額"],["p_period","施工予定"],["p_instruction","施工指示"],["p_handover","引渡し日"]]],
+    ["案件情報", [["p_type","事業部"],["p_status","進捗"],["p_amount","契約金額"],["p_period","施工予定"],["p_instruction","施工指示"],["p_handover","引渡し日"]]],
     ["物件情報", [["pr_type","物件種類／構造"],["pr_addr","物件住所"],["pr_notes","備考"]]],
     ["顧客情報", [["c_name","名前・ふりがな"],["c_invoice","適格請求書・事業所種別・法人番号"],["c_contact","連絡先（担当者・部署・メール・電話）"],["c_addr","住所"],["c_notes","社内メモ"]]]
   ];
@@ -3033,7 +3033,7 @@
       var data = {
         name:name,
         assignees: assignees,
-        type: document.getElementById("f-type").value,
+        division: document.getElementById("f-division").value,
         status: document.getElementById("f-status").value,
         amount: parseInt(document.getElementById("f-amount").value||"0",10),
         startDate: document.getElementById("f-start").value,
@@ -3254,7 +3254,7 @@
       (hiddenFor(p,"p_amount") ? '' : '<span class="num" style="font-weight:700">'+fmtYen(p.amount)+'</span>'+lockTag("p_amount"));
     rows += '<div class="kv" style="display:flex;align-items:center;gap:14px">'+badges+'<button class="btn sm" style="margin-left:auto" data-edit-project="'+p.id+'">編集</button></div>';
     rows += kvRow("案件名", esc(p.name));
-    rows += kvRow("案件種類", esc(p.type||"—"), "p_type", p);
+    rows += kvRow("事業部", esc(p.division||"—"), "p_type", p);
     rows += kvRow("施工予定", (p.startDate||p.endDate) ? (fmtDate(p.startDate)+" 〜 "+fmtDate(p.endDate)) : "-", "p_period", p);
     rows += kvRow("施工指示", esc(p.workInstruction||"-"), "p_instruction", p);
     rows += kvRow("引渡し日", fmtDate(p.handoverDate), "p_handover", p);
@@ -4190,7 +4190,7 @@
   ];
   // 画面ごとのタブ
   var MASTER_TABS = [
-    ["project","案件",["statuses","projectTypes"]],
+    ["project","案件",["statuses"]],
     ["property","物件情報",["propertyTypes","propertyStructures"]],
     ["member","メンバー",["divisions","roles"]],
     ["schedule","工程表",["stepNames"]],
@@ -4426,7 +4426,7 @@
     {t:"管理者向け", admin:true, items:[
       ["管理画面では何が見られますか？（管理者）","メンバー数・案件数などの状況、スマホ版の下メニューの編集、案件一覧の初期表示（進捗の初期チェック）の設定ができます。"],
       ["ログイン履歴を確認したい（管理者）","「設定 → ログイン履歴」で、メンバーごとの最終ログインと、ログイン・自動ログイン・失敗の履歴を確認できます。短い間に失敗が続いているときは、パスワードの変更を検討してください。"],
-      ["選択肢（進捗・案件種類・職種など）を変えたい（管理者）","「設定 → マスタ管理」で、案件進捗・案件種類・事業部・職種・物件種類・工程名・予定の種類・報告書の種類を追加・並び替え・削除できます。使用中の項目を削除すると、そのデータは「未入力」になります。"],
+      ["選択肢（進捗・事業部・職種など）を変えたい（管理者）","「設定 → マスタ管理」で、案件進捗・事業部・職種・物件種類・工程名・予定の種類・報告書の種類を追加・並び替え・削除できます。使用中の項目を削除すると、そのデータは「未入力」になります。"],
       ["CSVでまとめて出し入れしたい（管理者）","各一覧の「CSV出力」「CSV入力」で、案件・顧客・メンバーなどを一括で出力・取り込みできます。他のシステム（クラフタなど）の現場一覧は、施工案件一覧の「他システムから取込」で、列を対応付けて取り込めます。取り込みは取り消せないので、プレビューの件数を確認してから実行してください。"],
       ["freeeと連携したい（管理者）","「設定 → freee連携」で連携します。顧客を取引先として登録、案件を売上取引として登録、入金状況の取得、freeeの取引先を顧客へ取り込み（見積書の履歴での絞り込みも可）ができます。設定の手順は連携画面に表示されます。"],
       ["LINE WORKSと連携したい（管理者）","「設定 → LINE WORKS」で、案件・報告書・タスクの通知、アプリからの共有、LINE WORKSのBotからの案件登録・照会ができます。連携の準備（Botの作成、環境変数の登録）が必要です。"],
@@ -5233,7 +5233,7 @@
     return head+mine+(state.isAdmin?worksSettingsHtml(st):"");
   }
   function openWorksShare(p){
-    var lines = ["【"+p.name+"】", "進捗: "+(p.status||"未入力")+(p.type?" ／ "+p.type:""), "工期: "+(p.startDate||"未定")+" 〜 "+(p.endDate||"未定")];
+    var lines = ["【"+p.name+"】", "進捗: "+(p.status||"未入力")+(p.division?" ／ "+p.division:""), "工期: "+(p.startDate||"未定")+" 〜 "+(p.endDate||"未定")];
     var addr = [p.prefecture, p.address].filter(Boolean).join(""); if(addr) lines.push("住所: "+addr);
     var names = normalizeAssignees(p.assignees).map(function(a){ return a.name; }); if(names.length) lines.push("担当: "+names.join("、"));
     openModal("LINE WORKSで共有", '<div style="font-size:12px;color:var(--ink-faint);margin-bottom:8px">通知先のグループトークルームに送ります。内容は自由に書き換えられます。</div>'+
@@ -6087,7 +6087,7 @@
       columns:[
         {key:"id",label:"ID",readonly:true},
         {key:"name",label:"案件名"},
-        {key:"type",label:"案件種類",options:PROJECT_TYPES,bulk:true},
+        {key:"division",label:"事業部",options:DIVISIONS,bulk:true},
         {key:"status",label:"進捗",options:STATUS_LIST,bulk:true},
         {key:"customerName",label:"顧客名",bulk:true},
         {key:"prefecture",label:"都道府県",options:PREFS},
@@ -6112,8 +6112,7 @@
         }else if(patch.customerName==="" && existing && existing.customerId) d.customerId = "";
         if(!existing){
           if(!d.status) d.status = "現地調査前";
-          if(!d.type) d.type = "その他";
-          if(d.amount==null) d.amount = 0;
+            if(d.amount==null) d.amount = 0;
           if(!d.assignees) d.assignees = [];
         }
         return d;
@@ -6328,7 +6327,7 @@
     return state.projects.filter(function(p){
       if(f.name && (p.name||"").indexOf(f.name)===-1 && propertyAddressOf(p).full.indexOf(f.name)===-1 && (p.address||"").indexOf(f.name)===-1) return false;
       if(f.status.length && p.status && f.status.indexOf(p.status)===-1) return false;
-      if(f.type!=="all" && p.type!==f.type) return false;
+      if(f.type!=="all" && p.division!==f.type) return false;
       if(f.noSched){ var wc = projectWorkCounts(p); if(wc.steps>0 && wc.events>0) return false; }
       if(f.assignees.length){
         var names = normalizeAssignees(p.assignees).map(function(a){return a.name;});
@@ -6700,7 +6699,7 @@
   var EXT_FIELDS = [
     ["name","案件名（現場名）",true,["案件名","現場名","工事名","物件名","件名","名称"]],
     ["customerName","顧客名",false,["顧客名","顧客","取引先","発注者","施主","お客様","元請","得意先"]],
-    ["type","案件種類",false,["案件種類","工事種別","種類"]],
+    ["division","事業部",false,["事業部","部門","部署","案件種類","工事種別","種類"]],
     ["propertyType","物件種類",false,["物件種類"]],
     ["addrKind","物件住所区分",false,["物件住所区分","住所区分"]],
     ["postalCode","郵便番号",false,["郵便番号","郵便"]],
@@ -6747,10 +6746,10 @@
         var k = custNormName(name)+"|"+custNormName(addr);
         if(existing[k]){ dup++; return; } existing[k] = 1;
         var z = colVal(r,"postalCode").normalize("NFKC").replace(/[^0-9]/g,""); if(z.length===7) z = z.slice(0,3)+"-"+z.slice(3); else z = "";
-        var type = colVal(r,"type"), ptype = colVal(r,"propertyType");
-        if(type && PROJECT_TYPES.indexOf(type)===-1){ if(addTypes) newTypes[type] = 1; else type = "その他"; }
+        var type = colVal(r,"division"), ptype = colVal(r,"propertyType");
+        if(type && DIVISIONS.indexOf(type)===-1){ if(addTypes) newTypes[type] = 1; else type = ""; }
         if(ptype && PROPERTY_TYPES.indexOf(ptype)===-1){ if(addTypes) newProps[ptype] = 1; else ptype = "その他"; }
-        var d = {name:name, customerName:colVal(r,"customerName"), type:type,
+        var d = {name:name, customerName:colVal(r,"customerName"), division:type,
           startDate:extIsoDate(colVal(r,"startDate")), endDate:extIsoDate(colVal(r,"endDate")), status:extStatus(colVal(r,"status"), dflt),
           amount:parseInt(String(colVal(r,"amount")).normalize("NFKC").replace(/[^0-9]/g,"")||"0",10), workInstruction:colVal(r,"memo")};
         if(!d.type) d.type = "その他";
@@ -6824,9 +6823,9 @@
       run.disabled = true;
       // リストにない種類は選択肢（マスタ）に追加
       if(b.newTypes.length || b.newProps.length){
-        b.newTypes.forEach(function(x){ if(PROJECT_TYPES.indexOf(x)===-1) PROJECT_TYPES.push(x); });
+        b.newTypes.forEach(function(x){ if(DIVISIONS.indexOf(x)===-1) DIVISIONS.push(x); });
         b.newProps.forEach(function(x){ if(PROPERTY_TYPES.indexOf(x)===-1) PROPERTY_TYPES.push(x); });
-        saveMaster("projectTypes", PROJECT_TYPES.slice(), "選択肢に追加しました");
+        saveMaster("divisions", DIVISIONS.slice(), "選択肢に追加しました");
       }
       // 顧客は同じ名前があれば紐づけ、なければ作成してから案件を登録する
       var names = {}; b.list.forEach(function(x){ if(x.customerName) names[x.customerName] = ""; });
@@ -7223,7 +7222,7 @@
     if(!p) return;
     var lines = [
       "【"+p.name+"】",
-      "進捗: "+p.status, "案件種類: "+(p.type||""), "金額: "+fmtYen(p.amount),
+      "進捗: "+p.status, "事業部: "+(p.division||""), "金額: "+fmtYen(p.amount),
       "施工予定: "+(fmtDate(p.startDate)+" 〜 "+fmtDate(p.endDate)),
       "住所: "+propertyAddressOf(p).full,
       "顧客: "+(p.customerName||"")
