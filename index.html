@@ -118,6 +118,11 @@
   .badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:4px 11px;border-radius:999px;white-space:nowrap;}
   .badge.fill-black{background:var(--black-badge);color:var(--surface);}
   .badge.fill-green{background:var(--accent);color:var(--accent-ink);}
+  /* 進捗ごとの色（案件一覧・バッジ共通） */
+  .badge.stc{background:var(--st,#6b7885);color:#fff;border:none;box-shadow:0 1px 0 rgba(0,0,0,.12);letter-spacing:.02em;}
+  .proj-list tbody tr td{background:var(--stbg,var(--surface));}
+  .proj-list tbody tr td:first-child{box-shadow:inset 7px 0 0 var(--st,transparent);padding-left:18px;}
+  .proj-list tbody tr.rowhover:hover td{filter:brightness(.97);}
   .badge.fill-gray{background:var(--ink-faint);color:var(--surface);}
   .badge.fill-info{background:var(--info);color:#fff;}
   .badge.line-green{background:transparent;color:var(--accent);border:1px solid var(--accent);}
@@ -633,6 +638,7 @@
     .proj-list td.cell-main .tagrow,.proj-list td.cell-main .cell-sub,.proj-list td.cell-actions,.proj-list td[data-label="顧客"] .btn{display:none !important;}
     .proj-list tr{border:2px solid var(--st,var(--border));border-left-width:8px;background:var(--stbg,var(--surface));padding:6px 10px;margin-bottom:6px;cursor:pointer;}
     .proj-list tr:active{filter:brightness(.96);}
+    .proj-list tbody tr td:first-child{box-shadow:none;padding-left:0;}
     .proj-list td.cell-main .cell-name{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;-webkit-line-clamp:unset;}
     .proj-list td.cell-main .cell-name a{font-size:15px;font-weight:700;}
     .proj-list td[data-label="進捗"]{grid-column:3;grid-row:1;justify-self:end;display:block;}
@@ -971,11 +977,11 @@
   // 進捗バッジ。編集権限があればその場でプルダウンから変更できる
   function statusBadge(p){
     var cur = p.status||"";
-    if(!state.canWrite || isExternalViewer()) return '<span class="badge '+statusStyle(cur)+'">'+esc(cur||"未入力")+'</span>';
+    if(!state.canWrite || isExternalViewer()) return '<span class="badge stc" style="'+statusColorStyle(cur)+'">'+esc(cur||"未入力")+'</span>';
     var opts = STATUS_LIST.slice(); if(cur && opts.indexOf(cur)===-1) opts.push(cur); if(!cur) opts.unshift("");
-    return '<select class="badge status-quick '+statusStyle(cur)+'" data-status-quick="'+esc(p.id)+'" title="クリックして進捗を変更">'+opts.map(function(o){ return '<option value="'+esc(o)+'"'+(o===cur?" selected":"")+'>'+esc(o||"未入力")+'</option>'; }).join("")+'</select>';
+    return '<select class="badge status-quick stc" style="'+statusColorStyle(cur)+'" data-status-quick="'+esc(p.id)+'" title="クリックして進捗を変更">'+opts.map(function(o){ return '<option value="'+esc(o)+'"'+(o===cur?" selected":"")+'>'+esc(o||"未入力")+'</option>'; }).join("")+'</select>';
   }
-  var STATUS_COLORS = {"現地調査前":["#8A938D","#F3F5F4"],"現地調査済":["#0E8C8C","#E4F4F3"],"見積提出済":["#B9800F","#FBF2DC"],"契約済":["#4FA36B","#E6F4EB"],"施工中":["#1E8449","#D9EEDF"],"施工完了":["#5E7C8B","#E6EEF2"],"清算済":["#2F6FA8","#E1ECF6"],"失注":["#C1443C","#F9E4E1"]};
+  var STATUS_COLORS = {"現地調査前":["#6b7885","#EEF1F4"],"現地調査済":["#0b95a6","#DDF3F6"],"見積提出済":["#e38a00","#FFF0D2"],"契約済":["#2f6be0","#E0EAFF"],"施工中":["#1c9c47","#D7F3E0"],"施工完了":["#7b4bd1","#ECE3FB"],"清算済":["#33495f","#E1E7ED"],"失注":["#d6302b","#FDE1DF"]};
   function statusColorStyle(st){
     var c = STATUS_COLORS[st];
     if(!c){ var h=0; for(var i=0;i<(st||"").length;i++) h=(h*31+st.charCodeAt(i))%AVA_COLORS.length; c=[AVA_COLORS[h],"#F3F5F4"]; }
@@ -3746,7 +3752,7 @@
     html += rows.map(function(r){
       var p = r.p;
       return '<tr class="rowhover"><td><div class="cell-name"><a href="#" data-open-files="'+esc(p.id)+'" data-files-from="files">'+esc(p.name)+'</a></div><div class="cell-sub">'+esc(propertyAddressOf(p).full)+'</div></td>'+
-        '<td><span class="badge '+statusStyle(p.status)+'">'+esc(p.status||"未入力")+'</span></td>'+
+        '<td><span class="badge stc" style="'+statusColorStyle(p.status)+'">'+esc(p.status||"未入力")+'</span></td>'+
         '<td class="num">'+r.imgs+'</td><td class="num">'+r.other+'</td><td class="num">'+(r.last?fmtDateTime(r.last):"—")+'</td>'+
         '<td style="white-space:nowrap"><button class="btn sm" data-open-files="'+esc(p.id)+'" data-files-from="files">ファイル管理を開く</button></td></tr>';
     }).join("");
