@@ -5817,7 +5817,12 @@
           if(j.error==="notconfigured"){ say("管理者の設定が必要です：国税庁のアプリケーションIDを取得し、Vercelの環境変数 HOUJIN_APP_ID に登録してください（使い方・Q&Aに手順があります）", true); return; }
           if(j.error==="invalid"){ say("法人番号が正しくありません（チェックデジットが一致しません）", true); return; }
           if(j.error==="notfound"){ say("該当する法人が見つかりませんでした", true); return; }
-          if(j.error || !j.corp){ say("呼び出しに失敗しました。しばらくしてからもう一度お試しください", true); return; }
+          if(j.error || !j.corp){
+            var hint = "";
+            if(j.status===401 || j.status===403 || j.status===400) hint = "（アプリケーションIDが正しくない可能性があります。法人番号公表サイトで発行したIDを HOUJIN_APP_ID に登録してください）";
+            else if(j.status===404) hint = "（国税庁側で該当なし、またはIDが無効の可能性があります）";
+            else if(j.status>=500) hint = "（国税庁のサーバー側の不調です。しばらくしてからお試しください）";
+            say("呼び出しに失敗しました"+(j.status?"（HTTP "+j.status+"）":"")+hint+(j.detail?" 詳細: "+j.detail:""), true); return; }
           var c = j.corp, filled = [];
           var put = function(id, val, label, force){
             var el = document.getElementById(id); if(!el || !val) return;
