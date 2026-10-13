@@ -1011,6 +1011,7 @@
     chatPaneOpen:false,
     tab:"home", returnTab:"sales",
     projects:[], customers:[], members:[], tasks:[], chats:[], files:[], folders:[], events:[], steps:[], trash:[], reports:[],
+    lazyOn:{},
     loaded:{projects:false,customers:false,members:false,tasks:false,chats:false,files:false,folders:false,events:false,steps:false,trash:false,reports:false},
     canWrite:true,
     sidebarOpen:false,
@@ -1490,7 +1491,7 @@
   // documented demo credentials in the meantime.
   function startLoadWatchdog(){
     setTimeout(function(){
-      var stillLoading = Object.keys(state.loaded).some(function(k){ return !state.loaded[k]; });
+      var stillLoading = Object.keys(state.loaded).some(function(k){ return !state.loaded[k] && (!LAZY_COLS[k] || state.lazyOn[k]); });
       if(stillLoading){
         if(!state.syncError) state.syncError = "timeout";
         setPreview();
@@ -1592,7 +1593,7 @@
     Object.keys(state.loaded).forEach(function(k){ state.loaded[k]=false; });
     render();
     startLoadWatchdog();
-    if(db) subscribeAll();
+    if(db){ lazyReset(); subscribeAll(); }
   }
 
   function subscribeAll(){
@@ -1619,12 +1620,6 @@
     db.collection("chats").onSnapshot(function(snap){
       state.chats = snap.docs.map(toObj); state.loaded.chats=true; render();
     }, onErr);
-    db.collection("files").orderBy("uploadedAt").onSnapshot(function(snap){
-      state.files = snap.docs.map(toObj); state.loaded.files=true; render();
-    }, onErr);
-    db.collection("trash").onSnapshot(function(snap){
-      state.trash = snap.docs.map(toObj); state.loaded.trash=true; render();
-    }, function(e){ state.loaded.trash=true; state.trash=[]; render(); });
     db.collection("reports").onSnapshot(function(snap){
       state.reports = snap.docs.map(toObj); state.loaded.reports=true; render();
     }, function(e){ state.loaded.reports=true; state.reports=[]; render(); });
@@ -1634,9 +1629,46 @@
     db.collection("steps").onSnapshot(function(snap){
       state.steps = snap.docs.map(toObj); state.loaded.steps=true; render();
     }, function(e){ state.loaded.steps=true; state.steps=[]; render(); });
-    db.collection("folders").onSnapshot(function(snap){
-      state.folders = snap.docs.map(toObj); state.loaded.folders=true; render();
-    }, function(e){ state.loaded.folders=true; state.folders=[]; render(); });
+  }
+
+  /* ---- 読み取り量を減らすため、写真・ファイル／フォルダ／ゴミ箱は「必要な画面を開いたとき」だけ読み込む ---- */
+  var LAZY_COLS = {
+    files:   {order:"uploadedAt"},
+    folders: {},
+    trash:   {}
+  };
+  var lazyUnsub = {};
+  function lazyStart(name){
+    if(!db || state.lazyOn[name]) return;
+    state.lazyOn[name] = true;
+    var q = db.collection(name); if(LAZY_COLS[name].order) q = q.orderBy(LAZY_COLS[name].order);
+    lazyUnsub[name] = q.onSnapshot(function(snap){
+      state[name] = snap.docs.map(toObj); state.loaded[name] = true; render();
+    }, function(e){
+      if(name==="files") return onErr(e);
+      state.loaded[name] = true; state[name] = []; render();
+    });
+  }
+  function lazyReset(){
+    Object.keys(lazyUnsub).forEach(function(k){ try{ if(typeof lazyUnsub[k]==="function") lazyUnsub[k](); }catch(e){} });
+    lazyUnsub = {}; state.lazyOn = {};
+  }
+  // いまの画面に必要なコレクションを開始する（render の先頭で呼ぶ）
+  function lazyNeeds(){
+    if(!db) return;
+    var t = state.tab, seg = state.settingsSeg;
+    if(["files","project-detail","project-files","reports"].indexOf(t)!==-1){ lazyStart("files"); lazyStart("folders"); }
+    if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1){ lazyStart("files"); lazyStart("folders"); lazyStart("trash"); }
+    if(t==="settings" && seg==="trash") lazyStart("trash");
+  }
+  // バックアップ前：未読み込みのコレクションがあれば読み込みを始めて false を返す（欠けたまま保存しない）
+  function lazyReady(){
+    if(!db) return true;
+    var wait = Object.keys(LAZY_COLS).filter(function(k){ return !(state.lazyOn[k] && state.loaded[k]); });
+    if(!wait.length) return true;
+    wait.forEach(lazyStart);
+    toast("バックアップ用にデータを読み込んでいます。数秒後にもう一度押してください");
+    return false;
   }
   function onErr(e){
     state.syncError = (e && e.code) || "unknown";
@@ -1986,6 +2018,7 @@
   }
 
   function render(){
+    lazyNeeds();
     if(GMAIL_RETURN && state.myName){
       var gr = GMAIL_RETURN; GMAIL_RETURN = "";
       try{ history.replaceState(null, "", location.pathname); }catch(e){}
@@ -5605,6 +5638,7 @@
     return next().then(function(){ payload.blobs = blobs; payload.includesFiles = true; return failed; });
   }
   function backupAllData(includePw, withFiles){
+    if(!lazyReady()) return;
     var payload = buildBackup(includePw===true);
     if(withFiles === true){
       return collectFileBlobs(payload).then(function(failed){ saveBackupPayload(payload, failed); });
@@ -5613,6 +5647,7 @@
   }
   // 写真・ファイル画面用：ファイル情報・フォルダ・本体だけのバックアップ（projectId指定でその案件のみ）
   function backupFilesOnly(projectId){
+    if(!lazyReady()) return;
     var pick = function(col){ return rawOf(col).filter(function(x){ return !projectId || x.projectId===projectId; }).map(function(o){ return Object.assign({},o); }); };
     var payload = {format:"genba-backup", version:2, scope:"files", exportedAt:new Date().toISOString(), exportedBy:state.myName||"", data:{files:pick("files"), folders:pick("folders")}};
     payload.counts = {files:payload.data.files.length, folders:payload.data.folders.length};
@@ -6226,7 +6261,7 @@
     var col = entry.col, id = entry.docId;
     if(rawOf(col).some(function(x){ return x.id===id; })){ toast("同じデータがすでに存在します"); return; }
     var data = Object.assign({}, entry.data);
-    if(col==="files" && data.folderId && !state.folders.some(function(g){ return g.id===data.folderId; })) data.folderId = null;
+    if(col==="files" && data.folderId && state.loaded.folders && !state.folders.some(function(g){ return g.id===data.folderId; })) data.folderId = null;
     if(!db){
       rawOf(col).unshift(Object.assign({id:id}, data));
       state.trash = state.trash.filter(function(x){ return x.id!==entry.id; });
