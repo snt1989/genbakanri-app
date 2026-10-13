@@ -166,6 +166,7 @@
   .cell-name{font-weight:700;font-size:13px;}
   .cell-sub{font-size:11.5px;color:var(--ink-faint);margin-top:2px;}
   .mem-meta{display:none;}
+  tr.grp td{border-top:2px solid var(--border);}
   /* ピン付き地図(Leaflet)の内部z-index(最大1000)が上部バー・サイドバー・モーダルより前に出ないよう、地図を独立した重なり順に閉じ込める */
   .propmap,#propmap-live,.leaflet-container{position:relative;z-index:0;isolation:isolate;}
 
@@ -638,6 +639,8 @@
     .proj-list td.cell-main .tagrow,.proj-list td.cell-main .cell-sub,.proj-list td.cell-actions,.proj-list td[data-label="顧客"] .btn{display:none !important;}
     .proj-list tr{border:2px solid var(--st,var(--border));border-left-width:8px;background:var(--stbg,var(--surface));padding:6px 10px;margin-bottom:6px;cursor:pointer;}
     .proj-list tr:active{filter:brightness(.96);}
+    .tablewrap tr.grp{padding:0;margin:12px 0 6px;border:none;background:transparent;}
+    .tablewrap tr.grp td{display:block;border-radius:10px;border:none;}
     .proj-list tbody tr td:first-child{box-shadow:none;padding-left:0;}
     .proj-list td.cell-main .cell-name{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;-webkit-line-clamp:unset;}
     .proj-list td.cell-main .cell-name a{font-size:15px;font-weight:700;}
@@ -3629,15 +3632,17 @@
       return c;
     });
 
-    var byProject = state.filesView==="project";
+    var fv = state.filesView, byProject = (fv==="project"||fv==="division"||fv==="assignee");
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">'+
       '<h1 class="pagetitle">写真・ファイル</h1>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="files-upload-btn">'+iPlus()+' 写真・ファイルを追加</button>'+(byProject?'':csvToolbar("files"))+(byProject?'':'<button class="btn outline" id="files-dl-btn">'+iDownload()+' ダウンロード（'+list.length+'件）</button>')+(state.isAdmin?'<button class="btn outline" id="files-backup-btn">'+iAdmin()+' ファイルをバックアップ</button>':'')+'</div>'+
       '</div><div style="height:14px"></div>';
     html += '<div class="segmented" style="margin-bottom:16px">'+
       '<div class="segopt'+(byProject?'':' active')+'" data-files-view="all">すべて</div>'+
-      '<div class="segopt'+(byProject?' active':'')+'" data-files-view="project">案件別</div></div>';
-    if(byProject) return html + renderFilesByProject();
+      '<div class="segopt'+(fv==="project"?' active':'')+'" data-files-view="project">案件別</div>'+
+      '<div class="segopt'+(fv==="division"?' active':'')+'" data-files-view="division">事業部別</div>'+
+      '<div class="segopt'+(fv==="assignee"?' active':'')+'" data-files-view="assignee">担当者別</div></div>';
+    if(byProject) return html + renderFilesByProject(fv);
 
     html += '<div class="card filter-card"><div class="filter-line">'+
       '<div class="fitem" style="min-width:220px"><span>案件で絞り込み</span><select id="files-flt-project"><option value="all">すべての案件</option>'+
@@ -3726,7 +3731,7 @@
   }
   // 写真・ファイル > 案件別: one row per project with its file counts.
   var FBP_SORTS = [["created","登録が新しい順","desc"],["created","登録が古い順","asc"],["last","最終追加が新しい順","desc"],["last","最終追加が古い順","asc"],["name","案件名（あいうえお順）","asc"],["status","進捗順","asc"],["imgs","写真が多い順","desc"],["other","その他ファイルが多い順","desc"]];
-  function renderFilesByProject(){
+  function renderFilesByProject(group){
     var projects = state.projects.slice();
     var so = state.fbpSort || {k:"created", dir:"desc"};
     var rows = projects.map(function(p){
@@ -3758,13 +3763,35 @@
     var html = '<div class="summary-line" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><span>案件 <b>'+rows.length+'</b>件</span><label style="font-size:12px;color:var(--ink-soft)">並び替え '+
       '<select id="fbp-sort-sel" style="margin-left:4px">'+(cur===-1?'<option selected>—</option>':'')+FBP_SORTS.map(function(o,n){ return '<option value="'+n+'"'+(n===cur?" selected":"")+'>'+o[1]+'</option>'; }).join("")+'</select></label></div>';
     html += '<div class="tablewrap"><table><thead><tr>'+th("案件名","name","asc")+th("進捗","status","asc")+th("写真","imgs","desc")+th("その他","other","desc")+th("最終追加","last","desc")+'<th></th></tr></thead><tbody>';
-    html += rows.map(function(r){
+    var rowHtml = function(r){
       var p = r.p;
       return '<tr class="rowhover"><td><div class="cell-name"><a href="#" data-open-files="'+esc(p.id)+'" data-files-from="files">'+esc(p.name)+'</a></div><div class="cell-sub">'+esc(propertyAddressOf(p).full)+'</div></td>'+
         '<td><span class="badge stc" style="'+statusColorStyle(p.status)+'">'+esc(p.status||"未入力")+'</span></td>'+
-        '<td class="num">'+r.imgs+'</td><td class="num">'+r.other+'</td><td class="num">'+(r.last?fmtDateTime(r.last):"—")+'</td>'+
+        '<td class="num" data-label="写真">'+r.imgs+'</td><td class="num" data-label="その他">'+r.other+'</td><td class="num" data-label="最終追加">'+(r.last?fmtDateTime(r.last):"—")+'</td>'+
         '<td style="white-space:nowrap"><button class="btn sm" data-open-files="'+esc(p.id)+'" data-files-from="files">ファイル管理を開く</button></td></tr>';
-    }).join("");
+    };
+    if(group==="division" || group==="assignee"){
+      // グループ分け（並び替えはグループの中で効きます）
+      var groups = {}, order = [];
+      rows.forEach(function(r){
+        var keys = group==="division" ? [r.p.division||""] : (normalizeAssignees(r.p.assignees).map(function(a){ return a.name; }).filter(Boolean));
+        if(!keys.length) keys = [""];
+        keys.forEach(function(k){ if(!groups[k]){ groups[k] = []; order.push(k); } groups[k].push(r); });
+      });
+      var none = group==="division" ? "（事業部 未設定）" : "（担当者 未設定）";
+      order.sort(function(a,b){
+        if(a==="") return 1; if(b==="") return -1;
+        if(group==="division"){ var ia = DIVISIONS.indexOf(a), ib = DIVISIONS.indexOf(b); if(ia===-1) ia = 999; if(ib===-1) ib = 999; if(ia!==ib) return ia-ib; }
+        return a.localeCompare(b, "ja");
+      });
+      order.forEach(function(k){
+        var g = groups[k], ni = g.reduce(function(n,x){ return n+x.imgs; },0), no = g.reduce(function(n,x){ return n+x.other; },0);
+        html += '<tr class="grp"><td colspan="6" style="background:var(--surface-2);font-weight:700;font-size:13px;padding:9px 12px"><span>'+esc(k||none)+'</span> <span style="font-weight:500;color:var(--ink-soft);font-size:12px;margin-left:8px">案件 '+g.length+'件 ／ 写真 '+ni+' ／ その他 '+no+'</span></td></tr>';
+        html += g.map(rowHtml).join("");
+      });
+    } else {
+      html += rows.map(rowHtml).join("");
+    }
     return html+'</tbody></table></div>';
   }
 
