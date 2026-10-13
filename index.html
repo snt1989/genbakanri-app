@@ -63,7 +63,9 @@
   .brand{display:flex;align-items:center;gap:9px;padding:18px 18px 14px;}
   .brand-mark{width:28px;height:28px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;flex:none;}
   .brand-name{font-size:15.5px;font-weight:700;color:#fff;letter-spacing:.01em;}
-  nav.mainnav{display:flex;flex-direction:column;gap:1px;flex:1;padding:4px 10px;}
+  nav.mainnav{display:flex;flex-direction:column;gap:1px;flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:4px 10px;}
+  .navbtn{flex:none;}
+  .side-foot{flex:none;}
   .navbtn{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:8px;border:none;background:transparent;color:var(--sidebar-ink-dim);font-size:13px;font-weight:500;cursor:pointer;text-align:left;width:100%;}
   .navbtn svg{flex:none;width:17px;height:17px;}
   .navbtn:hover{background:rgba(255,255,255,.06);color:#fff;}
@@ -523,6 +525,10 @@
     #bottomnav .bn.on{color:var(--accent);background:var(--accent-soft);}
     #main{padding-bottom:calc(72px + env(safe-area-inset-bottom,0px));}
     #sidebar{z-index:40;width:min(300px,84vw);}
+    #sidebar{padding-bottom:env(safe-area-inset-bottom,0px);}
+    /* スマホ: 100vh/100dvhだとiOSでツールバー分はみ出し、下の項目へスクロールできなくなるため、上下固定(top/bottom:0)の高さに任せる */
+    #sidebar{height:var(--app-h,100dvh) !important;max-height:var(--app-h,100dvh);overflow:hidden;}
+    nav.mainnav{overflow-y:scroll;touch-action:pan-y;padding-bottom:20px;}
     #sidebar.open{box-shadow:8px 0 30px rgba(0,0,0,.3);}
     .wchips{flex-direction:row;flex-wrap:wrap;justify-content:flex-end;}
     .wchip{padding:6px 12px;font-size:12px;min-height:30px;}
@@ -1158,6 +1164,12 @@
       }
     }catch(e){ toast("ファイルを開けませんでした"); }
   });
+  // iOSのツールバー表示で100vhが実際の表示領域より大きくなるため、見えている高さをCSS変数にしておく（左メニューの下までスクロールできるように）
+  (function(){
+    function setAppH(){ try{ var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight; if(h) document.documentElement.style.setProperty("--app-h", Math.round(h)+"px"); }catch(e){} }
+    setAppH(); window.addEventListener("resize", setAppH); window.addEventListener("orientationchange", function(){ setTimeout(setAppH, 200); });
+    try{ if(window.visualViewport) window.visualViewport.addEventListener("resize", setAppH); }catch(e){}
+  })();
   function bindLoginAndTopbarEvents(){
     var bellEl = document.getElementById("bell-icon");
     if(bellEl && !bellEl.__bound){ bellEl.__bound = true; bellEl.style.cursor = "pointer"; bellEl.setAttribute("role","button"); bellEl.setAttribute("aria-label","お知らせ"); bellEl.addEventListener("click", openNotices); }
