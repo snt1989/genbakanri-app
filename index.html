@@ -2886,8 +2886,17 @@
     }
     function proxy(){
       if(done) return;
-      if(!/^https?:$/.test(location.protocol) || window.claude){ finish(null, "error"); return; }
-      fetch("/api/zip?zipcode="+zip).then(function(r){ return r.json(); }).then(parse).catch(function(){ finish(null, "error"); });
+      if(!/^https?:$/.test(location.protocol) || window.claude){ static_(); return; }
+      fetch("/api/zip?zipcode="+zip).then(function(r){ return r.json(); }).then(function(j){ if(j && j.results && j.results.length) parse(j); else if(j && j.status===200) finish(null,"notfound"); else static_(); }).catch(static_);
+    }
+    // 予備: 郵便番号の静的データ（zipcloudが止まっているときでも取得できる）
+    function static_(){
+      if(done) return;
+      fetch("https://madefor.github.io/postal-code-api/api/v1/"+zip.slice(0,3)+"/"+zip.slice(3)+".json").then(function(r){ if(r.status===404) throw "nf"; return r.json(); }).then(function(j){
+        var d = j && j.data && j.data[0] && j.data[0].ja;
+        if(d) finish({prefecture:d.prefecture, address:(d.address1||"")+(d.address2||"")+(d.address3||"")+(d.address4||"")});
+        else finish(null, "notfound");
+      }).catch(function(e){ finish(null, e==="nf" ? "notfound" : "error"); });
     }
     function jsonp(){
       var name = "__zipcb"+Date.now(), sc = document.createElement("script");
