@@ -1978,6 +1978,12 @@
   }
 
   function render(){
+    if(GMAIL_RETURN && state.myName){
+      var gr = GMAIL_RETURN; GMAIL_RETURN = "";
+      try{ history.replaceState(null, "", location.pathname); }catch(e){}
+      if(state.isAdmin){ state.tab = "settings"; state.settingsSeg = "admin"; state.gmail = null; }
+      setTimeout(function(){ toast(gr==="ok" ? "Gmailと連携しました" : (gr==="denied" ? "Gmailの許可がキャンセルされました" : (gr==="norefresh" ? "連携に失敗しました。Googleアカウントの「サードパーティのアクセス」で本アプリを削除してからやり直してください" : "Gmailとの連携に失敗しました。もう一度お試しください"))); }, 400);
+    }
     if(FREEE_RETURN && state.myName){
       var fr = FREEE_RETURN; FREEE_RETURN = "";
       try{ history.replaceState(null, "", location.pathname); }catch(e){}
@@ -4584,6 +4590,7 @@
       stat("顧客", state.customers.length)+
     '</div>';
     html += renderStorageCard();
+    html += renderGmailCard();
 
     html += '<h2 style="font-size:13.5px;margin:4px 0 10px">メンバー権限・パスワード管理</h2>';
     html += '<div class="tablewrap"><table><thead><tr><th>氏名</th><th>所属会社</th><th>権限</th><th></th></tr></thead><tbody>';
@@ -5286,6 +5293,38 @@
   /* ============ スマホ通知（Web Push） ============ */
 
   /* ---- 案件メール（履歴・送信：Resend） ---- */
+
+  /* ---- Gmail同期（共有Gmailを管理者が1回連携 → ラベルで案件に仕分け） ---- */
+  var GMAIL_API = "/api/gmail";
+  var GMAIL_RETURN = (function(){ try{ return new URLSearchParams(location.search).get("gmail") || ""; }catch(e){ return ""; } })();
+  function mailCall2(action, extra){
+    var me = myMember();
+    if(!me) return Promise.reject(new Error("ログイン情報を確認できません"));
+    return fetch(GMAIL_API, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(Object.assign({auth:{name:me.name, password:me.password||""}, action:action}, extra||{}))})
+      .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){
+        if(j && j.error==="notconfigured") throw new Error("Gmail連携が未設定です。GMAIL.md の手順で GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET をVercelに登録してください");
+        if(j && j.error==="server") throw new Error("サーバーエラー"+(j.detail?"："+j.detail:""));
+        if(!r.ok || (j&&j.error)) throw new Error((j&&j.error) || ("サーバーエラー（"+r.status+"）"));
+        return j; }); });
+  }
+  function gmailLoad(){
+    if(state.gmail || state.gmailLoading || !myMember()) return;
+    state.gmailLoading = true;
+    mailCall2("status").then(function(j){ state.gmail = j; }, function(e){ state.gmail = {failed:true, msg:e.message}; })
+      .then(function(){ state.gmailLoading = false; if(state.tab==="settings" && state.settingsSeg==="admin") render(); });
+  }
+  function renderGmailCard(){
+    if(!worksAvailable()) return '';
+    var g = state.gmail, body;
+    if(!g) body = '<div style="font-size:12.5px;color:var(--ink-soft)">状態を確認しています…</div>';
+    else if(g.failed) body = '<div style="font-size:12.5px;color:var(--danger)">'+esc(g.msg||"確認できません")+'</div>';
+    else if(!g.configured) body = '<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.7">未設定です。GMAIL.md の手順で、Google CloudのOAuthクライアントを作り、Vercelの環境変数 <b>GOOGLE_CLIENT_ID</b> / <b>GOOGLE_CLIENT_SECRET</b> を登録して Redeploy してください。</div>';
+    else if(!g.connected) body = '<div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px">会社の共有Gmailを連携すると、Gmailのラベルで案件に仕分けたメールを、案件の「メール」履歴に取り込めます（読み取りのみ）。</div><button class="btn primary" id="gm-connect">'+iMail()+' Gmailを連携する</button>';
+    else body = '<div style="font-size:13px;margin-bottom:6px"><span class="badge soft-success">連携中</span> <b>'+esc(g.email||"")+'</b></div>'+
+      '<div style="font-size:12px;color:var(--ink-soft);line-height:1.7;margin-bottom:10px">Gmailでラベル「<b>案件/案件名</b>」（または案件名と同じ名前）を付けたメールが、その案件の履歴に取り込まれます。案件画面の「メール」から「Gmailを同期」を押してください。'+(g.lastSync?'<br>最終同期：'+fmtDateTime(g.lastSync):'')+'</div><button class="btn sm ghost" style="color:var(--danger)" id="gm-disconnect">連携を解除</button>';
+    return '<h2 style="font-size:13.5px;margin:4px 0 10px">Gmail連携</h2><div class="card" style="padding:14px 16px;margin-bottom:18px">'+body+'</div>';
+  }
+
   var MAIL_API = "/api/mail";
   function iMail(){ return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>'; }
   function mailCall(action, extra){
@@ -5328,11 +5367,18 @@
             '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:3px">'+(out?"宛先 "+esc(m.to||""):"送信元 "+esc(m.from||""))+(m.by?" ／ 担当 "+esc(m.by):"")+'</div>'+
             (open?'<div style="white-space:pre-wrap;font-size:13px;line-height:1.6;margin-top:8px;border-top:1px solid var(--border);padding-top:8px">'+esc(m.body||"")+'</div>'+(state.isAdmin?'<div style="margin-top:6px"><button class="btn sm ghost" style="color:var(--danger)" data-ml-del="'+esc(m.key)+'">履歴から削除</button></div>':''):'')+'</div>';
         }).join("");
-        foot = '<button class="btn" id="ml-rec">受信を記録</button><button class="btn primary" id="ml-new">'+iMail()+' メールを書く</button>';
+        foot = '<button class="btn" id="ml-sync">Gmailを同期</button><button class="btn" id="ml-rec">受信を記録</button><button class="btn primary" id="ml-new">'+iMail()+' メールを書く</button>';
       }
       openModal("メール："+(p.name||""), body, foot);
       var $ = function(id){ return document.getElementById(id); };
       if($("ml-new")) $("ml-new").addEventListener("click", function(){ st.view="new"; draw(); });
+      if($("ml-sync")) $("ml-sync").addEventListener("click", function(){
+        var bt = $("ml-sync"); bt.disabled = true; bt.textContent = "同期中…";
+        mailCall2("sync",{projectId:pid}).then(function(j){
+          toast(j.labels ? (j.added+"件を取り込みました"+(j.left?"（残り"+j.left+"件。もう一度押してください）":"")) : "この案件のラベルが見つかりません。Gmailでラベル「案件/"+(p.name||"")+"」を作って付けてください");
+          st.mails=null; draw(); load();
+        }, function(e){ toast(e.message); var b2=$("ml-sync"); if(b2){ b2.disabled=false; b2.textContent="Gmailを同期"; } });
+      });
       if($("ml-rec")) $("ml-rec").addEventListener("click", function(){ st.view="rec"; draw(); });
       if($("ml-back")) $("ml-back").addEventListener("click", function(){ st.view="list"; draw(); });
       document.querySelectorAll("[data-ml-open]").forEach(function(el){ el.addEventListener("click", function(){ var k=el.getAttribute("data-ml-open"); st.open = st.open===k?"":k; draw(); }); });
@@ -7974,6 +8020,9 @@
       });
     }
 
+    if(state.tab==="settings" && state.settingsSeg==="admin" && state.isAdmin && worksAvailable()) gmailLoad();
+    var gmc = document.getElementById("gm-connect"); if(gmc) gmc.addEventListener("click", function(){ gmc.disabled = true; mailCall2("authurl").then(function(j){ location.href = j.url; }, function(e){ gmc.disabled = false; toast(e.message); }); });
+    var gmd = document.getElementById("gm-disconnect"); if(gmd) gmd.addEventListener("click", function(){ confirmDelete("Gmailの連携を解除しますか？（取り込み済みの履歴は残ります）", function(){ mailCall2("disconnect").then(function(){ state.gmail = null; toast("連携を解除しました"); render(); }, function(e){ toast(e.message); }); }); });
     c.querySelectorAll("[data-reset-pw]").forEach(function(el){
       el.addEventListener("click", function(){
         var id = el.getAttribute("data-reset-pw");
