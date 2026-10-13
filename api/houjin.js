@@ -60,7 +60,12 @@ module.exports = async function handler(req, res){
     if(!id) return res.status(200).json({error: "notconfigured"});
     var n = String(b.number || "").normalize("NFKC").replace(/[^0-9]/g, "");
     if(!validNumber(n)) return res.status(200).json({error: "invalid"});
-    var r = await fetch("https://api.houjin-bangou.nta.go.jp/4/num?id=" + encodeURIComponent(String(id).trim()) + "&number=" + n + "&type=12&history=0", {headers: {"Accept": "application/xml,text/xml,*/*", "User-Agent": "genbakanri-app"}});
+    var r;
+    try{
+      r = await fetch("https://api.houjin-bangou.nta.go.jp/4/num?id=" + encodeURIComponent(String(id).trim()) + "&number=" + n + "&type=12&history=0", {headers: {"Accept": "application/xml,text/xml,*/*", "User-Agent": "genbakanri-app"}});
+    }catch(e){
+      return res.status(200).json({error: "upstream", detail: "国税庁のサーバーに接続できませんでした（" + String((e && e.message) || e).slice(0, 80) + "）"});
+    }
     var text = await r.text();
     if(!r.ok) return res.status(200).json({error: "upstream", status: r.status, detail: String(text || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120)});
     if(!/<corporations|<count>/.test(text)) return res.status(200).json({error: "upstream", status: r.status, detail: "想定外の応答: " + String(text || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120)});
@@ -68,7 +73,8 @@ module.exports = async function handler(req, res){
     if(!corp) return res.status(200).json({error: "notfound"});
     return res.status(200).json({corp: corp});
   }catch(e){
-    return res.status(200).json({error: "upstream", detail: "国税庁のサーバーに接続できませんでした（" + String((e && e.message) || e).slice(0, 80) + "）"});
+    // 本人確認などで使う自分たちのデータベース側のエラー（無料枠の超過など）
+    return res.status(200).json({error: "server", detail: String((e && e.message) || e).slice(0, 160)});
   }
 };
 module.exports._validNumber = validNumber;

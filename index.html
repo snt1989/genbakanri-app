@@ -5815,6 +5815,7 @@
         .then(function(j){
           btn.disabled = false;
           if(j.error==="notconfigured"){ say("管理者の設定が必要です：国税庁のアプリケーションIDを取得し、Vercelの環境変数 HOUJIN_APP_ID に登録してください（使い方・Q&Aに手順があります）", true); return; }
+          if(j.error==="server"){ say("アプリ側のデータベースでエラーが発生しました（国税庁への問い合わせまで届いていません）："+(j.detail||""), true); return; }
           if(j.error==="invalid"){ say("法人番号が正しくありません（チェックデジットが一致しません）", true); return; }
           if(j.error==="notfound"){ say("該当する法人が見つかりませんでした", true); return; }
           if(j.error || !j.corp){
