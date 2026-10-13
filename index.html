@@ -1640,6 +1640,7 @@
   }
   function onErr(e){
     state.syncError = (e && e.code) || "unknown";
+    if(state.syncError==="resource-exhausted") quotaMark();
     if(e && e.code==="resource-exhausted") toast("Firestoreの無料枠（1日の読み取り上限）を超えました。日本時間の夕方（16時前後）にリセットされます。恒久的にはFirebaseをBlazeプランにしてください");
     else toast("同期エラー: "+(e&&e.code||"unknown"));
     // A read error on some collection means its onSnapshot will never call
@@ -4562,6 +4563,25 @@
     Promise.resolve().then(function(){ return assetsCap.list(); }).then(function(r){ state.assetUsage = r && r.usage || null; }, function(){ state.assetUsage = {error:true}; })
       .then(function(){ state.assetUsageLoading = false; if(state.tab==="settings" && state.settingsSeg==="admin") render(); });
   }
+  /* ---- 読み取り上限（Firebase無料枠）の検知と管理画面での表示 ---- */
+  function quotaMark(){ try{ localStorage.setItem("quotaHitAt", String(Date.now())); }catch(e){} state.quotaHitAt = Date.now(); }
+  function quotaInfo(){
+    var at = state.quotaHitAt; if(!at){ try{ at = Number(localStorage.getItem("quotaHitAt"))||0; }catch(e){ at = 0; } }
+    if(!at) return null;
+    // 解除の目安：検知後、最初に来る日本時間17:00（無料枠は日本時間の夕方にリセット）
+    var d = new Date(at + 9*3600000); d.setUTCHours(17,0,0,0);
+    var reset = d.getTime() - 9*3600000; if(reset <= at) reset += 86400000;
+    return {at:at, reset:reset, active: Date.now() < reset};
+  }
+  function renderQuotaCard(){
+    var q = quotaInfo(), h = '<h2 style="font-size:13.5px;margin:4px 0 10px">データベースの読み取り上限</h2><div class="card" style="padding:14px 18px;margin-bottom:18px;max-width:760px">';
+    if(q && q.active){
+      return h+'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="badge" style="background:var(--danger);color:#fff">上限に達しています</span><b style="font-size:13px">1日の読み取り上限（Firebase無料枠 5万回）を超えました</b></div>'+
+        '<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.8;margin-top:8px">検知：'+fmtDateTime(new Date(q.at).toISOString())+'<br>解除の目安：'+fmtDateTime(new Date(q.reset).toISOString())+' ごろ（日本時間の夕方にリセット）<br>上限中は、新しい端末・ブラウザではメンバー情報が取れずログインできないことがあります。すぐ解決するには、FirebaseをBlazeプラン（従量課金）に切り替えてください。</div></div>';
+    }
+    return h+'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="badge soft-success">正常</span><span style="font-size:12.5px;color:var(--ink-soft)">'+(q?'前回の上限到達：'+fmtDateTime(new Date(q.at).toISOString())+'（解除済みの見込み）':'この端末では上限到達を検知していません')+'</span></div>'+
+      '<div style="font-size:11.5px;color:var(--ink-faint);margin-top:6px">※ 実際の使用量そのものはFirebaseコンソール（Usage）で確認できます。ここでは、この端末で上限エラーを受け取ったかどうかを表示します。</div></div>';
+  }
   function renderStorageCard(){
     var rows = storageStats();
     var totalB = rows.reduce(function(a,r){ return a+r.bytes; },0), totalN = rows.reduce(function(a,r){ return a+r.count; },0);
@@ -4596,6 +4616,7 @@
       stat("案件", state.projects.length)+
       stat("顧客", state.customers.length)+
     '</div>';
+    html += renderQuotaCard();
     html += renderStorageCard();
     html += renderGmailCard();
 
