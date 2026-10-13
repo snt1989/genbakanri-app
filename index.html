@@ -1492,6 +1492,7 @@
     setTimeout(function(){
       var stillLoading = Object.keys(state.loaded).some(function(k){ return !state.loaded[k]; });
       if(stillLoading){
+        if(!state.syncError) state.syncError = "timeout";
         setPreview();
         state.loadTimedOut = true;
         toast("データの読み込みに時間がかかっています");
@@ -1638,6 +1639,7 @@
     }, function(e){ state.loaded.folders=true; state.folders=[]; render(); });
   }
   function onErr(e){
+    state.syncError = (e && e.code) || "unknown";
     if(e && e.code==="resource-exhausted") toast("Firestoreの無料枠（1日の読み取り上限）を超えました。日本時間の夕方（16時前後）にリセットされます。恒久的にはFirebaseをBlazeプランにしてください");
     else toast("同期エラー: "+(e&&e.code||"unknown"));
     // A read error on some collection means its onSnapshot will never call
@@ -1679,7 +1681,12 @@
     var el = document.getElementById("login-hint");
     if(!el) return;
     if(state.offlineMode){
-      el.textContent = "現在オフライン（デモ）モードで動作しています。実際のメンバー情報には接続できていません。デモ用ログイン：電話番号「09011110001」（佐藤）「09011110002」（瀬戸）「09011110003」（鷹羽・管理者）（氏名でも可）のいずれか／パスワード「1234」でお試しください。";
+      var ec = state.syncError;
+      var demo = "（動作確認用のデモログイン：氏名または電話番号「09011110003」（鷹羽・管理者）／パスワード「1234」）";
+      if(ec==="resource-exhausted") el.textContent = "データベースの1日の読み取り上限（Firebase無料枠）に達したため、メンバー情報を取得できません。日本時間の夕方（16〜17時ごろ）にリセットされると、通常どおりログインできます。すぐ使いたい場合は、管理者がFirebaseをBlazeプラン（従量課金）に切り替えてください。"+demo;
+      else if(ec==="permission-denied") el.textContent = "データベースへのアクセスが許可されていません（Firestoreのセキュリティルールを確認してください）。"+demo;
+      else if(ec==="timeout" || ec==="unavailable") el.textContent = "データベースに接続できません。通信状況を確認して、ページを再読み込みしてください。"+demo;
+      else el.textContent = "データベースに接続できず、実際のメンバー情報を取得できていません"+(ec?"（"+ec+"）":"")+"。時間をおいて再読み込みしてください。"+demo;
       el.classList.add("show");
     } else {
       el.classList.remove("show");
