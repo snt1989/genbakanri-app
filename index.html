@@ -3324,6 +3324,7 @@
     html += '<div style="display:flex;gap:8px;margin-top:12px"><button class="btn sm outline" data-chat-project="'+p.id+'">チャットする</button><button class="btn sm primary" data-edit-section="members">'+iPlus()+' メンバー追加</button></div>';
     html += '</div>';
     html += '<div style="margin-top:14px"><button class="btn outline" style="width:100%;justify-content:center" data-copy-summary="'+p.id+'">'+iDownload()+' 案件情報をコピー</button></div>';
+    if(worksAvailable() && !isExternalViewer()) html += '<div style="margin-top:10px"><button class="btn outline" style="width:100%;justify-content:center" data-mail-project="'+esc(p.id)+'">'+iMail()+' メール（履歴・送信）</button></div>';
     html += '</div>';
     html += '</div>'; // end grid
 
@@ -5283,6 +5284,79 @@
     });
   }
   /* ============ スマホ通知（Web Push） ============ */
+
+  /* ---- 案件メール（履歴・送信：Resend） ---- */
+  var MAIL_API = "/api/mail";
+  function iMail(){ return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>'; }
+  function mailCall(action, extra){
+    var me = myMember();
+    if(!me) return Promise.reject(new Error("ログイン情報を確認できません"));
+    return fetch(MAIL_API, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(Object.assign({auth:{name:me.name, password:me.password||""}, action:action}, extra||{}))})
+      .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){
+        if(j && j.error==="notconfigured") throw new Error("メール送信が未設定です。設定→メール設定（MAIL.md）の手順で RESEND_API_KEY と MAIL_FROM をVercelに登録してください");
+        if(j && j.error==="server") throw new Error("サーバーエラー"+(j.detail?"："+j.detail:""));
+        if(j && j.error==="send") throw new Error("送信に失敗しました"+(j.detail?"："+j.detail:""));
+        if(!r.ok || (j&&j.error)) throw new Error((j&&j.error) || ("サーバーエラー（"+r.status+"）"));
+        return j; }); });
+  }
+  function openMailModal(pid){
+    var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
+    var cs = projectCustomerSrc(p) || {};
+    var st = {mails:null, err:"", view:"list", open:"", busy:false};
+    function sigOf(){
+      var me = myMember() || {}, org = state.orgSettings || {};
+      return "\n\n--\n"+[org.companyName, me.name, me.phone?"TEL "+me.phone:"", me.email||""].filter(Boolean).join("\n");
+    }
+    function draw(){
+      var body = '', foot = '';
+      if(st.view==="new" || st.view==="rec"){
+        var isNew = st.view==="new";
+        body = '<label class="field">'+(isNew?'宛先（複数はカンマ区切り）':'送信元（相手のアドレス）')+'<input type="text" id="ml-to" value="'+esc(isNew?(cs.email||""):"")+'" placeholder="例：abc@example.com"></label>'+
+          (isNew?'<label class="field">CC（任意）<input type="text" id="ml-cc"></label>':'')+
+          '<label class="field">件名<input type="text" id="ml-sub" value="'+esc(isNew?"【"+(p.name||"")+"】":"")+'"></label>'+
+          '<label class="field">本文<textarea id="ml-body" rows="9">'+(isNew?esc(sigOf()):"")+'</textarea></label>'+
+          (isNew?'<div style="font-size:11.5px;color:var(--ink-faint)">送信すると、この案件のメール履歴に自動で記録されます。返信は送信者のメールアドレス宛に届きます。</div>':'<div style="font-size:11.5px;color:var(--ink-faint)">受け取ったメールの内容を貼り付けて、この案件の履歴に記録します（送信はされません）。</div>');
+        foot = '<button class="btn" id="ml-back">戻る</button><button class="btn primary" id="ml-go"'+(st.busy?' disabled':'')+'>'+(isNew?"送信する":"記録する")+'</button>';
+      }else{
+        if(st.err) body += '<div style="color:var(--danger);font-size:12.5px;margin-bottom:8px">'+esc(st.err)+'</div>';
+        if(!st.mails) body += '<div style="padding:14px;color:var(--ink-soft)">読み込み中…</div>';
+        else if(!st.mails.length) body += '<div style="padding:14px;color:var(--ink-soft);font-size:13px">この案件のメール履歴はまだありません</div>';
+        else body += st.mails.map(function(m){
+          var open = st.open===m.key, out = m.dir==="out";
+          return '<div class="card" style="padding:10px 12px;margin-bottom:8px;cursor:pointer" data-ml-open="'+esc(m.key)+'">'+
+            '<div style="display:flex;gap:8px;align-items:center"><span class="badge '+(out?"soft-success":"line-gray")+'">'+(out?"送信":"受信")+'</span><b style="font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(m.subject||"（件名なし）")+'</b><span style="font-size:11.5px;color:var(--ink-faint)">'+fmtDateTime(m.at)+'</span></div>'+
+            '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:3px">'+(out?"宛先 "+esc(m.to||""):"送信元 "+esc(m.from||""))+(m.by?" ／ 担当 "+esc(m.by):"")+'</div>'+
+            (open?'<div style="white-space:pre-wrap;font-size:13px;line-height:1.6;margin-top:8px;border-top:1px solid var(--border);padding-top:8px">'+esc(m.body||"")+'</div>'+(state.isAdmin?'<div style="margin-top:6px"><button class="btn sm ghost" style="color:var(--danger)" data-ml-del="'+esc(m.key)+'">履歴から削除</button></div>':''):'')+'</div>';
+        }).join("");
+        foot = '<button class="btn" id="ml-rec">受信を記録</button><button class="btn primary" id="ml-new">'+iMail()+' メールを書く</button>';
+      }
+      openModal("メール："+(p.name||""), body, foot);
+      var $ = function(id){ return document.getElementById(id); };
+      if($("ml-new")) $("ml-new").addEventListener("click", function(){ st.view="new"; draw(); });
+      if($("ml-rec")) $("ml-rec").addEventListener("click", function(){ st.view="rec"; draw(); });
+      if($("ml-back")) $("ml-back").addEventListener("click", function(){ st.view="list"; draw(); });
+      document.querySelectorAll("[data-ml-open]").forEach(function(el){ el.addEventListener("click", function(){ var k=el.getAttribute("data-ml-open"); st.open = st.open===k?"":k; draw(); }); });
+      document.querySelectorAll("[data-ml-del]").forEach(function(el){ el.addEventListener("click", function(e){ e.stopPropagation(); var k=el.getAttribute("data-ml-del");
+        confirmDelete("このメール履歴を削除しますか？（相手に送ったメールは取り消せません）", function(){ mailCall("remove",{projectId:pid,key:k}).then(function(){ st.mails = st.mails.filter(function(m){return m.key!==k;}); st.view="list"; draw(); }, function(e2){ toast(e2.message); st.view="list"; draw(); }); }); }); });
+      if($("ml-go")) $("ml-go").addEventListener("click", function(){
+        var isNew = st.view==="new";
+        var v = function(id){ var e=$(id); return e?e.value:""; };
+        var to = v("ml-to").trim(), sub = v("ml-sub").trim(), bd = v("ml-body");
+        if(isNew && !to){ toast("宛先を入力してください"); return; }
+        if(isNew && (!sub || !bd.trim())){ toast("件名と本文を入力してください"); return; }
+        if(!isNew && !sub && !bd.trim() && !to){ toast("内容を入力してください"); return; }
+        st.busy = true; $("ml-go").disabled = true;
+        var req = isNew ? mailCall("send",{projectId:pid,to:to,cc:v("ml-cc"),subject:sub,body:bd}) : mailCall("record",{projectId:pid,from:to,subject:sub,body:bd});
+        req.then(function(){ toast(isNew?"メールを送信しました":"記録しました"); st.busy=false; st.view="list"; st.mails=null; draw(); load(); }, function(e){ st.busy=false; toast(e.message); var b2=$("ml-go"); if(b2) b2.disabled=false; });
+      });
+    }
+    function load(){
+      mailCall("list",{projectId:pid}).then(function(j){ st.mails = j.mails||[]; st.err=""; }, function(e){ st.mails = []; st.err = e.message; })
+        .then(function(){ if(st.view==="list" && document.getElementById("modal-layer").classList.contains("open")) draw(); });
+    }
+    draw(); load();
+  }
+
   var PUSH_API = "/api/push";
   state.push = {status:null, loading:false, failed:false, sub:null, busy:false, keys:null, msg:"", prefs:null};
   var PUSH_KINDS = [["chat","チャットの新着","参加しているチャットに投稿があったとき"],["projectNew","新しい案件の登録","案件が新しく登録されたとき（担当者・管理者）"],["projectStatus","案件の進捗の変更","進捗（契約済・施工中など）が変わったとき（担当者・管理者）"],["report","報告書の提出","報告書が「提出済」になったとき（担当者・管理者）"],["task","タスクの追加","自分が担当のタスクが追加されたとき"]];
@@ -7561,6 +7635,7 @@
     c.querySelectorAll("[data-bulk-toggle]").forEach(function(el){ el.addEventListener("click", function(){ bulkToggle(el.getAttribute("data-bulk-toggle")); }); });
     c.querySelectorAll("[data-edit-member]").forEach(function(el){ el.addEventListener("click", function(){ editMember(el.getAttribute("data-edit-member")); }); });
     c.querySelectorAll("[data-goto-memberform]").forEach(function(el){ el.addEventListener("click", function(){ goMemberForm(el.getAttribute("data-goto-memberform")==="ext"); }); });
+    c.querySelectorAll("[data-mail-project]").forEach(function(el){ el.addEventListener("click", function(){ openMailModal(el.getAttribute("data-mail-project")); }); });
     c.querySelectorAll("[data-copy-summary]").forEach(function(el){ el.addEventListener("click", function(){ copyProjectSummary(el.getAttribute("data-copy-summary")); }); });
     c.querySelectorAll("[data-toggle-assignee]").forEach(function(el){
       el.addEventListener("click", function(){
