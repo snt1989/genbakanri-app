@@ -1987,7 +1987,7 @@
     // only the 会社情報 editing and the 管理画面 section inside it are admin-only.
     nav.innerHTML = TABS.map(function(t){
       return '<button class="navbtn'+(highlight===t.id?" active":"")+'" data-tab="'+t.id+'">'+t.icon()+'<span>'+t.label+'</span></button>';
-    }).join("");
+    }).join("")+'<a class="navbtn" href="https://bihinkanriapp.vercel.app/" target="_blank" rel="noopener noreferrer" style="text-decoration:none" title="備品管理アプリを新しいタブで開きます">'+iBox()+'<span>備品管理アプリ ↗</span></a>';
     var bn = document.getElementById("bottomnav");
     if(bn){
       var BN = mobileNavTabs().map(function(id){ var t = TABS.find(function(x){ return x.id===id; }); return [id, BN_SHORT[id]||t.label, t.icon]; });
