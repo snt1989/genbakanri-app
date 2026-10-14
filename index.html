@@ -1998,7 +1998,7 @@
     // only the 会社情報 editing and the 管理画面 section inside it are admin-only.
     var bihinHtml = '<a class="navbtn" data-bihin-link="1" href="https://bihinkanriapp.vercel.app/" target="_blank" rel="noopener noreferrer" style="text-decoration:none" title="備品管理アプリを新しいタブで開きます">'+iBox()+'<span>備品管理アプリ ↗</span></a>';
     nav.innerHTML = TABS.map(function(t){
-      return '<button class="navbtn'+(highlight===t.id?" active":"")+'" data-tab="'+t.id+'">'+t.icon()+'<span>'+t.label+'</span></button>'+(t.id==="help" ? bihinHtml : "");
+      return (t.id==="members" ? bihinHtml : "")+'<button class="navbtn'+(highlight===t.id?" active":"")+'" data-tab="'+t.id+'">'+t.icon()+'<span>'+t.label+'</span></button>';
     }).join("");
     var bihin = nav.querySelector("[data-bihin-link]");
     if(bihin) bihin.addEventListener("click", function(ev){ openBihinApp(ev); });
