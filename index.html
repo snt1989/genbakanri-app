@@ -2840,6 +2840,7 @@
       '<h1 class="pagetitle">'+title+'</h1>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
         '<button class="btn primary" data-newproject="'+mode+'">'+iPlus()+' 案件登録</button>'+
+        '<button class="btn" id="proj-dup-scan">重複チェック</button>'+
         csvToolbar("projects")+
       '</div></div><div style="height:14px"></div>';
 
@@ -3194,6 +3195,7 @@
 
       Object.assign(data, projectCustomerData(cdata), readPropertyData());
       data.secretFields = readSecrets(document.getElementById("content"), state.editingProject||{});
+      var doSave = function(){
       ensureCustomer(cdata, function(customerId){
         data.customerId = customerId;
         var id = state.editingProject ? state.editingProject.id : null;
@@ -3202,6 +3204,15 @@
           setTab(mode);
         });
       });
+      };
+      // 新規登録のときだけ、似た案件が既にあれば確認する
+      var pDups = state.editingProject ? [] : findProjectDuplicates(Object.assign({customerName:cdata.name}, data), null);
+      if(pDups.length){
+        openModal("似た案件が登録されています", '<div style="font-size:12.5px;line-height:1.8;margin-bottom:8px">すでに登録されている案件と重複している可能性があります。</div>'+
+          pDups.slice(0,5).map(function(d){ return '<div style="padding:3px 0;font-size:12.5px">・'+projDupLine(d.p)+' <span style="color:var(--warning);font-weight:700">'+esc(d.reasons.join("・"))+'</span></div>'; }).join(""),
+          '<button class="btn" data-close-modal>戻って確認する</button><button class="btn primary" id="pdup-go">重複を承知で登録</button>');
+        document.getElementById("pdup-go").addEventListener("click", function(){ closeModal(); doSave(); });
+      } else doSave();
     });
   }
 
@@ -4591,6 +4602,7 @@
     {t:"顧客管理", items:[
       ["法人番号から顧客情報を呼び出せますか？","顧客登録（または案件の顧客情報）の「法人番号」欄に13桁を入れて「法人情報を呼び出す」を押すと、国税庁の法人番号公表サイトから、名前・ふりがな・郵便番号・都道府県・市区町村番地を自動入力します。すでに入力してある項目は上書きしません。\n※公開版（Vercel）のアプリで使えます。管理者がVercelの環境変数 HOUJIN_APP_ID に、国税庁から取得したアプリケーションID（無料）を登録しておく必要があります。手順はリポジトリの HOUJIN.md を参照してください。\n※個人事業主には法人番号がありません。登録番号（インボイス）は自動入力されません。"],
       ["顧客を登録するには？","「顧客管理」の「顧客登録」から、名前・住所・連絡先などを入力します。郵便番号を入れると、都道府県と市区町村が自動で入ります。登録すると、同じ名前や電話番号の顧客がすでにないか確認し、重複していそうなら知らせます。"],
+      ["案件が重複していないか確認したい","営業案件一覧・施工案件一覧の「重複チェック」を押すと、案件名が同じ・似ている案件、顧客と住所が同じ案件をまとめて表示します。新しく案件を登録するときも、似た案件があれば登録前に確認が出ます。"],
       ["重複して登録していないか確認したい","顧客一覧の「重複チェック」を押すと、名前・電話番号・メールが同じか似ている顧客を、組にして表示します。「開く」から内容を確認・修正でき、「結合する」で1件にまとめられます（残す顧客を選ぶと、ほかの顧客の案件を付け替え、空欄を補い、ほかの顧客はゴミ箱へ移ります。ゴミ箱から復元できます）。"],
       ["顧客を探す・並び替える","一覧の上の検索欄と絞り込み（都道府県・案件の有無・freee連携など）、並び替え（登録日・五十音・案件数など）が使えます。「表示項目」で、一覧に出す列を増やしたり減らしたりできます。"],
       ["顧客の案件を見たい","顧客名、または行の「案件」ボタンを押すと、その顧客の案件一覧と合計金額が出ます。案件を押すと詳細画面に進みます。"]
@@ -6245,6 +6257,49 @@
       el.value = x;
       var addr = document.getElementById("f-caddress"); if(addr) addr.removeAttribute("data-auto");
     });
+  }
+
+  /* ---- 案件の重複チェック ---- */
+  function projNorm(x){ return String(x||"").normalize("NFKC").toLowerCase().replace(/[\s\u3000・\-ー_.,、。()（）【】\[\]「」]/g,""); }
+  function projSameCustomer(a, b){
+    if(a.customerId && b.customerId && a.customerId===b.customerId) return true;
+    var x = custNormName(a.customerName), y = custNormName(b.customerName); return !!(x && y && x===y);
+  }
+  function projMatchReasons(a, b){
+    var r = [], na = projNorm(a.name), nb = projNorm(b.name);
+    if(na && nb){
+      if(na===nb) r.push("案件名が同じ");
+      else if(Math.min(na.length,nb.length)>=5 && (na.indexOf(nb)!==-1 || nb.indexOf(na)!==-1)) r.push("案件名が似ている");
+    }
+    var aa = projNorm(propertyAddressOf(a).full || a.address), ab = projNorm(propertyAddressOf(b).full || b.address);
+    if(aa && ab && aa===ab && projSameCustomer(a,b)) r.push("顧客と住所が同じ");
+    return r;
+  }
+  function findProjectDuplicates(data, excludeId){
+    var out = [];
+    state.projects.forEach(function(p){ if(p.id===excludeId) return; var r = projMatchReasons(data, p); if(r.length) out.push({p:p, reasons:r}); });
+    return out;
+  }
+  function projDupLine(p){
+    return '<b>'+esc(p.name||"（名称なし）")+'</b> <span style="color:var(--ink-faint)">'+esc([p.customerName, propertyAddressOf(p).full||p.address, p.status].filter(Boolean).join("　"))+'</span>';
+  }
+  function openProjectDupScan(){
+    var groups = [], seen = {};
+    state.projects.forEach(function(a, i){
+      var members = [a];
+      state.projects.forEach(function(b, j){ if(j>i && projMatchReasons(a,b).length) members.push(b); });
+      if(members.length>1 && !seen[a.id]){ members.forEach(function(m){ seen[m.id]=1; }); groups.push(members); }
+    });
+    var body = groups.length ? groups.map(function(g){
+      var why = projMatchReasons(g[0], g[1]);
+      return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px">'+
+        (why.length?'<div style="font-size:11.5px;color:var(--warning);font-weight:700;margin-bottom:2px">'+esc(why.join("・"))+'</div>':'')+
+        g.map(function(p){
+          return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;padding:3px 0"><span style="font-size:12.5px">'+projDupLine(p)+'</span><button class="btn sm" data-pdup-open="'+esc(p.id)+'">開く</button></div>';
+        }).join("")+'</div>';
+    }).join("") : '<div style="font-size:13px">重複している可能性のある案件は見つかりませんでした。</div>';
+    openModal("案件の重複チェック", '<div style="font-size:12px;color:var(--ink-faint);margin-bottom:8px">案件名が同じ・似ている、または顧客と住所が同じ案件をまとめています。'+(groups.length?'（'+groups.length+'組）':'')+'</div><div style="max-height:55vh;overflow:auto">'+body+'</div>', '<button class="btn" data-close-modal>閉じる</button>');
+    document.querySelectorAll("#modal-box [data-pdup-open]").forEach(function(el){ el.addEventListener("click", function(){ var id = el.getAttribute("data-pdup-open"); closeModal(); goProjectDetail(id); }); });
   }
 
   /* ---- 顧客の重複チェック／顧客から案件へ ---- */
@@ -7975,6 +8030,7 @@
     c.querySelectorAll("tr.rowhover[data-row-id]").forEach(function(tr){ tr.style.cursor = "pointer"; tr.addEventListener("click", function(ev){
       if(!document.getElementById("cust-search") || ev.target.closest("a,button,input,select")) return;
       openCustomerProjects(tr.getAttribute("data-row-id")); }); });
+    var pDup = document.getElementById("proj-dup-scan"); if(pDup) pDup.addEventListener("click", openProjectDupScan);
     var dupScan = document.getElementById("cust-dup-scan"); if(dupScan) dupScan.addEventListener("click", openCustomerDupScan);
     c.querySelectorAll("[data-hide-customer]").forEach(function(el){ el.addEventListener("click", function(){
       var cu = state.customers.find(function(x){ return x.id===el.getAttribute("data-hide-customer"); }); if(!cu) return;
