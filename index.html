@@ -4497,7 +4497,7 @@
     {t:"顧客管理", items:[
       ["法人番号から顧客情報を呼び出せますか？","顧客登録（または案件の顧客情報）の「法人番号」欄に13桁を入れて「法人情報を呼び出す」を押すと、国税庁の法人番号公表サイトから、名前・ふりがな・郵便番号・都道府県・市区町村番地を自動入力します。すでに入力してある項目は上書きしません。\n※公開版（Vercel）のアプリで使えます。管理者がVercelの環境変数 HOUJIN_APP_ID に、国税庁から取得したアプリケーションID（無料）を登録しておく必要があります。手順はリポジトリの HOUJIN.md を参照してください。\n※個人事業主には法人番号がありません。登録番号（インボイス）は自動入力されません。"],
       ["顧客を登録するには？","「顧客管理」の「顧客登録」から、名前・住所・連絡先などを入力します。郵便番号を入れると、都道府県と市区町村が自動で入ります。登録すると、同じ名前や電話番号の顧客がすでにないか確認し、重複していそうなら知らせます。"],
-      ["重複して登録していないか確認したい","顧客一覧の「重複チェック」を押すと、名前・電話番号・メールが同じか似ている顧客を、組にして表示します。「開く」から内容を確認・修正できます。"],
+      ["重複して登録していないか確認したい","顧客一覧の「重複チェック」を押すと、名前・電話番号・メールが同じか似ている顧客を、組にして表示します。「開く」から内容を確認・修正でき、「結合する」で1件にまとめられます（残す顧客を選ぶと、ほかの顧客の案件を付け替え、空欄を補い、ほかの顧客はゴミ箱へ移ります。ゴミ箱から復元できます）。"],
       ["顧客を探す・並び替える","一覧の上の検索欄と絞り込み（都道府県・案件の有無・freee連携など）、並び替え（登録日・五十音・案件数など）が使えます。「表示項目」で、一覧に出す列を増やしたり減らしたりできます。"],
       ["顧客の案件を見たい","顧客名、または行の「案件」ボタンを押すと、その顧客の案件一覧と合計金額が出ます。案件を押すと詳細画面に進みます。"]
     ]},
@@ -6145,12 +6145,66 @@
       if(members.length>1 && !seen[a.id]){ members.forEach(function(m){ seen[m.id]=1; }); groups.push(members); }
     });
     var body = groups.length ? groups.map(function(g, gi){
-      return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px">'+g.map(function(c){
+      return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px">'+(state.canWrite?'<div style="text-align:right"><button class="btn sm primary" data-dup-merge="'+gi+'">結合する</button></div>':'')+g.map(function(c){
         return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;padding:3px 0"><span style="font-size:12.5px"><b>'+esc(c.name)+'</b> <span style="color:var(--ink-faint)">'+esc([c.phone,c.email,c.address].filter(Boolean).join("　"))+'（案件 '+custProjCount(c)+'件）</span></span><button class="btn sm" data-dup-edit="'+esc(c.id)+'">開く</button></div>';
       }).join("")+'</div>';
     }).join("") : '<div style="font-size:13px">重複している可能性のある顧客は見つかりませんでした。</div>';
     openModal("重複チェック", '<div style="font-size:12px;color:var(--ink-faint);margin-bottom:8px">名前（株式会社などを除く）・電話番号・メールが同じか似ている顧客をまとめています。'+(groups.length?'（'+groups.length+'組）':'')+'</div><div style="max-height:55vh;overflow:auto">'+body+'</div>', '<button class="btn" data-close-modal>閉じる</button>');
     document.querySelectorAll("#modal-box [data-dup-edit]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var id = el.getAttribute("data-dup-edit"); closeModal(); openCustomerForm(id); }); });
+    document.querySelectorAll("#modal-box [data-dup-merge]").forEach(function(el){ el.addEventListener("click", function(){ openCustomerMerge(groups[Number(el.getAttribute("data-dup-merge"))]); }); });
+  }
+  // 重複している顧客を1件に結合する（残す顧客を選び、案件を付け替え、空欄を補い、ほかの顧客はゴミ箱へ＝復元可）
+  function openCustomerMerge(group){
+    if(!state.canWrite){ toast("この操作を行う権限がありません"); return; }
+    var list = group.map(function(c){ return state.customers.find(function(x){ return x.id===c.id; }) || c; });
+    var score = function(c){ return (c.freeePartnerId?1000:0) + custProjCount(c)*10 + (c.email?1:0) + (c.phone?1:0); };
+    var keepId = list.slice().sort(function(a,b){ return score(b)-score(a); })[0].id;
+    var blank = function(v){ return v===undefined || v===null || v==="" || v==="未選択"; };
+    var SKIP = {id:1, name:1, createdAt:1, updatedAt:1, registeredDate:1, notes:1};
+    function plan(keepId){
+      var keep = list.find(function(c){ return c.id===keepId; }), others = list.filter(function(c){ return c.id!==keepId; });
+      var fill = {}, notes = String(keep.notes||"");
+      others.forEach(function(o){
+        Object.keys(o).forEach(function(k){
+          if(SKIP[k]) return;
+          if(blank(keep[k]) && blank(fill[k]) && !blank(o[k])) fill[k] = o[k];
+        });
+        var n = String(o.notes||"").trim(); if(n && notes.indexOf(n)===-1) notes = (notes?notes+"\n":"")+n;
+      });
+      if(notes!==String(keep.notes||"")) fill.notes = notes;
+      var moved = state.projects.filter(function(p){ return others.some(function(o){ return o.id===p.customerId; }); });
+      var freeeDiff = others.some(function(o){ return o.freeePartnerId && keep.freeePartnerId && o.freeePartnerId!==keep.freeePartnerId; });
+      return {keep:keep, others:others, fill:fill, moved:moved, freeeDiff:freeeDiff};
+    }
+    function draw(){
+      var pl = plan(keepId), labels = {kana:"ふりがな",email:"メール",phone:"電話番号",postalCode:"郵便番号",prefecture:"都道府県",address:"住所",building:"建物名",contactName:"担当者名",department:"部署",notes:"備考",freeePartnerId:"freee連携"};
+      var fl = Object.keys(pl.fill).map(function(k){ return labels[k]||null; }).filter(Boolean);
+      var body = '<div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:8px">残す顧客を選んでください。ほかの顧客の案件は、残す顧客に付け替えます。</div>'+
+        list.map(function(c){
+          return '<label style="display:flex;gap:8px;align-items:flex-start;border:1px solid '+(c.id===keepId?'var(--accent)':'var(--border)')+';border-radius:8px;padding:8px 10px;margin-bottom:6px;cursor:pointer"><input type="radio" name="mg-keep" value="'+esc(c.id)+'"'+(c.id===keepId?' checked':'')+' style="margin-top:3px"><span style="font-size:12.5px"><b>'+esc(c.name)+'</b>'+(c.freeePartnerId?' <span class="tag">freee連携</span>':'')+'<br><span style="color:var(--ink-faint)">'+esc([c.phone,c.email,c.address].filter(Boolean).join("　"))+'（案件 '+custProjCount(c)+'件）</span></span></label>';
+        }).join("")+
+        '<div style="font-size:12.5px;line-height:1.8;margin-top:10px;background:var(--surface-2);border-radius:8px;padding:8px 10px">・案件 <b>'+pl.moved.length+'件</b> を「'+esc(pl.keep.name)+'」に付け替え<br>・空欄の項目を補完：'+(fl.length?esc(fl.join("、")):'なし')+'<br>・ほかの '+pl.others.length+'件 はゴミ箱へ移動（あとから復元できます）'+
+        (pl.freeeDiff?'<br><span style="color:var(--danger)">・freeeの取引先が異なります。結合後は残す顧客のfreee連携だけが残ります（freee側の取引先は変わりません）</span>':'')+'</div>';
+      openModal("顧客を結合", body, '<button class="btn" id="mg-cancel">キャンセル</button><button class="btn primary" id="mg-go">結合する</button>');
+      document.querySelectorAll('input[name="mg-keep"]').forEach(function(el){ el.addEventListener("change", function(){ keepId = el.value; draw(); }); });
+      document.getElementById("mg-cancel").addEventListener("click", function(){ openCustomerDupScan(); });
+      document.getElementById("mg-go").addEventListener("click", function(){
+        var btn = this; btn.disabled = true; btn.textContent = "結合中…";
+        var p2 = plan(keepId), ok = true;
+        var step1 = Object.keys(p2.fill).length ? saveRaw("customers", p2.keep.id, p2.fill) : Promise.resolve();
+        Promise.resolve(step1).then(function(){
+          return Promise.all(p2.moved.map(function(p){
+            return saveRaw("projects", p.id, {customerId:p2.keep.id, customerName:p2.keep.name});
+          }));
+        }).then(function(){
+          // 付け替えが済んでから、ほかの顧客をゴミ箱へ（1件ずつ）
+          return p2.others.reduce(function(chain, o){
+            return chain.then(function(){ return deleteRaw("customers", o.id); });
+          }, Promise.resolve());
+        }).then(function(){ toast("「"+p2.keep.name+"」に結合しました（"+p2.others.length+"件をゴミ箱へ）"); openCustomerDupScan(); }, function(){ toast("結合に失敗しました。一覧を確認してください"); openCustomerDupScan(); });
+      });
+    }
+    draw();
   }
   function openCustomerProjects(cid){
     var c = state.customers.find(function(x){ return x.id===cid; }); if(!c) return;
