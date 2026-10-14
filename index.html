@@ -3459,8 +3459,8 @@
     if(cs.notes) crows += kvRow("社内メモ", esc(cs.notes), "c_notes", p);
     html += section("顧客情報", crows, "customer");
     html += '<div class="card" style="padding:12px 18px;font-size:12.5px;line-height:1.9;color:var(--ink-soft)"><div style="font-weight:700;color:var(--ink);font-size:13px;margin-bottom:2px">登録・編集の記録</div>'+
-      '作成：'+(p.createdAt?fmtDateTime(p.createdAt):"—")+' ／ <b style="color:var(--ink)">'+esc(p.createdBy||"記録なし")+'</b>'+(p.source?'（'+esc(p.source)+'から登録）':'')+'<br>'+
-      '最終編集：'+((p.updatedAt||p.createdAt)?fmtDateTime(p.updatedAt||p.createdAt):"—")+' ／ <b style="color:var(--ink)">'+esc(p.updatedBy||"記録なし")+'</b>'+projHistoryHtml(p)+'</div>';
+      '作成：'+(p.createdAt?fmtDateTime(p.createdAt):"—")+' ／ <b style="color:var(--ink)">'+esc(p.createdBy||"不明（記録機能の追加前）")+'</b>'+(p.source?'（'+esc(p.source)+'から登録）':'')+'<br>'+
+      '最終編集：'+((p.updatedAt||p.createdAt)?fmtDateTime(p.updatedAt||p.createdAt):"—")+' ／ <b style="color:var(--ink)">'+esc(p.updatedBy||"不明（記録機能の追加前）")+'</b>'+projHistoryHtml(p)+'</div>';
 
     html += '</div>'; // end left col
 
@@ -3598,7 +3598,7 @@
       var list = normalizeAssignees(p.assignees);
       if(!list.some(function(a){ return a.name===oldName; })) return;
       var updated = list.map(function(a){ return a.name===oldName ? Object.assign({}, a, {name:newName}) : a; });
-      if(db) db.collection("projects").doc(p.id).update({assignees:updated, updatedAt:new Date().toISOString()}).catch(function(){});
+      if(db) db.collection("projects").doc(p.id).update({assignees:updated, updatedAt:new Date().toISOString(), updatedBy:state.myName||""}).catch(function(){});
       else p.assignees = updated;
     });
   }
