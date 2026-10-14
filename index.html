@@ -6292,6 +6292,19 @@
     if(a.customerId && b.customerId && a.customerId===b.customerId) return true;
     var x = custNormName(a.customerName), y = custNormName(b.customerName); return !!(x && y && x===y);
   }
+  // 重複チェックを速くするため、正規化した値は案件ごとに1回だけ計算して使い回す
+  function projKeys(p){
+    return {id:p.id, n:projNorm(p.name), a:projNorm(propertyAddressOf(p).full || p.address), cid:p.customerId||"", c:custNormName(p.customerName)};
+  }
+  function projKeyReasons(x, y){
+    var r = [];
+    if(x.n && y.n){
+      if(x.n===y.n) r.push("案件名が同じ");
+      else if(Math.min(x.n.length,y.n.length)>=5 && (x.n.indexOf(y.n)!==-1 || y.n.indexOf(x.n)!==-1)) r.push("案件名が似ている");
+    }
+    if(x.a && y.a && x.a===y.a && ((x.cid && x.cid===y.cid) || (x.c && x.c===y.c))) r.push("顧客と住所が同じ");
+    return r;
+  }
   function projMatchReasons(a, b){
     var r = [], na = projNorm(a.name), nb = projNorm(b.name);
     if(na && nb){
@@ -6303,8 +6316,8 @@
     return r;
   }
   function findProjectDuplicates(data, excludeId){
-    var out = [];
-    state.projects.forEach(function(p){ if(p.id===excludeId) return; var r = projMatchReasons(data, p); if(r.length) out.push({p:p, reasons:r}); });
+    var out = [], kd = projKeys(data);
+    state.projects.forEach(function(p){ if(p.id===excludeId) return; var r = projKeyReasons(kd, projKeys(p)); if(r.length) out.push({p:p, reasons:r}); });
     return out;
   }
   function projDupLine(p){
@@ -6312,14 +6325,20 @@
   }
   function openProjectDupScan(){ dupIgnoreLoad(openProjectDupScan2); }
   function openProjectDupScan2(){
-    var groups = [], seen = {};
-    state.projects.forEach(function(a, i){
-      var members = [a];
-      state.projects.forEach(function(b, j){ if(j>i && projMatchReasons(a,b).length && !dupIgnored("projects", a, b)) members.push(b); });
-      if(members.length>1 && !seen[a.id]){ members.forEach(function(m){ seen[m.id]=1; }); groups.push(members); }
-    });
+    var groups = [], seen = {}, list = state.projects, K = list.map(projKeys), ign = {};
+    dupIgn("projects").forEach(function(k){ ign[k] = 1; });
+    for(var i=0;i<list.length;i++){
+      if(seen[list[i].id]) continue;
+      var members = [list[i]];
+      for(var j=i+1;j<list.length;j++){
+        if(!projKeyReasons(K[i], K[j]).length) continue;
+        if(ign[dupKey(list[i], list[j])]) continue;
+        members.push(list[j]);
+      }
+      if(members.length>1){ members.forEach(function(m){ seen[m.id]=1; }); groups.push(members); }
+    }
     var body = groups.length ? groups.map(function(g, gi){
-      var why = projMatchReasons(g[0], g[1]);
+      var why = projKeyReasons(projKeys(g[0]), projKeys(g[1]));
       return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
         '<span style="font-size:11.5px;color:var(--warning);font-weight:700">'+(why.length?esc(why.join("・")):"")+'</span>'+
         (state.canWrite?'<button class="btn sm" data-pdup-ok="'+gi+'">確認済み（重複ではない）</button>':'')+'</div>'+
@@ -6359,12 +6378,23 @@
   }
   function openCustomerDupScan(){ dupIgnoreLoad(openCustomerDupScan2); }
   function openCustomerDupScan2(){
-    var groups = [], seen = {};
-    state.customers.forEach(function(a, i){
-      var members = [a];
-      state.customers.forEach(function(b, j){ if(j>i && custMatchReasons(a,b).length && !dupIgnored("customers", a, b)) members.push(b); });
-      if(members.length>1 && !seen[a.id]){ members.forEach(function(m){ seen[m.id]=1; }); groups.push(members); }
-    });
+    var groups = [], seen = {}, list = state.customers, ign = {};
+    dupIgn("customers").forEach(function(k){ ign[k] = 1; });
+    var K = list.map(function(c){ return {n:custNormName(c.name), p:normPhone(c.phone), e:String(c.email||"").trim().toLowerCase()}; });
+    var match = function(x, y){
+      if(x.n && y.n && (x.n===y.n || (Math.min(x.n.length,y.n.length)>=3 && (x.n.indexOf(y.n)!==-1 || y.n.indexOf(x.n)!==-1)))) return true;
+      return !!((x.p && x.p===y.p) || (x.e && x.e===y.e));
+    };
+    for(var i=0;i<list.length;i++){
+      if(seen[list[i].id]) continue;
+      var members = [list[i]];
+      for(var j=i+1;j<list.length;j++){
+        if(!match(K[i], K[j])) continue;
+        if(ign[dupKey(list[i], list[j])]) continue;
+        members.push(list[j]);
+      }
+      if(members.length>1){ members.forEach(function(m){ seen[m.id]=1; }); groups.push(members); }
+    }
     var body = groups.length ? groups.map(function(g, gi){
       return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px">'+(state.canWrite?'<div style="text-align:right;display:flex;gap:6px;justify-content:flex-end"><button class="btn sm" data-dup-ok="'+gi+'">確認済み（重複ではない）</button><button class="btn sm primary" data-dup-merge="'+gi+'">結合する</button></div>':'')+g.map(function(c){
         return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;padding:3px 0"><span style="font-size:12.5px"><b>'+esc(c.name)+'</b> <span style="color:var(--ink-faint)">'+esc([c.phone,c.email,c.address].filter(Boolean).join("　"))+'（案件 '+custProjCount(c)+'件）</span></span><button class="btn sm" data-dup-edit="'+esc(c.id)+'">開く</button></div>';
