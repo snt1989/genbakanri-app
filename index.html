@@ -3350,6 +3350,12 @@
   }
 
   /* ============ PROJECT DETAIL (full page) ============ */
+  function projHistoryHtml(p){
+    var h = Array.isArray(p.history) ? p.history.slice().reverse() : [];
+    if(!h.length) return '<div style="margin-top:6px;font-size:11.5px;color:var(--ink-faint)">変更の履歴は、これ以降の登録・編集から記録されます。</div>';
+    var row = function(x){ return '<div style="padding:2px 0;border-top:1px solid var(--border)"><span class="num">'+esc(fmtDateTime(x.at))+'</span> ／ <b style="color:var(--ink)">'+esc(x.by||"不明")+'</b> ／ '+esc(x.a||"編集")+(x.f&&x.f.length?'：'+esc(x.f.join("・")):"")+'</div>'; };
+    return '<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:600;color:var(--ink)">変更の履歴（'+h.length+'件）</summary><div style="margin-top:4px;font-size:12px;line-height:1.7">'+h.map(row).join("")+'</div></details>';
+  }
   function renderProjectDetail(){
     var p = state.projects.find(function(x){return x.id===state.viewingProjectId;});
     if(!p) return crumb(state.returnTab==="sales"?"営業案件一覧に戻る":"施工案件一覧に戻る", state.returnTab) + emptyState(iBriefcase,"案件が見つかりません","");
@@ -3454,7 +3460,7 @@
     html += section("顧客情報", crows, "customer");
     html += '<div class="card" style="padding:12px 18px;font-size:12.5px;line-height:1.9;color:var(--ink-soft)"><div style="font-weight:700;color:var(--ink);font-size:13px;margin-bottom:2px">登録・編集の記録</div>'+
       '作成：'+(p.createdAt?fmtDateTime(p.createdAt):"—")+' ／ <b style="color:var(--ink)">'+esc(p.createdBy||"記録なし")+'</b>'+(p.source?'（'+esc(p.source)+'から登録）':'')+'<br>'+
-      '最終編集：'+((p.updatedAt||p.createdAt)?fmtDateTime(p.updatedAt||p.createdAt):"—")+' ／ <b style="color:var(--ink)">'+esc(p.updatedBy||"記録なし")+'</b></div>';
+      '最終編集：'+((p.updatedAt||p.createdAt)?fmtDateTime(p.updatedAt||p.createdAt):"—")+' ／ <b style="color:var(--ink)">'+esc(p.updatedBy||"記録なし")+'</b>'+projHistoryHtml(p)+'</div>';
 
     html += '</div>'; // end left col
 
@@ -6549,6 +6555,7 @@
     data.updatedAt = new Date().toISOString();
     if((col==="projects"||col==="customers") && state.myName){ data.updatedBy = state.myName; if(!id) data.createdBy = state.myName; }
     var oldRec = id ? (rawOf(col).find(function(x){ return x.id===id; }) || null) : null;
+    var hn = histNext(col, oldRec, data); if(hn) data.history = hn;
     if(!db){
       var arr = rawOf(col);
       if(id){ var idx=arr.findIndex(function(x){return x.id===id;}); if(idx>-1) arr[idx]=Object.assign({},arr[idx],data); }
@@ -7137,10 +7144,31 @@
   }
 
   /* ---- raw writes (no per-row toast; callers report totals) ---- */
+  /* ---- 案件の変更履歴（誰が・いつ・何を変えたか。最新50件を案件に保存） ---- */
+  var PROJ_HIST_FIELDS = {name:"案件名", status:"進捗", amount:"金額", startDate:"施工開始日", endDate:"施工完了予定日", division:"事業部", customerName:"顧客", workInstruction:"作業指示", handoverDate:"引渡日", propertyType:"物件種別", propertyStructure:"構造"};
+  function histNorm(k, v){
+    if(k==="assignees") return JSON.stringify(normalizeAssignees(v||[]).map(function(a){ return a.name+"/"+a.kind; }).sort());
+    return JSON.stringify(v==null ? "" : v);
+  }
+  function histNext(col, oldRec, data){
+    if(col!=="projects" || !state.myName) return null;
+    var at = new Date().toISOString(), by = state.myName, hist = (oldRec && Array.isArray(oldRec.history)) ? oldRec.history.slice(-49) : [];
+    if(!oldRec){ hist.push({at:at, by:by, a:"登録"}); return hist; }
+    var changed = [];
+    Object.keys(data).forEach(function(k){
+      var label = k==="assignees" ? "担当者" : (PROJ_HIST_FIELDS[k] || (/^(property|address)/.test(k) ? "物件・住所" : ""));
+      if(!label || changed.indexOf(label)!==-1) return;
+      if(histNorm(k, data[k]) !== histNorm(k, oldRec[k])) changed.push(label);
+    });
+    if(!changed.length) return null;
+    hist.push({at:at, by:by, a:"編集", f:changed});
+    return hist;
+  }
   function saveRaw(col, id, data){
     var now = new Date().toISOString();
     data = Object.assign({}, data, {updatedAt:now});
     if((col==="projects"||col==="customers") && state.myName){ data.updatedBy = state.myName; if(!id) data.createdBy = state.myName; }
+    var hn = histNext(col, id ? (rawOf(col).find(function(x){ return x.id===id; }) || null) : null, data); if(hn) data.history = hn;
     if(!db){
       var arr = rawOf(col);
       if(id){ var i = arr.findIndex(function(x){return x.id===id;}); if(i>-1) arr[i] = Object.assign({}, arr[i], data); }
