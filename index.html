@@ -6720,7 +6720,7 @@
   };
 
   /* ---- what each screen currently shows (export / "select all" use these) ---- */
-  var PROJ_SORTS = [["upd","更新日（新しい順）"],["updr","更新日（古い順）"],["new","作成日（新しい順）"],["old","作成日（古い順）"],["name","案件名（五十音順）"],["namer","案件名（逆順）"],["start","施工開始日（近い順）"],["startr","施工開始日（遠い順）"],["end","施工完了予定日（近い順）"],["endr","施工完了予定日（遠い順）"],["amount","金額（高い順）"],["amountr","金額（低い順）"],["status","進捗順"],["cust","顧客名順"]];
+  var PROJ_SORTS = [["upd","更新日（新しい順）"],["updr","更新日（古い順）"],["new","作成日（新しい順）"],["old","作成日（古い順）"],["name","案件名（五十音順）"],["namer","案件名（逆順）"],["start","施工開始日（近い順）"],["startr","施工開始日（遠い順）"],["end","施工完了予定日（近い順）"],["endr","施工完了予定日（遠い順）"],["amount","金額（高い順）"],["amountr","金額（低い順）"],["status","進捗順"],["cust","顧客名（五十音順）"],["custr","顧客名（逆順）"]];
   function projSortKey(){
     var v = state.projSort || ""; if(!v){ try{ v = localStorage.getItem("gc_projsort")||""; }catch(e){} }
     return PROJ_SORTS.some(function(x){ return x[0]===v; }) ? v : "upd";
@@ -6743,13 +6743,14 @@
       "amount": function(a,b){ return (Number(b.amount)||0)-(Number(a.amount)||0)||cr(a,b); },
       "amountr": function(a,b){ return (Number(a.amount)||0)-(Number(b.amount)||0)||cr(a,b); },
       "status": function(a,b){ var i=STATUS_LIST.indexOf(a.status), j=STATUS_LIST.indexOf(b.status); return (i<0?99:i)-(j<0?99:j)||cr(a,b); },
-      "cust": function(a,b){ var x=a.customerName||"", y=b.customerName||""; if(!x&&!y) return cr(a,b); if(!x) return 1; if(!y) return -1; return x.localeCompare(y,"ja")||cr(a,b); }
+      "cust": function(a,b){ var x=a.customerName||"", y=b.customerName||""; if(!x&&!y) return cr(a,b); if(!x) return 1; if(!y) return -1; return x.localeCompare(y,"ja")||cr(a,b); },
+      "custr": function(a,b){ var x=a.customerName||"", y=b.customerName||""; if(!x&&!y) return cr(a,b); if(!x) return 1; if(!y) return -1; return y.localeCompare(x,"ja")||cr(a,b); }
     };
     return f[k] || cr;
   }
   /* ---- 案件一覧の表示項目（選べる） ---- */
   var PROJ_COLS = {
-    cust:{label:"顧客", sort:["cust"], html:function(p){ return '<td data-label="顧客">'+(p.customerName?'<div style="font-size:12.5px;font-weight:600">'+esc(p.customerName)+'</div>':'<div style="font-size:12px;color:var(--ink-faint)">未設定</div>')+'<button class="btn sm" data-list-cust="'+esc(p.id)+'" style="margin-top:4px">'+(p.customerName?'顧客を編集':'顧客を設定')+'</button></td>'; }},
+    cust:{label:"顧客", sort:["cust","custr"], html:function(p){ return '<td data-label="顧客">'+(p.customerName?'<div style="font-size:12.5px;font-weight:600">'+esc(p.customerName)+'</div>':'<div style="font-size:12px;color:var(--ink-faint)">未設定</div>')+'<button class="btn sm" data-list-cust="'+esc(p.id)+'" style="margin-top:4px">'+(p.customerName?'顧客を編集':'顧客を設定')+'</button></td>'; }},
     status:{label:"進捗", sort:["status"], html:function(p){ return '<td data-label="進捗">'+(hiddenFor(p,"p_status")?"—":statusBadge(p))+(freeeBadge(p)?'<div style="margin-top:4px">'+freeeBadge(p)+'</div>':'')+'</td>'; }},
     work:{label:"工程・予定・報告", html:function(p){ return '<td data-label="作業">'+workChips(p)+'</td>'; }},
     division:{label:"事業部", html:function(p){ return '<td data-label="事業部">'+esc(p.division||"—")+'</td>'; }},
