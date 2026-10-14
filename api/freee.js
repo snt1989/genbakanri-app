@@ -29,7 +29,7 @@ function similarity(a, b){
 function partnerInfo(p){
   var ad = p.address_attributes || p.address || {};
   return {kana: p.name_kana || "", email: p.email || "", phone: p.phone || "", zipcode: ad.zipcode || "",
-    prefectureCode: ad.prefecture_code == null ? "" : ad.prefecture_code, street1: ad.street_name1 || "", street2: ad.street_name2 || ""};
+    prefectureCode: ad.prefecture_code == null ? "" : ad.prefecture_code, street1: ad.street_name1 || "", street2: ad.street_name2 || "", updateDate: isoDate(p.update_date)};
 }
 function isoDate(s){ return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "")) ? s : ""; }
 
@@ -114,6 +114,19 @@ async function run(b, req){
       return {results: out, total: all.length};
     }
 
+    case "partners.dates": {   // 連携済みの取引先の freee 最終更新日 { 取引先ID: "YYYY-MM-DD" }
+      t = await need(); cid = t.companyId;
+      var want = {}; (b.ids || []).slice(0, 5000).forEach(function(i){ want[String(i)] = 1; });
+      var dm = {}, of2 = 0;
+      for(var pg3 = 0; pg3 < 10; pg3++){
+        var pd = await F.freee("GET", "/api/1/partners", {query: {company_id: cid, limit: 3000, offset: of2}});
+        var ap = pd.partners || [];
+        ap.forEach(function(p){ if(want[String(p.id)] && isoDate(p.update_date)) dm[p.id] = p.update_date; });
+        if(ap.length < 3000) break; of2 += 3000;
+      }
+      return {dates: dm};
+    }
+
     case "partners.list": {
       t = await need(); cid = t.companyId;
       var quoted = null;
@@ -126,7 +139,7 @@ async function run(b, req){
       }
       return {total: got.length, quotedOnly: !!quoted, partners: got.filter(function(p){ return p.available !== false && String(p.name || "").trim() && (!quoted || quoted[p.id]); }).map(function(p){
         var ad = p.address_attributes || p.address || {};
-        return {id: p.id, name: String(p.name).trim(), kana: p.name_kana || "", email: p.email || "", phone: p.phone || "",
+        return {id: p.id, name: String(p.name).trim(), updateDate: isoDate(p.update_date), kana: p.name_kana || "", email: p.email || "", phone: p.phone || "",
           zipcode: ad.zipcode || "", prefectureCode: ad.prefecture_code == null ? "" : ad.prefecture_code, street1: ad.street_name1 || "", street2: ad.street_name2 || "",
           quoteCount: quoted && quoted[p.id] ? quoted[p.id].n : 0, lastQuote: quoted && quoted[p.id] ? quoted[p.id].last : ""};
       })};
@@ -156,7 +169,7 @@ async function run(b, req){
           if(Object.keys(addr).length) body.address_attributes = addr;
           if(c.phone) body.phone = c.phone;
           var created = await F.freee("POST", "/api/1/partners", {body: body});
-          results.push({id: c.id, partnerId: created.partner.id, status: "created"});
+          results.push({id: c.id, partnerId: created.partner.id, status: "created", info: partnerInfo(created.partner)});
         }catch(e){ results.push({id: c.id, error: e.message}); if(e.status === 401) break; }
       }
       return {results: results};
