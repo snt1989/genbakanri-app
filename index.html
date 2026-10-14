@@ -2681,7 +2681,7 @@
     if(upcoming.length===0){ html+='<div style="font-size:12px;color:var(--ink-faint)">予定はありません</div>'; }
     else{
       html += upcoming.map(function(p){
-        return '<div class="side-stat" style="display:block"><div style="font-weight:700;font-size:12px">'+esc(p.name)+'</div><div style="color:var(--ink-faint);font-size:11px;margin-top:2px" class="num">'+fmtDate(p.startDate)+'〜</div></div>';
+        return '<a href="#" class="side-stat" data-open-project="'+esc(p.id)+'" style="display:block;text-decoration:none;color:inherit;cursor:pointer"><div style="font-weight:700;font-size:12px;color:var(--accent)">'+esc(p.name)+'</div><div style="color:var(--ink-faint);font-size:11px;margin-top:2px" class="num">'+fmtDate(p.startDate)+'〜</div></a>';
       }).join("");
     }
     html += '</div></div>';
