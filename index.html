@@ -1753,7 +1753,36 @@
   function avaColor(name){ var h=0; for(var i=0;i<(name||"").length;i++) h=(h*31+name.charCodeAt(i))%AVA_COLORS.length; return AVA_COLORS[h]; }
   function memberByName(name){ return state.members.find(function(x){return x.name===name;}); }
   function isImageFile(f){ return (f.contentType||"").indexOf("image/")===0; }
-  function fileUrl(f){ return f.url || ("/_blob/"+f.assetId); }
+  function fileUrl(f){ return f.chunked ? ("#fc-"+f.id) : (f.url || ("/_blob/"+f.assetId)); }
+  /* ---- 分割保存されたファイル（報告写真アプリのPDFなど）：クリック時に分割データを結合して開く ---- */
+  function chunkBlob(f){
+    if(!db) return Promise.reject(new Error("no-db"));
+    var n = Number(f.chunks)||0, ps = [];
+    for(var i=0;i<n;i++) ps.push(db.doc("fileChunks/"+f.id+"_"+i).get());
+    return Promise.all(ps).then(function(snaps){
+      var parts = snaps.map(function(sn){
+        var d = sn && sn.exists ? sn.data() : null; if(!d || !d.data) throw new Error("missing");
+        var bin = atob(d.data), u8 = new Uint8Array(bin.length); for(var k=0;k<bin.length;k++) u8[k]=bin.charCodeAt(k); return u8;
+      });
+      return new Blob(parts, {type:f.contentType||"application/pdf"});
+    });
+  }
+  function fileBlob(f){
+    if(f.chunked) return chunkBlob(f);
+    return fetch(fileUrl(f)).then(function(r){ if(!r.ok) throw 0; return r.blob(); });
+  }
+  document.addEventListener("click", function(ev){
+    var a = ev.target && ev.target.closest ? ev.target.closest('a[href^="#fc-"]') : null; if(!a) return;
+    ev.preventDefault(); ev.stopPropagation();
+    var id = a.getAttribute("href").slice(4), f = state.files.find(function(x){ return x.id===id; }); if(!f) return;
+    var dl = a.hasAttribute("download"), w = dl ? null : window.open("", "_blank");
+    toast("ファイルを読み込み中…");
+    chunkBlob(f).then(function(b){
+      var u = URL.createObjectURL(b);
+      if(dl){ var t = document.createElement("a"); t.href = u; t.download = f.filename||"file"; document.body.appendChild(t); t.click(); t.remove(); }
+      else if(w){ w.location.href = u; } else { location.href = u; }
+    }, function(){ if(w) w.close(); toast("ファイルを読み込めませんでした（データベースの読み取り上限の可能性があります）"); });
+  }, true);
   // フォルダ単位の社外秘: 社外メンバーには社外秘フォルダと、その中のファイルを見せない。
   function fileVisible(f){
     if(!isExternalViewer() || !f.folderId) return true;
@@ -1982,6 +2011,19 @@
 
   /* ============ shell ============ */
   // 備品管理アプリを開く。サーバーが使えるときは、同じ氏名の借受者としてログイン済みの状態で開く（SSO.md）
+  // 案件から報告写真アプリを開く（案件つきの署名付きチケットを発行 → 新しいタブ。作ったPDFはその案件の「写真・ファイル」に保存できる）
+  function openReportApp(projectId){
+    var me = myMember();
+    if(!db || window.claude || !me){ toast("この機能はVercel版（本番）でログイン中のみ使えます"); return; }
+    var w = window.open("", "_blank");
+    fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({action:"report-ticket", projectId:projectId, auth:{name:me.name, password:me.password||""}})})
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if(j && j.url){ if(w){ try{ w.opener = null; }catch(e){} w.location.href = j.url; } else location.href = j.url; return; }
+        if(w) w.close();
+        toast(j && j.error==="notconfigured" ? "管理者の設定が必要です（Vercelの環境変数 SSO_SECRET）" : ((j && j.error) || "開けませんでした"));
+      }, function(){ if(w) w.close(); toast("通信に失敗しました"); });
+  }
   function openBihinApp(ev){
     var plain = "https://bihinkanriapp.vercel.app/", me = myMember();
     if(!db || window.claude || !me) return;   // 通常のリンクとして開く
@@ -2104,6 +2146,7 @@
     else if(state.tab==="project-files") c.innerHTML = banner+renderProjectFiles();
     else if(state.tab==="member-form") c.innerHTML = banner+renderMemberForm();
     bindEvents();
+    c.querySelectorAll("[data-report-project]").forEach(function(el){ el.addEventListener("click", function(){ openReportApp(el.getAttribute("data-report-project")); }); });
     var ur = document.getElementById("usage-refresh"); if(ur) ur.addEventListener("click", function(){ usageLoad(); });
     c.querySelectorAll("[data-bihin-link]").forEach(function(a){ a.addEventListener("click", function(ev){ openBihinApp(ev); }); });
     applyBulkUi();
@@ -3357,7 +3400,7 @@
     var rows = '';
     var badges = (hiddenFor(p,"p_status") ? '' : statusBadge(p)+lockTag("p_status")) + freeeBadge(p) +
       (hiddenFor(p,"p_amount") ? '' : '<span class="num" style="font-weight:700">'+fmtYen(p.amount)+'</span>'+lockTag("p_amount"));
-    rows += '<div class="kv" style="display:flex;align-items:center;gap:14px">'+badges+'<button class="btn sm" style="margin-left:auto" data-edit-project="'+p.id+'">編集</button></div>';
+    rows += '<div class="kv" style="display:flex;align-items:center;gap:14px">'+badges+'<span style="margin-left:auto;display:flex;gap:8px"><button class="btn sm" data-report-project="'+p.id+'" title="報告写真アプリで報告書を作り、この案件の写真・ファイルに保存します">'+iImage()+' 報告書を作成</button><button class="btn sm" data-edit-project="'+p.id+'">編集</button></span></div>';
     rows += kvRow("案件名", esc(p.name));
     rows += kvRow("事業部", esc(p.division||"—"), "p_type", p);
     rows += kvRow("施工予定", (p.startDate||p.endDate) ? (fmtDate(p.startDate)+" 〜 "+fmtDate(p.endDate)) : "-", "p_period", p);
@@ -3800,7 +3843,7 @@
   function dir2(d){ return String(d||"").split("/").filter(Boolean).map(safeName).join("/"); }
   function downloadFiles(list, zipName, dirOf){
     if(!list.length){ toast("ダウンロードするファイルがありません"); return; }
-    var getBlob = function(f){ return fetch(fileUrl(f)).then(function(r){ if(!r.ok) throw 0; return r.blob(); }); };
+    var getBlob = fileBlob;
     if(list.length===1){
       return getBlob(list[0]).then(function(b){ downloadBlob(safeName(list[0].filename), b); toast("ダウンロードしました"); }).catch(function(){ toast("ダウンロードに失敗しました"); });
     }
@@ -3920,6 +3963,7 @@
     html += '<h1 class="pagetitle" style="margin:10px 0 16px;font-size:24px;font-weight:500">'+esc(cur?cur.name:"ファイル")+(cur&&cur.secret?' <span style="font-size:12px;color:var(--lock);font-weight:600">'+iLock()+' 社外秘</span>':'')+'</h1>';
     html += '<div style="display:flex;gap:10px;flex-wrap:wrap">'+
       '<label class="btn primary" style="cursor:pointer;border-radius:999px;padding:10px 22px">'+iUpload()+' ファイルをアップロード<input type="file" id="pf-input" multiple style="display:none"></label>'+
+      '<button class="btn outline" data-report-project="'+esc(state.filesProjectId)+'" style="border-radius:999px;padding:10px 22px">'+iImage()+' 報告書を作成</button>'+
       (cur ? '' : '<button class="btn outline" id="pf-newfolder" style="border-radius:999px;padding:10px 22px">新規フォルダ作成</button>')+
       (cur ? '<button class="btn outline" data-pf-edit-folder="'+esc(cur.id)+'" style="border-radius:999px;padding:10px 22px">'+iEdit()+' フォルダを編集</button>' : '')+
       '<button class="btn outline" id="pf-dl-all" style="border-radius:999px;padding:10px 22px">'+iDownload()+' '+(cur?'このフォルダをダウンロード':'すべてダウンロード')+'</button>'+
@@ -5731,6 +5775,7 @@
     var next = function(){
       if(i>=list.length) return Promise.resolve();
       var f = list[i++]; toast("写真・ファイルを取得中… "+i+" / "+list.length);
+      if(f.chunked) return next();
       return fetch(fileUrl(f)).then(function(r){ if(!r.ok) throw 0; return r.blob(); })
         .then(blobToB64).then(function(b64){ blobs[f.id] = {contentType:f.contentType||"", b64:b64}; })
         .catch(function(){ failed.push(f.filename||f.id); }).then(next);
@@ -6427,6 +6472,10 @@
   }
   function purgeTrash(ids){
     if(!db){ state.trash = state.trash.filter(function(x){ return ids.indexOf(x.id)===-1; }); toast(ids.length+"件を完全に削除しました（プレビューのみ）"); render(); return; }
+    ids.forEach(function(id){
+      var e = state.trash.find(function(x){ return x.id===id; });
+      if(e && e.col==="files" && e.data && e.data.chunked){ for(var i=0;i<(Number(e.data.chunks)||0);i++) db.doc("fileChunks/"+e.docId+"_"+i).delete().catch(function(){}); }
+    });
     Promise.all(ids.map(function(id){ return db.collection("trash").doc(id).delete(); })).then(function(){ toast(ids.length+"件を完全に削除しました"); }).catch(function(){ toast("削除に失敗しました"); });
   }
 

@@ -21,6 +21,7 @@
 // 任意: BIHIN_URL（既定 https://bihinkanriapp.vercel.app）
 var crypto = require("crypto");
 var F = require("./_freee");
+var W = require("./_works");
 
 function readBody(req){
   if(req.body && typeof req.body === "object") return req.body;
@@ -93,11 +94,80 @@ async function usageHandler(req, res, b){
   }
 }
 
+// ---- 報告写真アプリ → 案件へPDFを保存 ----
+// 1) 現場管理が「報告書を作成」で案件つきの署名付きチケット(12時間)を発行し、報告写真アプリを開く
+// 2) 報告写真アプリがPDFを約600KBずつ送り(report-chunk)、最後に report-finish で案件の「写真・ファイル」に登録
+// 環境変数: SSO_SECRET（共通）／任意: REPORT_URL（既定 https://houkokusho-two.vercel.app）
+function reportOrigin(){ return (F.env("REPORT_URL") || "https://houkokusho-two.vercel.app").replace(/\/+$/, ""); }
+function setCors(res){
+  res.setHeader("Access-Control-Allow-Origin", reportOrigin());
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Vary", "Origin");
+}
+function readTicket(t, secret){
+  try{
+    var parts = String(t || "").split(".");
+    if(parts.length !== 2) return null;
+    var want = b64u(crypto.createHmac("sha256", secret).update(parts[0]).digest());
+    var a = Buffer.from(parts[1]), b = Buffer.from(want);
+    if(a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    var p = JSON.parse(Buffer.from(parts[0].replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
+    if(!p || p.k !== "r" || !p.exp || Date.now() > p.exp) return null;
+    return p;
+  }catch(e){ return null; }
+}
+function makeReportTicket(me, project, secret){
+  var payload = b64u(JSON.stringify({k: "r", n: me.name, p: project.id, pn: project.name || "", c: project.customerName || "", ad: project.address || "", exp: Date.now() + 12 * 3600000, j: crypto.randomBytes(6).toString("hex")}));
+  return payload + "." + b64u(crypto.createHmac("sha256", secret).update(payload).digest());
+}
+async function reportHandler(req, res, b){
+  setCors(res);
+  try{
+    var secret = F.env("SSO_SECRET");
+    if(!secret || secret.length < 16) return res.status(200).json({error: "notconfigured"});
+    if(b.action === "report-ticket"){
+      var a = b.auth || {};
+      var me = await F.verifyMember(a.name, a.password);
+      if(!me) return res.status(403).json({error: "認証に失敗しました"});
+      var p = await W.getDoc("projects/" + encodeURIComponent(String(b.projectId || "")));
+      if(!p || !p.id || !W.visibleProjects([p], me).length) return res.status(403).json({error: "この案件は利用できません"});
+      return res.status(200).json({url: reportOrigin() + "/?gk=" + makeReportTicket(me, p, secret)});
+    }
+    // 以下は報告写真アプリからの呼び出し（チケットが認証）
+    var t = readTicket(b.ticket, secret);
+    if(!t) return res.status(403).json({error: "チケットの有効期限が切れました。現場管理アプリの案件から開き直してください"});
+    var up = String(b.uploadId || "");
+    if(!/^[A-Za-z0-9]{10,40}$/.test(up)) return res.status(400).json({error: "bad uploadId"});
+    var total = Number(b.total);
+    if(!(total >= 1 && total <= 40 && Number.isInteger(total))) return res.status(400).json({error: "ファイルが大きすぎます（上限 約20MB）"});
+    if(b.action === "report-chunk"){
+      var i = Number(b.i), d = String(b.data || "");
+      if(!(Number.isInteger(i) && i >= 0 && i < total)) return res.status(400).json({error: "bad index"});
+      if(!d || d.length > 900000 || !/^[A-Za-z0-9+\/=]+$/.test(d)) return res.status(400).json({error: "bad data"});
+      await W.patchDoc("fileChunks/" + up + "_" + i, {fileId: up, i: i, data: d});
+      return res.status(200).json({ok: true});
+    }
+    if(b.action === "report-finish"){
+      var last = await W.getDoc("fileChunks/" + up + "_" + (total - 1));
+      if(!last || !last.data) return res.status(400).json({error: "最後のデータが届いていません。もう一度お試しください"});
+      var fn = String(b.filename || "報告書.pdf").replace(/[\\/:*?"<>|]/g, "").slice(0, 120) || "報告書.pdf";
+      await W.patchDoc("files/" + up, {projectId: t.p, projectName: t.pn || "", folderId: null, assetId: null, url: null, chunked: true, chunks: total,
+        filename: fn, contentType: "application/pdf", size: Math.max(0, Number(b.size) || 0), uploadedAt: new Date().toISOString(), uploadedBy: t.n, source: "報告写真アプリ"});
+      return res.status(200).json({ok: true, id: up});
+    }
+    return res.status(400).json({error: "unknown action"});
+  }catch(e){
+    return res.status(e.status || 500).json({error: "server", detail: String(e.message || e).slice(0, 200)});
+  }
+}
+
 async function ssoHandler(req, res){
   res.setHeader("Cache-Control", "no-store");
   if(req.method !== "POST"){ res.setHeader("Allow", "POST"); return res.status(405).json({error: "POST only"}); }
   var b = readBody(req);
   if(b.action === "usage") return usageHandler(req, res, b);
+  if(String(b.action || "").indexOf("report-") === 0) return reportHandler(req, res, b);
   try{
     var secret = F.env("SSO_SECRET");
     if(!secret || secret.length < 16) return res.status(200).json({error: "notconfigured"});
@@ -112,6 +182,7 @@ async function ssoHandler(req, res){
 }
 
 module.exports = async function handler(req, res) {
+  if(req.method === "OPTIONS"){ setCors(res); res.statusCode = 204; return res.end(); }
   if(req.method === "POST") return ssoHandler(req, res);
 
   var cfg = {
