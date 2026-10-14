@@ -974,6 +974,7 @@
     {id:"schedule", label:"工程表", icon:iGantt},
     {id:"reports", label:"報告書", icon:iDoc},
     {id:"chat", label:"チャット", icon:iChat},
+    {id:"apps", label:"連携アプリ", icon:iBox},
     {id:"members", label:"メンバー管理", icon:iUsers},
     {id:"customers", label:"顧客管理", icon:iBriefcase2},
     {id:"files", label:"写真・ファイル", icon:iImage},
@@ -1877,7 +1878,7 @@
   // 管理者が「設定 > 管理画面」で、スマホ下部のバーに出す項目と順番を決める。全員に共通。保存先: settings/mobileNav
   var MOBILE_NAV_DEFAULT = ["home","sales","construction","chat"];
   var MOBILE_NAV_MAX = 4;   // 右端の「メニュー」と合わせて5つまで
-  var BN_SHORT = {help:"使い方", home:"ホーム", tasks:"タスク", sales:"営業", construction:"施工", calendar:"予定", schedule:"工程表", reports:"報告書", chat:"チャット", members:"メンバー", customers:"顧客", files:"写真", settings:"設定"};
+  var BN_SHORT = {help:"使い方", home:"ホーム", tasks:"タスク", sales:"営業", construction:"施工", calendar:"予定", schedule:"工程表", reports:"報告書", chat:"チャット", members:"メンバー", customers:"顧客", files:"写真", apps:"連携", settings:"設定"};
   function mobileNavTabs(){
     var seen = {}, list = (state.mobileNav || MOBILE_NAV_DEFAULT).filter(function(id){
       if(seen[id] || !TABS.some(function(t){ return t.id===id; })) return false; seen[id] = 1; return true;
@@ -1991,18 +1992,29 @@
       .then(function(r){ return r.json(); })
       .then(function(j){ go(j && j.url ? j.url : plain); }, function(){ go(plain); });
   }
+  /* ============ 連携アプリ（外部アプリへのリンク集） ============ */
+  var APP_LINKS = [
+    {name:"備品管理アプリ", url:"https://bihinkanriapp.vercel.app/", icon:iBox, sso:true, desc:"備品・貸出の管理。同じ氏名の社員がいれば自動でログインします。"},
+    {name:"報告書アプリ", url:"https://houkokusho-two.vercel.app/", icon:iDoc, desc:"報告書の作成・管理。"}
+  ];
+  function renderAppsPage(){
+    return '<div style="max-width:780px"><div style="margin-bottom:12px"><h1 style="font-size:22px;margin:0">連携アプリ</h1><div style="font-size:12.5px;color:var(--ink-soft);margin-top:2px">社内の関連アプリを新しいタブで開きます。</div></div>'+
+      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">'+
+      APP_LINKS.map(function(a){
+        return '<a class="card" '+(a.sso?'data-bihin-link="1" ':'')+'href="'+esc(a.url)+'" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:inherit;display:block;padding:16px">'+
+          '<div style="display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px">'+a.icon()+'<span>'+esc(a.name)+' ↗</span></div>'+
+          '<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.6;margin-top:8px">'+esc(a.desc)+'</div>'+
+          '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px;word-break:break-all">'+esc(a.url.replace(/^https:\/\//,""))+'</div></a>';
+      }).join("")+'</div></div>';
+  }
   function renderShell(){
     var nav = document.getElementById("mainnav");
     var highlight = SUBPAGES[state.tab] ? state.returnTab : state.tab;
     // 設定 is now open to everyone (it holds each person's own 個人情報);
     // only the 会社情報 editing and the 管理画面 section inside it are admin-only.
-    var bihinHtml = '<a class="navbtn" data-bihin-link="1" href="https://bihinkanriapp.vercel.app/" target="_blank" rel="noopener noreferrer" style="text-decoration:none" title="備品管理アプリを新しいタブで開きます">'+iBox()+'<span>備品管理アプリ ↗</span></a>';
-    var houkokuHtml = '<a class="navbtn" href="https://houkokusho-two.vercel.app/" target="_blank" rel="noopener noreferrer" style="text-decoration:none" title="報告書アプリを新しいタブで開きます">'+iDoc()+'<span>報告書アプリ ↗</span></a>';
     nav.innerHTML = TABS.map(function(t){
-      return (t.id==="members" ? bihinHtml+houkokuHtml : "")+'<button class="navbtn'+(highlight===t.id?" active":"")+'" data-tab="'+t.id+'">'+t.icon()+'<span>'+t.label+'</span></button>';
+      return "" +'<button class="navbtn'+(highlight===t.id?" active":"")+'" data-tab="'+t.id+'">'+t.icon()+'<span>'+t.label+'</span></button>';
     }).join("");
-    var bihin = nav.querySelector("[data-bihin-link]");
-    if(bihin) bihin.addEventListener("click", function(ev){ openBihinApp(ev); });
     var bn = document.getElementById("bottomnav");
     if(bn){
       var BN = mobileNavTabs().map(function(id){ var t = TABS.find(function(x){ return x.id===id; }); return [id, BN_SHORT[id]||t.label, t.icon]; });
@@ -2082,12 +2094,14 @@
     else if(state.tab==="customers") c.innerHTML = banner+renderCustomers();
     else if(state.tab==="files") c.innerHTML = banner+renderFiles();
     else if(state.tab==="help") c.innerHTML = banner+renderHelpPage();
+    else if(state.tab==="apps") c.innerHTML = banner+renderAppsPage();
     else if(state.tab==="settings") c.innerHTML = banner+renderSettings();
     else if(state.tab==="project-form") c.innerHTML = banner+renderProjectForm();
     else if(state.tab==="project-detail") c.innerHTML = banner+renderProjectDetail();
     else if(state.tab==="project-files") c.innerHTML = banner+renderProjectFiles();
     else if(state.tab==="member-form") c.innerHTML = banner+renderMemberForm();
     bindEvents();
+    c.querySelectorAll("[data-bihin-link]").forEach(function(a){ a.addEventListener("click", function(ev){ openBihinApp(ev); }); });
     applyBulkUi();
     mobileSimplify();
     // 横に長いタブ（設定など）は、選択中のタブが見える位置までスクロールしておく
