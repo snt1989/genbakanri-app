@@ -2104,6 +2104,7 @@
     else if(state.tab==="project-files") c.innerHTML = banner+renderProjectFiles();
     else if(state.tab==="member-form") c.innerHTML = banner+renderMemberForm();
     bindEvents();
+    var ur = document.getElementById("usage-refresh"); if(ur) ur.addEventListener("click", function(){ usageLoad(); });
     c.querySelectorAll("[data-bihin-link]").forEach(function(a){ a.addEventListener("click", function(ev){ openBihinApp(ev); }); });
     applyBulkUi();
     mobileSimplify();
@@ -4655,6 +4656,44 @@
     var reset = d.getTime() - 9*3600000; if(reset <= at) reset += 86400000;
     return {at:at, reset:reset, active: Date.now() < reset};
   }
+  /* ---- Firestoreの実使用量（Cloud Monitoring・30秒ごとに自動更新） ---- */
+  function usageBody(){
+    var u = state.usage, h = "";
+    if(!db || window.claude) return '<div style="font-size:12.5px;color:var(--ink-soft)">この表示はVercel版（本番）でのみ使えます。</div>';
+    if(!u && state.usageLoading) return '<div style="font-size:12.5px;color:var(--ink-soft)">読み込み中…</div>';
+    if(u && u.error==="notconfigured") return '<div style="font-size:12.5px;line-height:1.8;color:var(--ink-soft)"><b>設定が必要です。</b>実際の使用量はGoogle Cloud Monitoringから取得します。<br>1) Google Cloud コンソール（このFirebaseと同じプロジェクト）で「Cloud Monitoring API」を有効化<br>2) サービスアカウントを作成し、役割「モニタリング閲覧者」を付けてJSONキーを発行<br>3) JSONキーの全文を、Vercelの環境変数 <code>GCP_SERVICE_ACCOUNT</code> に登録して再デプロイ<br><span style="color:var(--ink-faint)">※キーはチャットに貼らず、Vercelにだけ登録してください。</span></div>';
+    if(!u || u.error){ return '<div style="font-size:12.5px;color:var(--danger);line-height:1.7">取得できませんでした：'+esc((u && (u.detail||u.error)) || (state.usageErr||"不明なエラー"))+'</div>'; }
+    var row = function(label, val, lim){
+      var pct = Math.min(100, val/lim*100), col = pct>=90 ? "var(--danger)" : (pct>=60 ? "var(--warning)" : "var(--accent)");
+      return '<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap"><b style="font-size:13px">'+label+'</b><span class="num" style="font-size:13px"><b style="font-size:17px">'+val.toLocaleString()+'</b> ／ '+lim.toLocaleString()+' 件（'+pct.toFixed(1)+'%）</span></div>'+
+        '<div style="height:9px;border-radius:99px;background:var(--surface-2);overflow:hidden;margin-top:5px"><div style="height:100%;width:'+Math.max(pct,0.5)+'%;background:'+col+'"></div></div></div>';
+    };
+    h += row("読み取り", u.reads, u.limits.reads)+row("書き込み", u.writes, u.limits.writes)+row("削除", u.deletes, u.limits.deletes);
+    h += '<div style="font-size:11.5px;color:var(--ink-soft);line-height:1.8">リセット：'+fmtDateTime(new Date(u.dayEnd).toISOString())+' ごろ（無料枠の1日は太平洋時間の0時区切り）<br>最終更新：'+fmtDateTime(new Date(u.at).toISOString())+(state.usageLoading?'（更新中…）':'')+'</div>';
+    return h;
+  }
+  function usageLoad(){
+    var me = myMember();
+    if(!db || window.claude || !me || state.usageLoading) return;
+    state.usageLoading = true;
+    fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({action:"usage", auth:{name:me.name, password:me.password||""}})})
+      .then(function(r){ return r.json().catch(function(){ return {}; }); })
+      .then(function(j){ state.usage = j; state.usageErr = ""; }, function(e){ state.usage = null; state.usageErr = e.message || "通信エラー"; })
+      .then(function(){ state.usageLoading = false; var el = document.getElementById("usage-body"); if(el) el.innerHTML = usageBody(); });
+  }
+  function usageTick(){
+    if(usageTimer) return;
+    usageTimer = setInterval(function(){
+      if(!document.getElementById("usage-body")){ clearInterval(usageTimer); usageTimer = null; return; }
+      if(!document.hidden) usageLoad();
+    }, 30000);
+  }
+  var usageTimer = null;
+  function renderUsageCard(){
+    if(db && !window.claude){ setTimeout(function(){ if(!state.usage) usageLoad(); usageTick(); }, 0); }
+    return '<h2 style="font-size:13.5px;margin:4px 0 10px">データベースの実際の使用量（本日）</h2><div class="card" style="padding:14px 18px;margin-bottom:18px;max-width:760px"><div id="usage-body">'+usageBody()+'</div>'+
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><button class="btn outline sm" id="usage-refresh">今すぐ更新</button><span style="font-size:11px;color:var(--ink-faint)">Googleの集計値を30秒ごとに自動更新（反映まで1〜3分ほど遅れます）</span></div></div>';
+  }
   function renderQuotaCard(){
     var q = quotaInfo(), h = '<h2 style="font-size:13.5px;margin:4px 0 10px">データベースの読み取り上限</h2><div class="card" style="padding:14px 18px;margin-bottom:18px;max-width:760px">';
     if(q && q.active){
@@ -4698,6 +4737,7 @@
       stat("案件", state.projects.length)+
       stat("顧客", state.customers.length)+
     '</div>';
+    html += renderUsageCard();
     html += renderQuotaCard();
     html += renderStorageCard();
     html += renderGmailCard();
