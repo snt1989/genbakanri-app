@@ -1997,8 +1997,9 @@
     // 設定 is now open to everyone (it holds each person's own 個人情報);
     // only the 会社情報 editing and the 管理画面 section inside it are admin-only.
     var bihinHtml = '<a class="navbtn" data-bihin-link="1" href="https://bihinkanriapp.vercel.app/" target="_blank" rel="noopener noreferrer" style="text-decoration:none" title="備品管理アプリを新しいタブで開きます">'+iBox()+'<span>備品管理アプリ ↗</span></a>';
+    var houkokuHtml = '<a class="navbtn" href="https://houkokusho-two.vercel.app/" target="_blank" rel="noopener noreferrer" style="text-decoration:none" title="報告書アプリを新しいタブで開きます">'+iDoc()+'<span>報告書アプリ ↗</span></a>';
     nav.innerHTML = TABS.map(function(t){
-      return (t.id==="members" ? bihinHtml : "")+'<button class="navbtn'+(highlight===t.id?" active":"")+'" data-tab="'+t.id+'">'+t.icon()+'<span>'+t.label+'</span></button>';
+      return (t.id==="members" ? bihinHtml+houkokuHtml : "")+'<button class="navbtn'+(highlight===t.id?" active":"")+'" data-tab="'+t.id+'">'+t.icon()+'<span>'+t.label+'</span></button>';
     }).join("");
     var bihin = nav.querySelector("[data-bihin-link]");
     if(bihin) bihin.addEventListener("click", function(ev){ openBihinApp(ev); });
