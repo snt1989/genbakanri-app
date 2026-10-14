@@ -2668,7 +2668,7 @@
       html += todo.slice(0,8).map(function(t){
         var d = daysUntil(t.dueDate);
         var rel = d<0 ? '<span style="color:var(--danger);font-weight:700">'+Math.abs(d)+'日超過</span>' : (d===0?'<span style="color:var(--danger);font-weight:700">あと0日</span>':'<span style="color:var(--ink-faint)">あと'+d+'日</span>');
-        return '<div class="todo-row" data-row-id="'+esc(t.id)+'">'+
+        return '<div class="todo-row" data-row-id="'+esc(t.id)+'" data-todo-go="'+esc(t.projectId||"")+'" style="cursor:pointer" title="タップして開く">'+
           '<div class="todo-due"><div style="color:'+(d<=0?'var(--danger)':'var(--ink)')+'">'+fmtDate(t.dueDate)+'</div><div class="rel">'+rel+'</div></div>'+
           '<div><div class="todo-title">'+esc(t.title)+'</div>'+(t.projectName?'<a href="#" data-open-project="'+esc(t.projectId||"")+'">'+esc(t.projectName)+'</a>':'')+
           ' <button class="iconbtn" data-done-task="'+t.id+'" title="完了にする" style="float:right">'+iCheckIcon()+'</button></div>'+
@@ -7707,6 +7707,12 @@
       if(state.bulk && state.bulk.on) return;
       if(ev.target.closest("select,button,a,input,label,.bulk-cell")) return;
       goProjectDetail(tr.getAttribute("data-row-id")); }); });
+    c.querySelectorAll("[data-todo-go]").forEach(function(el){ el.addEventListener("click", function(ev){
+      if(ev.target.closest("button,a")) return;   // 完了ボタン・案件名リンクは各自の動作
+      var pid = el.getAttribute("data-todo-go");
+      if(pid && state.projects.some(function(p){ return p.id===pid; })) goProjectDetail(pid);
+      else { state.tab = "tasks"; render(); window.scrollTo(0,0); }
+    }); });
     c.querySelectorAll("[data-open-project]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var id=el.getAttribute("data-open-project"); if(id) goProjectDetail(id); }); });
     c.querySelectorAll("[data-status-quick]").forEach(function(el){
       el.addEventListener("click", function(ev){ ev.stopPropagation(); });
