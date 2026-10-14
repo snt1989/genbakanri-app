@@ -6259,6 +6259,33 @@
     });
   }
 
+  /* ---- 重複チェックの「確認済み（重複ではない）」記録（案件・顧客ごとに、組み合わせを保存） ---- */
+  function dupKey(a, b){ return a.id < b.id ? a.id+"|"+b.id : b.id+"|"+a.id; }
+  function dupIgn(kind){ var d = state.dupIgnore || (state.dupIgnore = {projects:[], customers:[]}); return d[kind] || (d[kind] = []); }
+  function dupIgnored(kind, a, b){ return dupIgn(kind).indexOf(dupKey(a,b))!==-1; }
+  function dupIgnoreLoad(cb){
+    if(state.dupIgnoreLoaded || !db){ cb(); return; }
+    db.doc("settings/dupIgnore").get().then(function(sn){
+      var d = sn && sn.exists ? sn.data() : null;
+      if(d){ state.dupIgnore = {projects:Array.isArray(d.projects)?d.projects:[], customers:Array.isArray(d.customers)?d.customers:[]}; }
+      state.dupIgnoreLoaded = true; cb();
+    }, function(){ state.dupIgnoreLoaded = true; cb(); });
+  }
+  function dupIgnoreSave(){
+    if(!db) return Promise.resolve();
+    var d = state.dupIgnore || {projects:[], customers:[]};
+    return db.doc("settings/dupIgnore").set({projects:d.projects||[], customers:d.customers||[]}).catch(function(){ toast("確認済みの保存に失敗しました"); });
+  }
+  function dupMarkChecked(kind, group){
+    var l = dupIgn(kind);
+    for(var i=0;i<group.length;i++) for(var j=i+1;j<group.length;j++){ var k = dupKey(group[i], group[j]); if(l.indexOf(k)===-1) l.push(k); }
+    return dupIgnoreSave();
+  }
+  function dupFooter(kind){
+    var n = dupIgn(kind).length;
+    return (n ? '<button class="btn" id="dup-reset" style="margin-right:auto">確認済み '+n+'組を元に戻す</button>' : '')+'<button class="btn" data-close-modal>閉じる</button>';
+  }
+
   /* ---- 案件の重複チェック ---- */
   function projNorm(x){ return String(x||"").normalize("NFKC").toLowerCase().replace(/[\s\u3000・\-ー_.,、。()（）【】\[\]「」]/g,""); }
   function projSameCustomer(a, b){
@@ -6283,22 +6310,26 @@
   function projDupLine(p){
     return '<b>'+esc(p.name||"（名称なし）")+'</b> <span style="color:var(--ink-faint)">'+esc([p.customerName, propertyAddressOf(p).full||p.address, p.status].filter(Boolean).join("　"))+'</span>';
   }
-  function openProjectDupScan(){
+  function openProjectDupScan(){ dupIgnoreLoad(openProjectDupScan2); }
+  function openProjectDupScan2(){
     var groups = [], seen = {};
     state.projects.forEach(function(a, i){
       var members = [a];
-      state.projects.forEach(function(b, j){ if(j>i && projMatchReasons(a,b).length) members.push(b); });
+      state.projects.forEach(function(b, j){ if(j>i && projMatchReasons(a,b).length && !dupIgnored("projects", a, b)) members.push(b); });
       if(members.length>1 && !seen[a.id]){ members.forEach(function(m){ seen[m.id]=1; }); groups.push(members); }
     });
-    var body = groups.length ? groups.map(function(g){
+    var body = groups.length ? groups.map(function(g, gi){
       var why = projMatchReasons(g[0], g[1]);
-      return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px">'+
-        (why.length?'<div style="font-size:11.5px;color:var(--warning);font-weight:700;margin-bottom:2px">'+esc(why.join("・"))+'</div>':'')+
+      return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
+        '<span style="font-size:11.5px;color:var(--warning);font-weight:700">'+(why.length?esc(why.join("・")):"")+'</span>'+
+        (state.canWrite?'<button class="btn sm" data-pdup-ok="'+gi+'">確認済み（重複ではない）</button>':'')+'</div>'+
         g.map(function(p){
           return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;padding:3px 0"><span style="font-size:12.5px">'+projDupLine(p)+'</span><button class="btn sm" data-pdup-open="'+esc(p.id)+'">開く</button></div>';
         }).join("")+'</div>';
     }).join("") : '<div style="font-size:13px">重複している可能性のある案件は見つかりませんでした。</div>';
-    openModal("案件の重複チェック", '<div style="font-size:12px;color:var(--ink-faint);margin-bottom:8px">案件名が同じ・似ている、または顧客と住所が同じ案件をまとめています。'+(groups.length?'（'+groups.length+'組）':'')+'</div><div style="max-height:55vh;overflow:auto">'+body+'</div>', '<button class="btn" data-close-modal>閉じる</button>');
+    openModal("案件の重複チェック", '<div style="font-size:12px;color:var(--ink-faint);margin-bottom:8px">案件名が同じ・似ている、または顧客と住所が同じ案件をまとめています。'+(groups.length?'（'+groups.length+'組）':'')+'</div><div style="max-height:55vh;overflow:auto">'+body+'</div>', dupFooter("projects"));
+    document.querySelectorAll("#modal-box [data-pdup-ok]").forEach(function(el){ el.addEventListener("click", function(){ dupMarkChecked("projects", groups[Number(el.getAttribute("data-pdup-ok"))]).then(function(){ toast("確認済みにしました（リストから外しました）"); openProjectDupScan2(); }); }); });
+    var rs = document.getElementById("dup-reset"); if(rs) rs.addEventListener("click", function(){ state.dupIgnore.projects = []; dupIgnoreSave().then(openProjectDupScan2); });
     document.querySelectorAll("#modal-box [data-pdup-open]").forEach(function(el){ el.addEventListener("click", function(){ var id = el.getAttribute("data-pdup-open"); closeModal(); goProjectDetail(id); }); });
   }
 
@@ -6326,19 +6357,22 @@
       dups.slice(0,5).map(function(d){ return '<div>・<a href="#" data-dup-edit="'+esc(d.c.id)+'">'+esc(d.c.name)+'</a>'+(d.c.phone?'（'+esc(d.c.phone)+'）':'')+' <span style="color:var(--ink-faint)">'+esc(d.reasons.join("・"))+'</span></div>'; }).join("")+
       '<div style="margin-top:4px;color:var(--ink-faint)">問題なければ、もう一度「登録」を押すと登録します。</div></div>';
   }
-  function openCustomerDupScan(){
+  function openCustomerDupScan(){ dupIgnoreLoad(openCustomerDupScan2); }
+  function openCustomerDupScan2(){
     var groups = [], seen = {};
     state.customers.forEach(function(a, i){
       var members = [a];
-      state.customers.forEach(function(b, j){ if(j>i && custMatchReasons(a,b).length) members.push(b); });
+      state.customers.forEach(function(b, j){ if(j>i && custMatchReasons(a,b).length && !dupIgnored("customers", a, b)) members.push(b); });
       if(members.length>1 && !seen[a.id]){ members.forEach(function(m){ seen[m.id]=1; }); groups.push(members); }
     });
     var body = groups.length ? groups.map(function(g, gi){
-      return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px">'+(state.canWrite?'<div style="text-align:right"><button class="btn sm primary" data-dup-merge="'+gi+'">結合する</button></div>':'')+g.map(function(c){
+      return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px">'+(state.canWrite?'<div style="text-align:right;display:flex;gap:6px;justify-content:flex-end"><button class="btn sm" data-dup-ok="'+gi+'">確認済み（重複ではない）</button><button class="btn sm primary" data-dup-merge="'+gi+'">結合する</button></div>':'')+g.map(function(c){
         return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;padding:3px 0"><span style="font-size:12.5px"><b>'+esc(c.name)+'</b> <span style="color:var(--ink-faint)">'+esc([c.phone,c.email,c.address].filter(Boolean).join("　"))+'（案件 '+custProjCount(c)+'件）</span></span><button class="btn sm" data-dup-edit="'+esc(c.id)+'">開く</button></div>';
       }).join("")+'</div>';
     }).join("") : '<div style="font-size:13px">重複している可能性のある顧客は見つかりませんでした。</div>';
-    openModal("重複チェック", '<div style="font-size:12px;color:var(--ink-faint);margin-bottom:8px">名前（株式会社などを除く）・電話番号・メールが同じか似ている顧客をまとめています。'+(groups.length?'（'+groups.length+'組）':'')+'</div><div style="max-height:55vh;overflow:auto">'+body+'</div>', '<button class="btn" data-close-modal>閉じる</button>');
+    openModal("重複チェック", '<div style="font-size:12px;color:var(--ink-faint);margin-bottom:8px">名前（株式会社などを除く）・電話番号・メールが同じか似ている顧客をまとめています。'+(groups.length?'（'+groups.length+'組）':'')+'</div><div style="max-height:55vh;overflow:auto">'+body+'</div>', dupFooter("customers"));
+    document.querySelectorAll("#modal-box [data-dup-ok]").forEach(function(el){ el.addEventListener("click", function(){ dupMarkChecked("customers", groups[Number(el.getAttribute("data-dup-ok"))]).then(function(){ toast("確認済みにしました（リストから外しました）"); openCustomerDupScan2(); }); }); });
+    var rs = document.getElementById("dup-reset"); if(rs) rs.addEventListener("click", function(){ state.dupIgnore.customers = []; dupIgnoreSave().then(openCustomerDupScan2); });
     document.querySelectorAll("#modal-box [data-dup-edit]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var id = el.getAttribute("data-dup-edit"); closeModal(); openCustomerForm(id); }); });
     document.querySelectorAll("#modal-box [data-dup-merge]").forEach(function(el){ el.addEventListener("click", function(){ openCustomerMerge(groups[Number(el.getAttribute("data-dup-merge"))]); }); });
   }
