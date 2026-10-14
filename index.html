@@ -3347,6 +3347,9 @@
     if(fullAddr||cs.postalCode) crows += kvRow("住所", esc(custAddr), "c_addr", p);
     if(cs.notes) crows += kvRow("社内メモ", esc(cs.notes), "c_notes", p);
     html += section("顧客情報", crows, "customer");
+    html += '<div class="card" style="padding:12px 18px;font-size:12.5px;line-height:1.9;color:var(--ink-soft)"><div style="font-weight:700;color:var(--ink);font-size:13px;margin-bottom:2px">登録・編集の記録</div>'+
+      '作成：'+(p.createdAt?fmtDateTime(p.createdAt):"—")+' ／ <b style="color:var(--ink)">'+esc(p.createdBy||"記録なし")+'</b>'+(p.source?'（'+esc(p.source)+'から登録）':'')+'<br>'+
+      '最終編集：'+((p.updatedAt||p.createdAt)?fmtDateTime(p.updatedAt||p.createdAt):"—")+' ／ <b style="color:var(--ink)">'+esc(p.updatedBy||"記録なし")+'</b></div>';
 
     html += '</div>'; // end left col
 
@@ -6290,6 +6293,7 @@
       if(!selfOk){ toast("メンバーの変更は管理者のみ行えます"); return; }
     }
     data.updatedAt = new Date().toISOString();
+    if((col==="projects"||col==="customers") && state.myName){ data.updatedBy = state.myName; if(!id) data.createdBy = state.myName; }
     var oldRec = id ? (rawOf(col).find(function(x){ return x.id===id; }) || null) : null;
     if(!db){
       var arr = rawOf(col);
@@ -6615,6 +6619,8 @@
     end:{label:"施工完了予定日", sort:["end","endr"], html:function(p){ return '<td class="num" data-label="施工完了予定日">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.endDate))+'</td>'; }},
     amount:{label:"金額", sort:["amount","amountr"], html:function(p){ return '<td class="num" data-label="金額">'+(hiddenFor(p,"p_amount")?"—":fmtYen(p.amount))+'</td>'; }},
     created:{label:"登録日", html:function(p){ return '<td class="num" data-label="登録日">'+fmtDate((p.createdAt||"").slice(0,10))+'</td>'; }},
+    createdBy:{label:"作成者", html:function(p){ return '<td data-label="作成者">'+esc(p.createdBy||"—")+'</td>'; }},
+    updatedBy:{label:"最終編集者", html:function(p){ return '<td data-label="最終編集者">'+esc(p.updatedBy||"—")+'</td>'; }},
     upd:{label:"更新日", sort:["upd","updr"], html:function(p){ return '<td class="num" data-label="更新日">'+fmtDate((p.updatedAt||p.createdAt||"").slice(0,10))+'</td>'; }}
   };
   var PROJ_COLS_DEFAULT = ["cust","status","work","start","end","amount","upd"];
@@ -6875,6 +6881,7 @@
   function saveRaw(col, id, data){
     var now = new Date().toISOString();
     data = Object.assign({}, data, {updatedAt:now});
+    if((col==="projects"||col==="customers") && state.myName){ data.updatedBy = state.myName; if(!id) data.createdBy = state.myName; }
     if(!db){
       var arr = rawOf(col);
       if(id){ var i = arr.findIndex(function(x){return x.id===id;}); if(i>-1) arr[i] = Object.assign({}, arr[i], data); }

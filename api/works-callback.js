@@ -111,7 +111,7 @@ async function registerProject(src, me, text){
     contactName: "customerContactName", department: "customerDepartment"};
   var now = new Date().toISOString();
   var rec = {name: f.name, assignees: assignees, division: division, status: status, amount: amount || 0, startDate: start, endDate: end, workInstruction: f.note || "", handoverDate: "",
-    customerId: cid || "", secretFields: {}, addressMode: "same", createdAt: now, updatedAt: now, source: "LINE WORKS"};
+    customerId: cid || "", secretFields: {}, addressMode: "same", createdAt: now, updatedAt: now, createdBy: me.name || "", updatedBy: me.name || "", source: "LINE WORKS"};
   Object.keys(KEYS).forEach(function(k){ rec[KEYS[k]] = cdata[k] != null ? cdata[k] : ""; });
   if(cust && f.address){ rec.prefecture = pref || rec.prefecture; rec.address = addr || rec.address; }   // 案件ごとの住所を優先
   if(!cust){ rec.customerName = f.customer; }
