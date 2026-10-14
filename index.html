@@ -1980,6 +1980,17 @@
   }
 
   /* ============ shell ============ */
+  // 備品管理アプリを開く。サーバーが使えるときは、同じ氏名の借受者としてログイン済みの状態で開く（SSO.md）
+  function openBihinApp(ev){
+    var plain = "https://bihinkanriapp.vercel.app/", me = myMember();
+    if(!db || window.claude || !me) return;   // 通常のリンクとして開く
+    ev.preventDefault();
+    var w = window.open("", "_blank");        // ポップアップ制限を避けるため、先に空のタブを開く
+    var go = function(u){ if(w){ try{ w.opener = null; }catch(e){} w.location.href = u; } else { location.href = u; } };
+    fetch("/api/sso", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({auth:{name:me.name, password:me.password||""}})})
+      .then(function(r){ return r.json(); })
+      .then(function(j){ go(j && j.url ? j.url : plain); }, function(){ go(plain); });
+  }
   function renderShell(){
     var nav = document.getElementById("mainnav");
     var highlight = SUBPAGES[state.tab] ? state.returnTab : state.tab;
@@ -1987,7 +1998,9 @@
     // only the 会社情報 editing and the 管理画面 section inside it are admin-only.
     nav.innerHTML = TABS.map(function(t){
       return '<button class="navbtn'+(highlight===t.id?" active":"")+'" data-tab="'+t.id+'">'+t.icon()+'<span>'+t.label+'</span></button>';
-    }).join("")+'<a class="navbtn" href="https://bihinkanriapp.vercel.app/" target="_blank" rel="noopener noreferrer" style="text-decoration:none" title="備品管理アプリを新しいタブで開きます">'+iBox()+'<span>備品管理アプリ ↗</span></a>';
+    }).join("")+'<a class="navbtn" data-bihin-link="1" href="https://bihinkanriapp.vercel.app/" target="_blank" rel="noopener noreferrer" style="text-decoration:none" title="備品管理アプリを新しいタブで開きます">'+iBox()+'<span>備品管理アプリ ↗</span></a>';
+    var bihin = nav.querySelector("[data-bihin-link]");
+    if(bihin) bihin.addEventListener("click", function(ev){ openBihinApp(ev); });
     var bn = document.getElementById("bottomnav");
     if(bn){
       var BN = mobileNavTabs().map(function(id){ var t = TABS.find(function(x){ return x.id===id; }); return [id, BN_SHORT[id]||t.label, t.icon]; });
