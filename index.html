@@ -3350,6 +3350,52 @@
   }
 
   /* ============ PROJECT DETAIL (full page) ============ */
+  /* ---- 案件のメモ（案件データの中に保存。社外メンバーには表示しない） ---- */
+  function projMemos(p){ return Array.isArray(p.memos) ? p.memos : []; }
+  function renderMemoSection(p){
+    if(isExternalViewer()) return "";
+    var list = projMemos(p).slice().sort(function(a,b){ return String(b.at||"").localeCompare(String(a.at||"")); });
+    var isAdm = !!state.isAdmin;
+    var h = '<div class="form-section-title"><span>メモ <span class="badge line-gray">'+list.length+'</span></span><span>'+(state.canWrite?'<button class="btn sm primary" data-memo-add="'+esc(p.id)+'">'+iPlus()+' メモを追加</button>':'')+'</span></div>';
+    h += '<div class="card" style="padding:6px 18px">'+(list.length ? list.map(function(m){
+      var mine = m.by===state.myName;
+      return '<div style="padding:10px 0;border-bottom:1px solid var(--border)"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px;color:var(--ink-faint)"><b style="color:var(--ink);font-size:12.5px">'+esc(m.by||"不明")+'</b><span class="num">'+esc(fmtDateTime(m.at))+'</span>'+(m.edited?'<span>（編集済 '+esc(fmtDateTime(m.edited))+'）</span>':'')+
+        ((state.canWrite && (mine||isAdm))?'<button class="btn sm" style="margin-left:auto" data-memo-edit="'+esc(m.id)+'" data-memo-pid="'+esc(p.id)+'">'+iEdit()+' 編集</button>':'')+'</div>'+
+        '<div style="font-size:13px;line-height:1.75;margin-top:4px;white-space:pre-wrap;word-break:break-word">'+esc(m.text||"")+'</div></div>';
+    }).join("") : '<div style="font-size:12px;color:var(--ink-faint);padding:12px 0">メモはまだありません。申し送り・注意点・連絡事項などを自由に残せます（社外メンバーには表示されません）。</div>')+'</div>';
+    return h;
+  }
+  function saveMemos(pid, arr, msg){
+    var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
+    if(!db){ p.memos = arr; closeModal(); toast(msg+"（プレビューのみ）"); render(); return; }
+    // メモの追加・編集は「案件の最終編集者」には含めない
+    db.collection("projects").doc(pid).update({memos:arr}).then(function(){ closeModal(); toast(msg); }).catch(function(){ toast("保存に失敗しました"); });
+  }
+  function openMemoModal(pid, memoId){
+    var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
+    var cur = memoId ? projMemos(p).find(function(m){ return m.id===memoId; }) : null;
+    if(memoId && !cur) return;
+    openModal(cur ? "メモの編集" : "メモを追加",
+      '<label class="field">メモ<textarea id="memo-text" rows="7" maxlength="3000" placeholder="申し送り・注意点・連絡事項など" style="width:100%">'+esc(cur?cur.text:"")+'</textarea></label><div style="font-size:11.5px;color:var(--ink-faint)">社外メンバーには表示されません。記入者名と日時が残ります。</div>',
+      (cur?'<button class="btn" id="memo-del" style="color:var(--danger);margin-right:auto">'+iTrash()+' 削除</button>':'')+'<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="memo-save">保存する</button>');
+    setTimeout(function(){ var t = document.getElementById("memo-text"); if(t) t.focus(); }, 50);
+    document.getElementById("memo-save").addEventListener("click", function(){
+      var text = document.getElementById("memo-text").value.trim();
+      if(!text){ toast("メモを入力してください"); return; }
+      var fresh = state.projects.find(function(x){ return x.id===pid; }) || p, arr = projMemos(fresh).slice(), now = new Date().toISOString();
+      if(cur){ arr = arr.map(function(m){ return m.id===cur.id ? Object.assign({}, m, {text:text, edited:now}) : m; }); }
+      else{
+        if(arr.length>=300){ toast("メモは1案件につき300件までです"); return; }
+        arr.push({id:uid(), text:text, by:state.myName||"", at:now});
+      }
+      saveMemos(pid, arr, cur ? "メモを更新しました" : "メモを追加しました");
+    });
+    var d = document.getElementById("memo-del");
+    if(d) d.addEventListener("click", function(){
+      var fresh = state.projects.find(function(x){ return x.id===pid; }) || p;
+      saveMemos(pid, projMemos(fresh).filter(function(m){ return m.id!==cur.id; }), "メモを削除しました");
+    });
+  }
   function projHistoryHtml(p){
     var h = Array.isArray(p.history) ? p.history.slice().reverse() : [];
     if(!h.length) return '<div style="margin-top:6px;font-size:11.5px;color:var(--ink-faint)">変更の履歴は、これ以降の登録・編集から記録されます。</div>';
@@ -3406,6 +3452,8 @@
       return '<div class="pf-docrow" style="align-items:center"><div style="flex:1;min-width:0"><a class="nm" href="#" data-report-view="'+esc(r.id)+'">'+(r.secret?iLock()+' ':'')+esc(r.title||"（無題）")+'</a><div class="d" style="font-size:11.5px;color:var(--ink-faint)">'+esc(fmtDate(r.date))+' ・ '+esc(r.type||"")+(r.author?' ・ '+esc(r.author):'')+'</div></div>'+
         '<span class="badge '+((r.status||"下書き")==="提出済"?"line-green":"line-gray")+'">'+esc(r.status||"下書き")+'</span> <button class="btn sm" data-report-edit="'+esc(r.id)+'">'+iEdit()+' 編集</button></div>';
     }).join("")+(prReports.length>8?'<div style="font-size:12px;padding:8px 0"><a href="#" data-goto-reports="'+esc(p.id)+'">すべて見る（'+prReports.length+'件）</a></div>':'') : '<div style="font-size:12px;color:var(--ink-faint);padding:12px 0">この案件の報告書はまだありません</div>')+'</div>';
+
+    html += renderMemoSection(p);
 
     var ext = isExternalViewer();
     var lockTag = function(key){ return (!ext && secretSet(p).indexOf(key)!==-1) ? ' '+iLock() : ''; };
@@ -4897,6 +4945,8 @@
     });
     var q = document.getElementById("rp-q");
     if(q) q.addEventListener("change", function(){ f.q = q.value; render(); });
+    c.querySelectorAll("[data-memo-add]").forEach(function(el){ el.addEventListener("click", function(){ openMemoModal(el.getAttribute("data-memo-add"), null); }); });
+    c.querySelectorAll("[data-memo-edit]").forEach(function(el){ el.addEventListener("click", function(){ openMemoModal(el.getAttribute("data-memo-pid"), el.getAttribute("data-memo-edit")); }); });
     c.querySelectorAll("[data-report-add]").forEach(function(el){ el.addEventListener("click", function(){ openReportModal(null, el.getAttribute("data-report-add")||""); }); });
     c.querySelectorAll("[data-goto-reports]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); reportFilter().project = el.getAttribute("data-goto-reports"); state.tab="reports"; render(); }); });
     c.querySelectorAll("[data-report-edit]").forEach(function(el){ el.addEventListener("click", function(){ var r=state.reports.find(function(x){return x.id===el.getAttribute("data-report-edit");}); if(r) openReportModal(r); }); });
