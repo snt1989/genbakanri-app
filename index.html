@@ -1987,7 +1987,7 @@
     ev.preventDefault();
     var w = window.open("", "_blank");        // ポップアップ制限を避けるため、先に空のタブを開く
     var go = function(u){ if(w){ try{ w.opener = null; }catch(e){} w.location.href = u; } else { location.href = u; } };
-    fetch("/api/sso", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({auth:{name:me.name, password:me.password||""}})})
+    fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({auth:{name:me.name, password:me.password||""}})})
       .then(function(r){ return r.json(); })
       .then(function(j){ go(j && j.url ? j.url : plain); }, function(){ go(plain); });
   }
