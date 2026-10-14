@@ -230,6 +230,16 @@
   .chat-item{display:flex;gap:12px;padding:16px 14px;cursor:pointer;border-bottom:1px solid var(--border);align-items:flex-start;min-height:92px;}
   .chat-item:hover{background:#EEF1F0;}
   .chat-item.active{background:var(--surface);}
+  /* チャットの種類ごとの色：案件＝緑／グループ＝青 */
+  .chat-item.ck-project{border-left:6px solid #2f8f5b;background:#eef8f2;}
+  .chat-item.ck-group{border-left:6px solid #3a6fd0;background:#eef3fc;}
+  .chat-item.ck-project:hover{background:#e2f3e9;} .chat-item.ck-group:hover{background:#e0eafa;}
+  .chat-item.ck-project.active{background:#fff;box-shadow:inset 0 0 0 2px #2f8f5b;} .chat-item.ck-group.active{background:#fff;box-shadow:inset 0 0 0 2px #3a6fd0;}
+  .chat-item.ck-project .chat-ava{background:#2f8f5b;} .chat-item.ck-group .chat-ava{background:#3a6fd0;}
+  .chat-item.ck-project.active .chat-ava{background:#2f8f5b;} .chat-item.ck-group.active .chat-ava{background:#3a6fd0;}
+  .chat-kindtag{display:inline-block;font-weight:700;font-size:10.5px;padding:1px 8px;border-radius:999px;color:#fff;}
+  .chat-kindtag.kp{background:#2f8f5b;} .chat-kindtag.kg{background:#3a6fd0;}
+  .chat-kinds button[data-chat-kind="project"]{box-shadow:inset 0 -3px 0 #2f8f5b;} .chat-kinds button[data-chat-kind="group"]{box-shadow:inset 0 -3px 0 #3a6fd0;}
   .chat-ava{width:46px;height:46px;border-radius:50%;background:#DFE4E2;color:#fff;display:flex;align-items:center;justify-content:center;flex:none;}
   .chat-ava svg{width:22px;height:22px;stroke:#fff;}
   .chat-item.active .chat-ava{background:#D5DBD8;}
@@ -4083,11 +4093,11 @@
       html += sorted.map(function(c){
         var sec = (kindTab!=="pinned" && sorted.some(isPinned)) ? (isPinned(c)?"ピン留め":"その他") : null, lab = "";
         if(sec && sec!==lastSec){ lab = '<div class="chat-seclabel">'+sec+'</div>'; } lastSec = sec;
-        return lab+'<div class="chat-item'+(c.id===state.activeChat?" active":"")+'" data-select-chat="'+esc(c.id)+'">'+
+        return lab+'<div class="chat-item '+(c.kind==="group"?"ck-group":"ck-project")+(c.id===state.activeChat?" active":"")+'" data-select-chat="'+esc(c.id)+'">'+
           '<button class="chat-pin'+(isPinned(c)?" on":"")+'" data-chat-pin="'+esc(c.id)+'" title="'+(isPinned(c)?"ピン留めを外す":"ピン留めする")+'">'+iPin(isPinned(c))+'</button>'+
           '<button class="chat-pin chat-hide" data-chat-hide="'+esc(c.id)+'" title="'+(isHidden(c)?"再表示する":"非表示にする")+'">'+iEye(!isHidden(c))+'</button>'+
           '<div class="chat-ava">'+(c.kind==="group"?iUsers():iDoc())+'</div>'+
-          '<div class="chat-item-main"><div class="chat-item-name">'+esc(c.name)+((c.id!==state.activeChat && (c.reads||{})[state.myName] && String(c.updatedAt||"")>String((c.reads||{})[state.myName]))?' <span class="chat-unread">未読</span>':'')+'</div><div class="chat-item-meta"><span>'+(c.kind==="group"?"グループ":"案件")+'</span><span>'+esc(fmtAgo(c.updatedAt))+'</span></div></div>'+
+          '<div class="chat-item-main"><div class="chat-item-name">'+esc(c.name)+((c.id!==state.activeChat && (c.reads||{})[state.myName] && String(c.updatedAt||"")>String((c.reads||{})[state.myName]))?' <span class="chat-unread">未読</span>':'')+'</div><div class="chat-item-meta"><span class="chat-kindtag '+(c.kind==="group"?"kg":"kp")+'">'+(c.kind==="group"?"グループ":"案件")+'</span><span>'+esc(fmtAgo(c.updatedAt))+'</span></div></div>'+
         '</div>';
       }).join("");
     }
