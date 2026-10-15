@@ -1284,6 +1284,7 @@
       items.push({grp:"project", title:p.name, sub:"工期の終了が近づいています（"+fmtDate(p.endDate)+"）", go:function(){ goProjectDetail(p.id); }});
     });
     state.chats.forEach(function(c){
+      if(!chatJoined(c)) return;
       var rd = (c.reads||{})[me];
       if(rd && String(c.updatedAt||"")>String(rd)) items.push({grp:"chat", urgent:true, title:c.name||"チャット", sub:"未読のメッセージがあります（"+fmtAgo(c.updatedAt)+"）", go:function(){ state.activeChat = c.id; state.chatPaneOpen = true; state.viewingProjectId = null; state.tab = "chat"; render(); }});
     });
@@ -4246,9 +4247,21 @@
       '<div style="font-weight:700;font-size:12.5px;margin:14px 0 2px;color:var(--danger)">未読 '+rs.unread.length+'人</div>'+(rs.unread.length?rs.unread.map(function(n){ return li(n, rd[n]?'最後に開いた '+esc(fmtDateTime(rd[n])):'まだ開いていません'); }).join(""):'<div style="font-size:12px;color:var(--ink-faint)">全員が読みました</div>'),
       '<button class="btn" data-close-modal>閉じる</button>');
   }
+  // 自分が参加しているチャットだけを表示する（サーバーの通知宛先 api/push.js と同じ判定）
+  //   案件チャット … 案件の担当者／グループ … メンバーに選ばれた人（メンバー未設定の古いグループは全員）
+  function chatJoined(c){
+    var me = state.myName; if(!me) return true;
+    if(c.kind==="project"){
+      var p = c.projectId ? rawStore.projects.find(function(x){ return x.id===c.projectId; }) : null;
+      if(!p && c.name) p = rawStore.projects.find(function(x){ return x.name===c.name; });
+      return !!p && isMyProject(p);
+    }
+    if(Array.isArray(c.members) && c.members.length) return c.members.indexOf(me)!==-1;
+    return true;
+  }
   function renderChat(){
-    if(!state.loaded.chats) return skeleton();
-    var visibleChats = state.chats.filter(function(c){ return c.kind!=="project" || !c.projectId || projectVisibleId(c.projectId); });
+    if(!state.loaded.chats || !state.loaded.projects) return skeleton();
+    var visibleChats = state.chats.filter(chatJoined);
     var q = (state.chatQ||"").trim().toLowerCase();
     var isPinned = function(c){ return Array.isArray(c.pinnedBy) && c.pinnedBy.indexOf(state.myName)!==-1; };
     var kindTab = state.chatKind || "all";
@@ -6616,6 +6629,7 @@
         db.collection("chats").doc(chat.id).update(patch).then(function(){ closeModal(); toast("チャットを更新しました"); }).catch(function(){ toast("保存に失敗しました"); });
         return;
       }
+      if(state.myName && members.indexOf(state.myName)===-1) members.unshift(state.myName);   // 作った人が自分のチャットを見失わないように
       var data = { name:name, kind:"group", members:members, updatedAt:new Date().toISOString() };
       if(!db){ data.id=uid(); state.chats.unshift(data); state.activeChat=data.id; closeModal(); render(); return; }
       db.collection("chats").add(data).then(function(ref){ state.activeChat=ref.id; closeModal(); }).catch(function(){toast("作成に失敗しました");});
@@ -8233,6 +8247,7 @@
       el.addEventListener("click", function(){
         var p = state.projects.find(function(x){return x.id===el.getAttribute("data-chat-project");});
         if(!p) return;
+        if(!isMyProject(p)){ toast("この案件の担当者ではないため、チャットは表示されません"); return; }
         ensureProjectChat(p, function(chatId){ state.activeChat=chatId; setTab("chat"); });
       });
     });
@@ -8240,6 +8255,7 @@
       el.addEventListener("click", function(ev){ ev.preventDefault();
         var p = state.projects.find(function(x){return x.id===state.viewingProjectId;});
         if(!p) return;
+        if(!isMyProject(p)){ toast("この案件の担当者ではないため、チャットは表示されません"); return; }
         ensureProjectChat(p, function(chatId){ state.activeChat=chatId; setTab("chat"); });
       });
     });
