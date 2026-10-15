@@ -1626,11 +1626,11 @@
 
   function subscribeAll(){
     db.collection("projects").onSnapshot(function(snap){
-      state.projects = snap.docs.map(toObj); state.loaded.projects=true; render();
+      state.projects = snap.docs.map(toObj); state.loaded.projects=true; bgRender();
     }, onErr);
     db.collection("customers").onSnapshot(function(snap){
       state.customers = snap.docs.map(toObj).sort(function(a,b){return (b.registeredDate||"").localeCompare(a.registeredDate||"");});
-      state.loaded.customers=true; render();
+      state.loaded.customers=true; bgRender();
     }, onErr);
     db.collection("members").onSnapshot(function(snap){
       state.members = snap.docs.map(toObj); state.loaded.members=true; state.offlineMode=false; updateLoginHint();
@@ -1640,23 +1640,23 @@
         var me = state.members.find(function(x){ return x.name===state.myName; });
         if(me) state.isAdmin = memberPermission(me)==="admin";
       }
-      render(); tryAutoLogin();
+      bgRender(); tryAutoLogin();
     }, onErr);
     db.collection("tasks").orderBy("dueDate").onSnapshot(function(snap){
-      state.tasks = snap.docs.map(toObj); state.loaded.tasks=true; render();
+      state.tasks = snap.docs.map(toObj); state.loaded.tasks=true; bgRender();
     }, onErr);
     db.collection("chats").onSnapshot(function(snap){
-      state.chats = snap.docs.map(toObj); state.loaded.chats=true; render();
+      state.chats = snap.docs.map(toObj); state.loaded.chats=true; bgRender();
     }, onErr);
     db.collection("reports").onSnapshot(function(snap){
-      state.reports = snap.docs.map(toObj); state.loaded.reports=true; render();
-    }, function(e){ state.loaded.reports=true; state.reports=[]; render(); });
+      state.reports = snap.docs.map(toObj); state.loaded.reports=true; bgRender();
+    }, function(e){ state.loaded.reports=true; state.reports=[]; bgRender(); });
     db.collection("events").onSnapshot(function(snap){
-      state.events = snap.docs.map(toObj); state.loaded.events=true; render();
-    }, function(e){ state.loaded.events=true; state.events=[]; render(); });
+      state.events = snap.docs.map(toObj); state.loaded.events=true; bgRender();
+    }, function(e){ state.loaded.events=true; state.events=[]; bgRender(); });
     db.collection("steps").onSnapshot(function(snap){
-      state.steps = snap.docs.map(toObj); state.loaded.steps=true; render();
-    }, function(e){ state.loaded.steps=true; state.steps=[]; render(); });
+      state.steps = snap.docs.map(toObj); state.loaded.steps=true; bgRender();
+    }, function(e){ state.loaded.steps=true; state.steps=[]; bgRender(); });
   }
 
   /* ---- 読み取り量を減らすため、写真・ファイル／フォルダ／ゴミ箱は「必要な画面を開いたとき」だけ読み込む ---- */
@@ -1671,10 +1671,10 @@
     state.lazyOn[name] = true;
     var q = db.collection(name); if(LAZY_COLS[name].order) q = q.orderBy(LAZY_COLS[name].order);
     lazyUnsub[name] = q.onSnapshot(function(snap){
-      state[name] = snap.docs.map(toObj); state.loaded[name] = true; render();
+      state[name] = snap.docs.map(toObj); state.loaded[name] = true; bgRender();
     }, function(e){
       if(name==="files") return onErr(e);
-      state.loaded[name] = true; state[name] = []; render();
+      state.loaded[name] = true; state[name] = []; bgRender();
     });
   }
   function lazyReset(){
@@ -2117,7 +2117,15 @@
     state.tab="member-form"; render();
   }
 
+  // 入力フォーム（案件登録・メンバー登録）を開いている間は、他の人の更新などバックグラウンドの再描画で
+  // 入力内容が消えないよう、再描画を保留する（フォームを閉じる・保存すると通常どおり描画される）
+  var formLive = false, bgPending = false;
+  function bgRender(){
+    if(formLive && (state.tab==="project-form" || state.tab==="member-form") && document.getElementById("content") && document.querySelector("#content input, #content textarea, #content select")){ bgPending = true; return; }
+    render();
+  }
   function render(){
+    bgPending = false;
     lazyNeeds();
     if(state.tab==="customers") freeeBackfill();
     if(GMAIL_RETURN && state.myName){
@@ -2172,6 +2180,7 @@
     // 横に長いタブ（設定など）は、選択中のタブが見える位置までスクロールしておく
     document.querySelectorAll("#content .segmented").forEach(function(sg){ var on = sg.querySelector(".segopt.active"); if(on && sg.scrollWidth>sg.clientWidth) sg.scrollLeft = Math.max(0, on.offsetLeft - (sg.clientWidth-on.offsetWidth)/2); });
     if(state.tab==="chat") scrollChatToBottom();
+    formLive = (state.tab==="project-form" || state.tab==="member-form") && !!c.querySelector("input, textarea, select");
   }
 
   function skeleton(){ return '<div class="empty">読み込み中…</div>'; }
@@ -3008,7 +3017,7 @@
     if(!db) return;
     db.doc("settings/secret").get().then(function(snap){
       var d = snap.exists ? snap.data() : null;
-      if(d && Array.isArray(d.defaults)){ state.secretDefaults = d.defaults; render(); }
+      if(d && Array.isArray(d.defaults)){ state.secretDefaults = d.defaults; bgRender(); }
     }).catch(function(){});
   }
   function secretSet(p){ return (p && Array.isArray(p.secretFields)) ? p.secretFields : secretDefaults(); }
