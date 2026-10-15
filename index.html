@@ -1289,6 +1289,16 @@
     return items;
   }
   function noticeCount(){ return noticeItems().length; }
+  // ホーム画面のアプリアイコンに未対応のお知らせ件数（バッジ）を表示する（Badging API：ホーム画面に追加したアプリ／対応ブラウザ）
+  var lastBadge = -1;
+  function syncAppBadge(n){
+    if(n===lastBadge) return; lastBadge = n;
+    try{
+      if(n>0 && navigator.setAppBadge) navigator.setAppBadge(n).catch(function(){});
+      else if(n<=0 && navigator.clearAppBadge) navigator.clearAppBadge().catch(function(){});
+    }catch(e){}
+    try{ if(navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage({type:"badge-sync", n:n}); }catch(e){}
+  }
   function noticeSetup(){
     var out = [];
     if(a2hsShow()) out.push({title:"ホーム画面に追加しましょう", sub:"アプリのようにすぐ開けて、通知も受け取れます", go:openA2hsGuide});
@@ -2070,7 +2080,7 @@
         return '<button class="bn'+(highlight===x[0]?" on":"")+'" data-tab="'+x[0]+'">'+x[2]()+'<span>'+esc(x[1])+'</span></button>';
       }).join("")+'<button class="bn'+((!inBn||state.sidebarOpen)?" on":"")+'" id="bn-menu">'+iMenu()+'<span>メニュー</span></button>';
     }
-    (function(){ var n = noticeCount(); document.getElementById("bell-icon").innerHTML = iBell()+(n? '<span class="bell-dot">'+(n>99?"99+":n)+'</span>':''); })();
+    (function(){ var n = noticeCount(); if(db && !window.claude) syncAppBadge(n); document.getElementById("bell-icon").innerHTML = iBell()+(n? '<span class="bell-dot">'+(n>99?"99+":n)+'</span>':''); })();
     document.getElementById("menu-toggle").innerHTML = iMenu();
     document.getElementById("sidebar").classList.toggle("open", state.sidebarOpen);
     var un = document.getElementById("user-name");

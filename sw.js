@@ -19,12 +19,20 @@ self.addEventListener("fetch", function(e){
   }).catch(function(){ return caches.match(req).then(function(m){ return m || caches.match("index.html"); }); }));
 });
 
+// アプリアイコンのバッジ件数：アプリ側が数えた件数を保存し、アプリを閉じている間はプッシュ通知が届くたびに+1する
+function badgeGet(){ return caches.open("genba-badge").then(function(c){ return c.match("badge"); }).then(function(r){ return r ? r.text() : "0"; }).then(function(t){ return Number(t) || 0; }).catch(function(){ return 0; }); }
+function badgeSet(n){ return caches.open("genba-badge").then(function(c){ return c.put("badge", new Response(String(n))); }).catch(function(){}); }
+function badgeShow(n){ try{ if(self.navigator && self.navigator.setAppBadge){ return n > 0 ? self.navigator.setAppBadge(n) : self.navigator.clearAppBadge(); } }catch(_){} return Promise.resolve(); }
+self.addEventListener("message", function(e){
+  if(e.data && e.data.type === "badge-sync") e.waitUntil(badgeSet(Number(e.data.n) || 0));
+});
+
 // プッシュ通知（チャットの新着など）
 self.addEventListener("push", function(e){
   var d = {}; try{ d = e.data ? e.data.json() : {}; }catch(_){ d = {body: e.data ? e.data.text() : ""}; }
-  e.waitUntil(self.registration.showNotification(d.title || "現場管理", {
+  e.waitUntil(badgeGet().then(function(n){ n += 1; return badgeSet(n).then(function(){ return badgeShow(n); }); }).catch(function(){}).then(function(){ return self.registration.showNotification(d.title || "現場管理", {
     body: d.body || "", tag: d.tag || "genba", icon: "icons/icon-192.png", badge: "icons/icon-192.png", data: {chatId: d.chatId || ""}, renotify: true
-  }));
+  }); }));
 });
 self.addEventListener("notificationclick", function(e){
   e.notification.close();
