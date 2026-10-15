@@ -169,6 +169,11 @@
   .mem-meta{display:none;}
   tr.grp td{border-top:2px solid var(--border);}
   /* ピン付き地図(Leaflet)の内部z-index(最大1000)が上部バー・サイドバー・モーダルより前に出ないよう、地図を独立した重なり順に閉じ込める */
+  /* 日付入力のクリアボタン（スマホ(iPhone等)の日付欄には標準のクリア手段がないため） */
+  .date-wrap{display:flex;align-items:center;gap:6px;min-width:0;flex:1 1 auto;width:100%}
+  .date-wrap>input[type=date]{flex:1 1 auto;min-width:0;width:100%;max-width:none!important}
+  .date-clear{flex:none;border:1px solid var(--border);background:var(--surface,#fff);color:var(--ink-soft);border-radius:8px;height:34px;min-width:34px;padding:0 10px;font-size:12px;cursor:pointer;line-height:1}
+  .date-clear[hidden]{display:none}
   .propmap,#propmap-live,.leaflet-container{position:relative;z-index:0;isolation:isolate;}
 
   .pager{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:20px;}
@@ -2117,6 +2122,29 @@
     state.editingMember = m;
     state.tab="member-form"; render();
   }
+
+  // 日付入力（type=date）の横に「クリア」ボタンを付ける。画面や入力ダイアログが作られるたびに自動で付与する
+  (function(){
+    function enhance(inp){
+      if(inp.__dc || inp.disabled && inp.readOnly) return; inp.__dc = 1;
+      var wrap = document.createElement("span"); wrap.className = "date-wrap";
+      if(inp.style.maxWidth){ wrap.style.maxWidth = inp.style.maxWidth; wrap.style.width = "100%"; }
+      var btn = document.createElement("button"); btn.type = "button"; btn.className = "date-clear"; btn.textContent = "クリア"; btn.setAttribute("aria-label","日付をクリア");
+      var sync = function(){ btn.hidden = !inp.value; };
+      inp.parentNode.insertBefore(wrap, inp); wrap.appendChild(inp); wrap.appendChild(btn); sync();
+      inp.addEventListener("input", sync); inp.addEventListener("change", sync);
+      btn.addEventListener("click", function(ev){
+        ev.preventDefault(); inp.value = "";
+        inp.dispatchEvent(new Event("input", {bubbles:true})); inp.dispatchEvent(new Event("change", {bubbles:true})); sync();
+      });
+    }
+    function scan(root){ try{ (root.querySelectorAll ? root.querySelectorAll("input[type=date]") : []).forEach(enhance); }catch(e){} }
+    function start(){
+      scan(document);
+      new MutationObserver(function(ms){ ms.forEach(function(m){ m.addedNodes.forEach(function(n){ if(n.nodeType===1){ if(n.matches && n.matches("input[type=date]")) enhance(n); else scan(n); } }); }); }).observe(document.body, {childList:true, subtree:true});
+    }
+    if(document.body) start(); else document.addEventListener("DOMContentLoaded", start);
+  })();
 
   // 入力フォーム（案件登録・メンバー登録）を開いている間は、他の人の更新などバックグラウンドの再描画で
   // 入力内容が消えないよう、再描画を保留する（フォームを閉じる・保存すると通常どおり描画される）
