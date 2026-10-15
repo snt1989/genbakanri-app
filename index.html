@@ -3403,6 +3403,8 @@
       else{
         if(arr.length>=300){ toast("メモは1案件につき300件までです"); return; }
         arr.push({id:uid(), text:text, by:state.myName||"", at:now});
+        // Firestoreは1ドキュメント約1MBまで（日本語は1文字3バイト）。案件データ本体の余裕を残す
+        try{ if(new Blob([JSON.stringify(arr)]).size > 600000){ toast("メモの合計が大きすぎます。古いメモを整理してください"); return; } }catch(e){}
       }
       saveMemos(pid, arr, cur ? "メモを更新しました" : "メモを追加しました");
     });
@@ -6365,8 +6367,11 @@
     var x = custNormName(a.customerName), y = custNormName(b.customerName); return !!(x && y && x===y);
   }
   // 重複チェックを速くするため、正規化した値は案件ごとに1回だけ計算して使い回す
+  // 社外メンバーには社外秘の項目（顧客名・住所・進捗）を重複チェックの表示・判定に使わせない
+  function projAddrHidden(p){ return hiddenFor(p, p.addressMode==="new" ? "pr_addr" : "c_addr"); }
   function projKeys(p){
-    return {id:p.id, n:projNorm(p.name), a:projNorm(propertyAddressOf(p).full || p.address), cid:p.customerId||"", c:custNormName(p.customerName)};
+    var hc = hiddenFor(p,"c_name"), ha = projAddrHidden(p);
+    return {id:p.id, n:projNorm(p.name), a:ha?"":projNorm(propertyAddressOf(p).full || p.address), cid:hc?"":(p.customerId||""), c:hc?"":custNormName(p.customerName)};
   }
   function projKeyReasons(x, y){
     var r = [];
@@ -6383,8 +6388,8 @@
       if(na===nb) r.push("案件名が同じ");
       else if(Math.min(na.length,nb.length)>=5 && (na.indexOf(nb)!==-1 || nb.indexOf(na)!==-1)) r.push("案件名が似ている");
     }
-    var aa = projNorm(propertyAddressOf(a).full || a.address), ab = projNorm(propertyAddressOf(b).full || b.address);
-    if(aa && ab && aa===ab && projSameCustomer(a,b)) r.push("顧客と住所が同じ");
+    var aa = projAddrHidden(a) ? "" : projNorm(propertyAddressOf(a).full || a.address), ab = projAddrHidden(b) ? "" : projNorm(propertyAddressOf(b).full || b.address);
+    if(aa && ab && aa===ab && !hiddenFor(a,"c_name") && !hiddenFor(b,"c_name") && projSameCustomer(a,b)) r.push("顧客と住所が同じ");
     return r;
   }
   function findProjectDuplicates(data, excludeId){
@@ -6393,7 +6398,7 @@
     return out;
   }
   function projDupLine(p){
-    return '<b>'+esc(p.name||"（名称なし）")+'</b> <span style="color:var(--ink-faint)">'+esc([p.customerName, propertyAddressOf(p).full||p.address, p.status].filter(Boolean).join("　"))+'</span>';
+    return '<b>'+esc(p.name||"（名称なし）")+'</b> <span style="color:var(--ink-faint)">'+esc([hiddenFor(p,"c_name")?"":p.customerName, projAddrHidden(p)?"":(propertyAddressOf(p).full||p.address), hiddenFor(p,"p_status")?"":p.status].filter(Boolean).join("　"))+'</span>';
   }
   function openProjectDupScan(){ dupIgnoreLoad(openProjectDupScan2); }
   function openProjectDupScan2(){
