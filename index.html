@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#175C40">
 <meta name="mobile-web-app-capable" content="yes">
@@ -1299,6 +1300,10 @@
     }catch(e){}
     try{ if(navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage({type:"badge-sync", n:n}); }catch(e){}
   }
+  // アプリを開いている間にプッシュが届くとSW側の件数だけ増えるため、前面に戻ったとき・ログアウト時に件数を合わせ直す
+  document.addEventListener("visibilitychange", function(){
+    if(document.visibilityState==="visible" && db && !window.claude && state.authed){ lastBadge=-1; try{ syncAppBadge(noticeCount()); }catch(e){} }
+  });
   function noticeSetup(){
     var out = [];
     if(a2hsShow()) out.push({title:"ホーム画面に追加しましょう", sub:"アプリのようにすぐ開けて、通知も受け取れます", go:openA2hsGuide});
@@ -1477,6 +1482,7 @@
   }
   function logout(){
     state.authed = false;
+    try{ if(db && !window.claude){ lastBadge=-1; syncAppBadge(0); } }catch(e){}
     state.isAdmin = false;
     try{ localStorage.removeItem("gc_login_name"); localStorage.removeItem("gc_login_phone"); localStorage.removeItem("gc_login_password"); }catch(e){}
     var scr = document.getElementById("login-screen");

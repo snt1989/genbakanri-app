@@ -149,6 +149,8 @@ async function reportHandler(req, res, b){
       return res.status(200).json({ok: true});
     }
     if(b.action === "report-finish"){
+      var exist = await W.getDoc("files/" + up);
+      if(exist && exist.id && exist.projectId !== t.p) return res.status(403).json({error: "このファイルは上書きできません"});
       var last = await W.getDoc("fileChunks/" + up + "_" + (total - 1));
       if(!last || !last.data) return res.status(400).json({error: "最後のデータが届いていません。もう一度お試しください"});
       var fn = String(b.filename || "報告書.pdf").replace(/[\\/:*?"<>|]/g, "").slice(0, 120) || "報告書.pdf";
