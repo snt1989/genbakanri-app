@@ -1337,6 +1337,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-10-16-6", title:"10月16日の更新（6）", items:[
+      {t:"案件に「見積日」「請求日」を追加", d:"案件の登録・編集画面と詳細画面に見積日・請求日が入力できます。変更履歴にも記録され、案件一覧の表示項目（列）やCSVの入出力でも使えます。社外秘の設定対象にもなっています。"}
+    ]},
     {id:"2026-10-16-5", title:"10月16日の更新（5）", items:[
       {t:"案件一覧を顧客からも検索", d:"案件一覧の検索で、案件名・住所に加えて、顧客名（ふりがな）・電話番号でも探せます。全角半角・大文字小文字・ひらがな／カタカナの違いは気にせず検索できます。"}
     ]},
@@ -3109,6 +3112,8 @@
     html += formRow("契約金額", false, false, '<div class="inline2" style="max-width:260px"><input type="number" id="f-amount" min="0" step="1000" value="'+(p.amount||0)+'"><span>円</span></div>', "p_amount");
     html += formRow("施工予定", false, false, '<div class="inline2" style="max-width:340px"><input type="date" id="f-start" value="'+(p.startDate||"")+'"><span>〜</span><input type="date" id="f-end" value="'+(p.endDate||"")+'"></div>', "p_period");
     html += formRow("施工指示", false, false, '<textarea id="f-instruction" placeholder="例：なになにをやってください">'+esc(p.workInstruction||"")+'</textarea>', "p_instruction");
+    html += formRow("見積日", false, false, '<input type="date" id="f-estdate" value="'+(p.estimateDate||"")+'" style="max-width:200px">', "p_estimate");
+    html += formRow("請求日", false, false, '<input type="date" id="f-invdate" value="'+(p.invoiceDate||"")+'" style="max-width:200px">', "p_invoice");
     html += formRow("引渡し日", false, false, '<input type="date" id="f-handover" value="'+(p.handoverDate||"")+'" style="max-width:200px">', "p_handover");
     html += '</div>';
 
@@ -3125,11 +3130,11 @@
   // p.secretFields = the list of keys marked 社外秘. External members never see
   // those items. Untouched projects use DEFAULT_SECRET (案件情報 + 顧客情報).
   var SECRET_HINT = {c_invoice:"適格請求書・事業所種別・法人番号", c_addr:"住所すべて", c_contact:"連絡先すべて"};
-  var DEFAULT_SECRET = ["p_type","p_status","p_amount","p_period","p_instruction","p_handover","c_name","c_invoice","c_contact","c_addr","c_notes"];
+  var DEFAULT_SECRET = ["p_type","p_status","p_amount","p_period","p_instruction","p_handover","p_estimate","p_invoice","c_name","c_invoice","c_contact","c_addr","c_notes"];
   var secretCtx = DEFAULT_SECRET.slice();   // set per screen via secretSet()
   // 管理画面で変更した初期設定（settings/secret）。未設定ならDEFAULT_SECRET。
   var SECRET_GROUPS = [
-    ["案件情報", [["p_type","事業部"],["p_status","進捗"],["p_amount","契約金額"],["p_period","施工予定"],["p_instruction","施工指示"],["p_handover","引渡し日"]]],
+    ["案件情報", [["p_type","事業部"],["p_status","進捗"],["p_amount","契約金額"],["p_period","施工予定"],["p_instruction","施工指示"],["p_handover","引渡し日"],["p_estimate","見積日"],["p_invoice","請求日"]]],
     ["物件情報", [["pr_type","物件種類／構造"],["pr_addr","物件住所"],["pr_notes","備考"]]],
     ["顧客情報", [["c_name","名前・ふりがな"],["c_invoice","適格請求書・事業所種別・法人番号"],["c_contact","連絡先（担当者・部署・メール・電話）"],["c_addr","住所"],["c_notes","社内メモ"]]]
   ];
@@ -3336,7 +3341,9 @@
         startDate: document.getElementById("f-start").value,
         endDate: document.getElementById("f-end").value,
         workInstruction: document.getElementById("f-instruction").value.trim(),
-        handoverDate: document.getElementById("f-handover").value
+        handoverDate: document.getElementById("f-handover").value,
+        estimateDate: document.getElementById("f-estdate").value,
+        invoiceDate: document.getElementById("f-invdate").value
       };
 
       Object.assign(data, projectCustomerData(cdata), readPropertyData());
@@ -3620,6 +3627,8 @@
     rows += kvRow("事業部", esc(p.division||"—"), "p_type", p);
     rows += kvRow("施工予定", (p.startDate||p.endDate) ? (fmtDate(p.startDate)+" 〜 "+fmtDate(p.endDate)) : "-", "p_period", p);
     rows += kvRow("施工指示", esc(p.workInstruction||"-"), "p_instruction", p);
+    rows += kvRow("見積日", fmtDate(p.estimateDate), "p_estimate", p);
+    rows += kvRow("請求日", fmtDate(p.invoiceDate), "p_invoice", p);
     rows += kvRow("引渡し日", fmtDate(p.handoverDate), "p_handover", p);
     html += section("案件情報", rows, null);
 
@@ -6917,6 +6926,8 @@
         {key:"amount",label:"金額",type:"number",bulk:true},
         {key:"startDate",label:"施工開始日",type:"date",bulk:true},
         {key:"endDate",label:"施工完了予定日",type:"date",bulk:true},
+        {key:"estimateDate",label:"見積日",type:"date",bulk:true},
+        {key:"invoiceDate",label:"請求日",type:"date",bulk:true},
         {key:"assignees",label:"担当者",type:"names",bulk:true},
         {key:"createdAt",label:"作成日",type:"datetime",readonly:true}
       ],
@@ -7146,6 +7157,8 @@
     assignees:{label:"担当者", html:function(p, names){ return '<td data-label="担当者">'+(names.length?esc(names.join("、")):"—")+'</td>'; }},
     start:{label:"施工開始日", sort:["start","startr"], html:function(p){ return '<td class="num" data-label="施工開始日">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.startDate))+'</td>'; }},
     end:{label:"施工完了予定日", sort:["end","endr"], html:function(p){ return '<td class="num" data-label="施工完了予定日">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.endDate))+'</td>'; }},
+    est:{label:"見積日", html:function(p){ return '<td class="num" data-label="見積日">'+(hiddenFor(p,"p_estimate")?"—":fmtDate(p.estimateDate))+'</td>'; }},
+    inv:{label:"請求日", html:function(p){ return '<td class="num" data-label="請求日">'+(hiddenFor(p,"p_invoice")?"—":fmtDate(p.invoiceDate))+'</td>'; }},
     amount:{label:"金額", sort:["amount","amountr"], html:function(p){ return '<td class="num" data-label="金額">'+(hiddenFor(p,"p_amount")?"—":fmtYen(p.amount))+'</td>'; }},
     created:{label:"登録日", html:function(p){ return '<td class="num" data-label="登録日">'+fmtDate((p.createdAt||"").slice(0,10))+'</td>'; }},
     createdBy:{label:"作成者", html:function(p){ return '<td data-label="作成者">'+esc(p.createdBy||"—")+'</td>'; }},
@@ -7408,7 +7421,7 @@
 
   /* ---- raw writes (no per-row toast; callers report totals) ---- */
   /* ---- 案件の変更履歴（誰が・いつ・何を変えたか。最新50件を案件に保存） ---- */
-  var PROJ_HIST_FIELDS = {name:"案件名", status:"進捗", amount:"金額", startDate:"施工開始日", endDate:"施工完了予定日", division:"事業部", customerName:"顧客", workInstruction:"作業指示", handoverDate:"引渡日", propertyType:"物件種別", propertyStructure:"構造"};
+  var PROJ_HIST_FIELDS = {name:"案件名", status:"進捗", amount:"金額", startDate:"施工開始日", endDate:"施工完了予定日", division:"事業部", customerName:"顧客", workInstruction:"作業指示", handoverDate:"引渡日", estimateDate:"見積日", invoiceDate:"請求日", propertyType:"物件種別", propertyStructure:"構造"};
   function histNorm(k, v){
     if(k==="assignees") return JSON.stringify(normalizeAssignees(v||[]).map(function(a){ return a.name+"/"+a.kind; }).sort());
     return JSON.stringify(v==null ? "" : v);
