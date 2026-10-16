@@ -1004,7 +1004,9 @@
     {id:"settings", label:"設定", icon:iBox}
   ];
   function iCardIcon(){ return svgIcon('<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6 16c.5-1.4 1.7-2 3-2s2.5.6 3 2"/><path d="M14.5 10h3.5M14.5 13.5h2.5"/>'); }
-  function tabVisible(t){ return !t.adminOnly || !!state.isAdmin; }
+  function tabVisible(t){ return t.id==="cards" ? cardsAllowed() : (!t.adminOnly || !!state.isAdmin); }
+  // 名刺管理は管理者のほか、管理者が指定したメンバー（members の cardAccess）も使える
+  function cardsAllowed(){ if(state.isAdmin) return true; var m = state.myName ? state.members.find(function(x){ return x.name===state.myName; }) : null; return !!(m && m.cardAccess); }
   var SUBPAGES = {"project-form":1,"project-detail":1,"member-form":1,"project-files":1};
 
   var STATUS_LIST = ["現地調査前","現地調査済","見積提出済","契約済","施工中","施工完了","清算済","失注"];
@@ -1341,7 +1343,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-16-8", title:"10月16日の更新（8）", items:[
-      {t:"【管理者向け】名刺管理を追加", d:"左のメニューに「名刺管理」が増えました（管理者のみ表示）。名刺の表・裏の写真と、氏名・会社名・連絡先・受け取った日などを登録でき、氏名・会社名・電話・メールで検索、分類で絞り込み、CSV出力ができます。"}
+      {t:"【管理者向け】名刺管理を追加", d:"左のメニューに「名刺管理」が増えました（管理者のみ表示）。名刺の表・裏の写真と、氏名・会社名・連絡先・受け取った日などを登録でき、氏名・会社名・電話・メールで検索、分類で絞り込み、CSV出力ができます。写真から文字を読み取って入力する「OCR」も使え、管理者は「利用メンバーの設定」で管理者以外にも使える人を指定できます。"}
     ]},
     {id:"2026-10-16-7", title:"10月16日の更新（7）", items:[
       {t:"アプリのロゴを緑の新ロゴに変更しました", d:"画面左上・ログイン画面のロゴと、ホーム画面に追加したときのアイコンが新しいロゴになりました。ホーム画面のアイコンは、端末によっては一度削除して追加し直すと切り替わります。"}
@@ -1787,7 +1789,7 @@
     if(["files","project-detail","project-files","reports"].indexOf(t)!==-1){ lazyStart("files"); lazyStart("folders"); }
     if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1){ lazyStart("files"); lazyStart("folders"); lazyStart("trash"); }
     if(t==="settings" && seg==="trash") lazyStart("trash");
-    if(t==="cards" && state.isAdmin) lazyStart("cards");
+    if(t==="cards" && cardsAllowed()) lazyStart("cards");
     if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1 && state.isAdmin) lazyStart("cards");
   }
   // バックアップ前：未読み込みのコレクションがあれば読み込みを始めて false を返す（欠けたまま保存しない）
@@ -3960,11 +3962,11 @@
     return list;
   }
   function renderCards(){
-    if(!state.isAdmin) return emptyState(iUsers,"管理者のみ閲覧できます","");
+    if(!cardsAllowed()) return emptyState(iUsers,"この画面を使える権限がありません","管理者に「名刺管理」の利用を許可してもらってください");
     if(db && !state.loaded.cards) return skeleton();
     var list = cardList(), all = state.cards||[];
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">名刺管理</h1>'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-card-new>'+iPlus()+' 名刺を登録</button><button class="btn" data-card-csv>'+iDownload()+' CSV出力</button></div></div><div style="height:14px"></div>';
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-card-new>'+iPlus()+' 名刺を登録</button><button class="btn" data-card-csv>'+iDownload()+' CSV出力</button>'+(state.isAdmin?'<button class="btn" data-card-access>'+iUsers()+' 利用メンバーの設定</button>':'')+'</div></div><div style="height:14px"></div>';
     html += '<div class="card filter-card"><div class="filter-line">'+
       '<div class="fitem" style="min-width:260px"><span>氏名・会社名・電話・メールなど</span><input type="text" id="card-search" value="'+esc(state.cardQuery||"")+'"></div>'+
       '<div class="fitem"><span>分類</span><select id="card-cat"><option value="all">すべて</option>'+CARD_CATS.map(function(x){ return '<option'+((state.cardCat||"all")===x?" selected":"")+'>'+esc(x)+'</option>'; }).join("")+'</select></div>'+
@@ -4013,7 +4015,7 @@
       '<button type="button" class="btn sm" data-card-rmimg="'+side+'"'+(v?'':' style="display:none"')+'>削除</button></div></div>';
   }
   function openCardForm(editId){
-    if(!state.isAdmin){ toast("名刺管理は管理者のみ行えます"); return; }
+    if(!cardsAllowed()){ toast("名刺管理を使う権限がありません"); return; }
     var c = editId ? (state.cards||[]).find(function(x){ return x.id===editId; }) : null;
     if(editId && !c) return;
     c = c || {};
@@ -4024,6 +4026,8 @@
     if(by && names.indexOf(by)===-1) names.push(by);
     var row = function(){ return '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'+Array.prototype.join.call(arguments,"")+'</div>'; };
     var body = row(cardImgSlot("front","名刺（表）"), cardImgSlot("back","名刺（裏）"))+
+      '<div style="margin:-4px 0 14px"><button type="button" class="btn" id="card-ocr-btn" data-card-ocr>'+iSearch()+' 写真から文字を読み取る（OCR）</button> <span id="card-ocr-status" style="font-size:12px;color:var(--ink-soft);margin-left:6px"></span>'+
+      '<div style="display:none;margin-top:8px"><details><summary style="font-size:12px;color:var(--ink-faint);cursor:pointer">読み取った文字（そのままコピーして使えます）</summary><textarea id="card-ocr-raw" readonly style="min-height:90px;font-size:12px;margin-top:6px"></textarea></details></div></div>'+
       row(inp("f-card-name","氏名 *",c.name,"例）山田 太郎"), inp("f-card-kana","ふりがな",c.kana,"例）やまだ たろう"))+
       row(inp("f-card-company","会社名",c.company), inp("f-card-dept","部署",c.department), inp("f-card-title","役職",c.title))+
       row(inp("f-card-phone","電話番号",c.phone,"","tel"), inp("f-card-mobile","携帯電話",c.mobile,"","tel"), inp("f-card-email","メール",c.email,"","email"))+
@@ -4062,6 +4066,129 @@
       '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" data-card-edit="'+esc(c.id)+'">'+iEdit()+' 編集</button>');
     document.getElementById("modal-box").style.maxWidth = "760px";
   }
+  function openCardAccess(){
+    if(!state.isAdmin){ toast("管理者のみ設定できます"); return; }
+    var ms = state.members.filter(function(m){ return memberPermission(m)!=="admin"; });
+    var rows = ms.length ? ms.map(function(m){
+      return '<label style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border);font-size:13px;cursor:pointer"><input type="checkbox" data-card-acc="'+esc(m.id)+'"'+(m.cardAccess?' checked':'')+'><span style="flex:1;font-weight:600">'+esc(m.name)+'</span><span style="font-size:11.5px;color:var(--ink-faint)">'+esc(permissionLabel(memberPermission(m)))+(m.company?' ／ '+esc(m.company):'')+'</span></label>';
+    }).join("") : '<div style="font-size:12.5px;color:var(--ink-faint)">管理者以外のメンバーがいません</div>';
+    openModal("名刺管理を使えるメンバー",'<div style="font-size:12px;color:var(--ink-faint);line-height:1.7;margin-bottom:8px">チェックを入れたメンバーは、管理者でなくても名刺管理（閲覧・登録・編集・削除・OCR・CSV出力）を使えます。管理者は常に使えます。<br>外部メンバーに許可すると、取引先の連絡先がすべて見えるのでご注意ください。</div>'+rows,
+      '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="card-acc-save">保存する</button>');
+    document.getElementById("card-acc-save").onclick = function(){
+      var jobs = [];
+      document.querySelectorAll("#modal-box [data-card-acc]").forEach(function(el){
+        var m = state.members.find(function(x){ return x.id===el.getAttribute("data-card-acc"); });
+        if(m && !!m.cardAccess!==el.checked) jobs.push(saveRaw("members", m.id, {cardAccess:el.checked}));
+      });
+      Promise.all(jobs).then(function(){ closeModal(); toast(jobs.length?"利用メンバーを更新しました":"変更はありません"); render(); }, function(){ toast("保存に失敗しました"); });
+    };
+  }
+  /* ---- 名刺の写真から文字を読み取る（OCR）。ブラウザ内で Tesseract.js を使う（外部サービスへ写真は送らない） ---- */
+  var cardOcrLib = null;
+  function cardOcrLoad(){
+    if(cardOcrLib) return cardOcrLib;
+    cardOcrLib = new Promise(function(res, rej){
+      if(window.Tesseract) return res(window.Tesseract);
+      var sc = document.createElement("script"); sc.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+      sc.onload = function(){ window.Tesseract ? res(window.Tesseract) : rej(new Error("load")); }; sc.onerror = function(){ rej(new Error("load")); };
+      document.head.appendChild(sc);
+    }).catch(function(e){ cardOcrLib = null; throw e; });
+    return cardOcrLib;
+  }
+  function cardOcrPrep(u){
+    return new Promise(function(res){
+      var im = new Image();
+      im.onload = function(){
+        var s = Math.min(2, 2000/Math.max(im.width,im.height)), w = Math.round(im.width*s), h = Math.round(im.height*s);
+        var cv = document.createElement("canvas"); cv.width = w; cv.height = h; var cx = cv.getContext("2d");
+        cx.filter = "grayscale(1) contrast(1.25)"; cx.drawImage(im,0,0,w,h); res(cv);
+      };
+      im.onerror = function(){ res(u); }; im.src = u;
+    });
+  }
+  function cardOcrRun(T, img, onProg){
+    var opt = function(lang){ return {logger:function(m){ if(m && m.status==="recognizing text") onProg(Math.round((m.progress||0)*100)); }, langPath:lang}; };
+    return T.recognize(img, "jpn+eng", opt("https://cdn.jsdelivr.net/npm/@tesseract.js-data/jpn@1.0.0/4.0.0_best_int")).catch(function(){
+      return T.recognize(img, "jpn+eng", opt(undefined));
+    }).then(function(r){ return (r && r.data && r.data.text) || ""; });
+  }
+  // OCRの生テキストから項目を推測する（足りない所は人が直す前提）
+  function cardParse(text){
+    var out = {}, used = {};
+    var cjk = "[\u3040-\u30ff\u3400-\u9fff]";
+    var lines = String(text||"").normalize("NFKC").split(/\r?\n/).map(function(l){
+      return l.replace(new RegExp("(?<="+cjk+")\\s+(?="+cjk+")","g"),"").replace(/[|｜]/g," ").trim();
+    }).filter(function(l){ return l.length>1; });
+    var take = function(i){ used[i] = 1; };
+    lines.forEach(function(l,i){
+      var m;
+      if(!out.email && (m = l.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/))){ out.email = m[0]; }
+      if(!out.website && (m = l.match(/(?:https?:\/\/)?(?:www\.)[A-Za-z0-9.\/_%-]+|https?:\/\/[A-Za-z0-9.\/_%-]+/i))){ out.website = m[0]; take(i); }
+      if(/^(〒|\d{3}-\d{4})/.test(l) || /(都|道|府|県).{1,}(市|区|町|村|郡)/.test(l)){
+        if(!out.address){ out.address = l.replace(/^〒?\s*/,"〒").replace(/^〒(?!\d)/,""); take(i); }
+        return;
+      }
+      var isFax = /fax|ＦＡＸ|ファックス/i.test(l);
+      var pl = l.split(/fax|ＦＡＸ|ファックス/i)[0];
+      var pm = pl.match(/0\d{1,4}[-ー(（)）\s]{0,2}\d{1,4}[-ー)）\s]{0,2}\d{3,4}/);
+      if(pm && /^\d{10,11}$/.test(pm[0].replace(/\D/g,""))){
+        var num = pm[0].replace(/[ー()（）\s]/g,"-").replace(/-+/g,"-").replace(/^-|-$/g,"");
+        if(/^0[789]0/.test(num.replace(/-/g,""))){ if(!out.mobile) out.mobile = num; } else if(!out.phone) out.phone = num;
+        take(i);
+      }
+    });
+    var kw = /(株式会社|有限会社|合同会社|㈱|\(株\)|（株）|Inc\.?|Co\.|Ltd|法人|組合|事務所|工務店|建設|工業|商事)/;
+    var titleKw = /(?:代表取締役|取締役|代表|社長|会長|専務|常務|部長|次長|課長|係長|主任|店長|所長|支店長|マネージャー?|リーダー|主査|統括|担当|室長|チーフ|ディレクター)/;
+    var deptKw = new RegExp("("+cjk+"+(部|課|室|支店|営業所|事業所|チーム|グループ|センター))$");
+    lines.forEach(function(l,i){
+      if(used[i]) return;
+      if(!out.company && kw.test(l) && l.length<=40){ out.company = l; take(i); return; }
+      if(!out.title && titleKw.test(l) && l.length<=30 && !/\d{4}/.test(l)){
+        var tk = "(?:"+titleKw.source+")+", mm = l.match(new RegExp("^("+tk+")(.*)$")) || l.match(new RegExp("^(.*?)("+tk+")$"));
+        var tpart = l, rest = "";
+        if(mm){ if(new RegExp("^"+tk).test(l)){ tpart = mm[1]; rest = mm[2]; } else { tpart = mm[2]; rest = mm[1]; } }
+        var okName = new RegExp("^"+cjk+"{3,8}$").test(rest) && !kw.test(rest);
+        out.title = (rest && !okName) ? l : tpart; take(i);
+        if(!out.name && okName) out.name = rest;
+        return;
+      }
+      if(!out.department && deptKw.test(l) && l.length<=24){ out.department = l; take(i); }
+    });
+    var kata = function(s){ return s.replace(/[\u30a1-\u30f6]/g,function(ch){ return String.fromCharCode(ch.charCodeAt(0)-0x60); }); };
+    lines.forEach(function(l,i){
+      if(used[i]) return;
+      var core = l.replace(/\s/g,"");
+      if(!out.kana && /^[\u3040-\u30ffー・]{3,20}$/.test(core) && /[\u3040-\u30ff]/.test(core) && !kw.test(l)){ out.kana = kata(l); take(i); return; }
+      if(!out.name && new RegExp("^"+cjk+"{2,8}$").test(core) && !/[\d]/.test(core) && !kw.test(l) && !titleKw.test(l) && !deptKw.test(l) && !/(都|道|府|県|市|区|町|村)$/.test(core)){ out.name = l.length<=5 ? l : l; take(i); }
+    });
+    return out;
+  }
+  function cardOcrStart(){
+    var side = cardDraft.front ? "front" : (cardDraft.back ? "back" : "");
+    if(!side){ toast("先に名刺の写真を追加してください"); return; }
+    var btn = document.getElementById("card-ocr-btn"), st = document.getElementById("card-ocr-status");
+    var setSt = function(t){ if(st) st.textContent = t; };
+    if(btn) btn.disabled = true; setSt("読み取りの準備中…（初回は言語データの読み込みに時間がかかります）");
+    var srcs = [cardDraft.front, cardDraft.back].filter(Boolean);
+    cardOcrLoad().then(function(T){
+      var all = "", chain = Promise.resolve();
+      srcs.forEach(function(u, idx){
+        chain = chain.then(function(){ return cardOcrPrep(u); }).then(function(img){
+          return cardOcrRun(T, img, function(p){ setSt("読み取り中… "+(idx+1)+"/"+srcs.length+"枚目 "+p+"%"); });
+        }).then(function(t){ all += "\n"+t; });
+      });
+      return chain.then(function(){ return all; });
+    }).then(function(text){
+      var r = cardParse(text), map = {name:"f-card-name",kana:"f-card-kana",company:"f-card-company",department:"f-card-dept",title:"f-card-title",phone:"f-card-phone",mobile:"f-card-mobile",email:"f-card-email",address:"f-card-addr",website:"f-card-web"};
+      var filled = 0;
+      Object.keys(map).forEach(function(k){ var el = document.getElementById(map[k]); if(el && r[k] && !el.value.trim()){ el.value = r[k]; filled++; } });
+      var raw = document.getElementById("card-ocr-raw"); if(raw){ raw.value = text.trim(); raw.parentNode.style.display = ""; }
+      var sb = document.getElementById("f-card-submit"), ne = document.getElementById("f-card-name"); if(sb && ne) sb.disabled = !ne.value.trim() && !cardDraft.front;
+      setSt(filled ? filled+"項目を入力しました。読み間違いがないか確認してください" : (text.trim() ? "項目を判別できませんでした。下の読み取り結果を見ながら入力してください" : "文字を読み取れませんでした。明るい場所でまっすぐ撮影した写真でお試しください"));
+    }).catch(function(){
+      setSt("OCRを読み込めませんでした（通信を確認してください。この画面では利用できない場合があります）");
+    }).then(function(){ if(btn) btn.disabled = false; });
+  }
   function cardCsv(){
     var cols = [["name","氏名"],["kana","ふりがな"],["company","会社名"],["department","部署"],["title","役職"],["phone","電話番号"],["mobile","携帯電話"],["email","メール"],["address","住所"],["website","Webサイト"],["category","分類"],["receivedDate","受け取った日"],["receivedBy","受け取った人"],["memo","メモ"]];
     var q = function(x){ x = String(x==null?"":x); return /[",\r\n]/.test(x) ? '"'+x.replace(/"/g,'""')+'"' : x; };
@@ -4070,9 +4197,11 @@
     a.download = "名刺一覧_"+todayISO()+".csv"; document.body.appendChild(a); a.click(); a.remove();
   }
   document.addEventListener("click", function(e){
-    var t = e.target.closest ? e.target.closest("[data-card-new],[data-card-view],[data-card-edit],[data-card-del],[data-card-csv],[data-card-rmimg],#card-search-btn,#card-clear") : null;
+    var t = e.target.closest ? e.target.closest("[data-card-new],[data-card-ocr],[data-card-access],[data-card-view],[data-card-edit],[data-card-del],[data-card-csv],[data-card-rmimg],#card-search-btn,#card-clear") : null;
     if(!t) return;
     if(t.hasAttribute("data-card-new")){ openCardForm(); return; }
+    if(t.hasAttribute("data-card-ocr")){ cardOcrStart(); return; }
+    if(t.hasAttribute("data-card-access")){ openCardAccess(); return; }
     if(t.hasAttribute("data-card-view")){ e.preventDefault(); openCardView(t.getAttribute("data-card-view")); return; }
     if(t.hasAttribute("data-card-edit")){ closeModal(); openCardForm(t.getAttribute("data-card-edit")); return; }
     if(t.hasAttribute("data-card-csv")){ cardCsv(); return; }
