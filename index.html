@@ -1343,7 +1343,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-16-8", title:"10月16日の更新（8）", items:[
-      {t:"【管理者向け】名刺管理を追加", d:"左のメニューに「名刺管理」が増えました（管理者のみ表示）。名刺の表・裏の写真と、氏名・会社名・連絡先・受け取った日などを登録でき、氏名・会社名・電話・メールで検索、分類で絞り込み、CSV出力ができます。写真から文字を読み取って入力する「OCR」も使え、管理者は「利用メンバーの設定」で管理者以外にも使える人を指定できます。"}
+      {t:"【管理者向け】名刺管理を追加", d:"左のメニューに「名刺管理」が増えました（管理者のみ表示）。名刺の表・裏の写真と、氏名・会社名・連絡先・受け取った日などを登録でき、氏名・会社名・電話・メールで検索、分類で絞り込み、CSV出力ができます。写真を選ぶと名刺の枠を自動で見つけて、傾きを直しながら切り取ります。写真から文字を読み取って入力する「OCR」も使え、管理者は「利用メンバーの設定」で管理者以外にも使える人を指定できます。"}
     ]},
     {id:"2026-10-16-7", title:"10月16日の更新（7）", items:[
       {t:"アプリのロゴを緑の新ロゴに変更しました", d:"画面左上・ログイン画面のロゴと、ホーム画面に追加したときのアイコンが新しいロゴになりました。ホーム画面のアイコンは、端末によっては一度削除して追加し直すと切り替わります。"}
@@ -3945,7 +3945,7 @@
   // コレクション: cards。名刺の表・裏の写真は縮小したJPEGとしてそのまま書類内に保存する（1件あたり数百KB以内）。
   var CARD_CATS = ["取引先","仕入先・協力会社","見込み客","その他"];
   var CARD_IMG_MAX = 1200, CARD_IMG_BYTES = 330000;
-  var cardDraft = {front:"", back:""};
+  var cardDraft = {front:"", back:""}, cardOrig = {front:"", back:""};
   function cardFz(x){ return String(x||"").normalize("NFKC").toLowerCase().replace(/[\s　]/g,"").replace(/[ァ-ヶ]/g,function(ch){ return String.fromCharCode(ch.charCodeAt(0)-0x60); }); }
   function cardList(){
     var q = cardFz(state.cardQuery||""), cat = state.cardCat||"all", sort = state.cardSort||"new";
@@ -3988,6 +3988,88 @@
     }).join("")+'</div>';
     return html;
   }
+  function cardEncode(cv){
+    var q = 0.78, out = cv.toDataURL("image/jpeg", q);
+    while(out.length > CARD_IMG_BYTES && q > 0.35){ q -= 0.1; out = cv.toDataURL("image/jpeg", q); }
+    return out;
+  }
+  // 写真の中から名刺の枠を見つけ、傾きを直して名刺の部分だけを切り出す。見つからなければ null（元の写真のまま使う）
+  function cardAutoCrop(u, cb){
+    var im = new Image();
+    im.onerror = function(){ cb(null); };
+    im.onload = function(){
+      try{ cb(cardCropImg(im)); }catch(e){ cb(null); }
+    };
+    im.src = u;
+  }
+  function cardCropImg(im){
+    var W = im.width, H = im.height, sc = Math.min(1, 420/Math.max(W,H)), w = Math.max(8,Math.round(W*sc)), h = Math.max(8,Math.round(H*sc));
+    var cv = document.createElement("canvas"); cv.width = w; cv.height = h; var cx = cv.getContext("2d"); cx.drawImage(im,0,0,w,h);
+    var d = cx.getImageData(0,0,w,h).data, N = w*h, i, x, y;
+    // 背景色 = 外周の中央値
+    var rs = [], gs = [], bs = [], ring = function(px,py){ var k=(py*w+px)*4; rs.push(d[k]); gs.push(d[k+1]); bs.push(d[k+2]); };
+    for(x=0;x<w;x++){ ring(x,0); ring(x,1); ring(x,h-1); ring(x,h-2); }
+    for(y=0;y<h;y++){ ring(0,y); ring(1,y); ring(w-1,y); ring(w-2,y); }
+    var med = function(a){ a.sort(function(p,q){ return p-q; }); return a[a.length>>1]; }, br = med(rs), bg = med(gs), bb = med(bs);
+    var dist = new Uint8Array(N), hist = new Array(256).fill(0);
+    for(i=0;i<N;i++){ var dr=d[i*4]-br, dg=d[i*4+1]-bg, db2=d[i*4+2]-bb, v=Math.min(255, Math.round(Math.sqrt(dr*dr+dg*dg+db2*db2)*0.58)); dist[i]=v; hist[v]++; }
+    // 大津の方法でしきい値
+    var sum=0, t; for(t=0;t<256;t++) sum += t*hist[t];
+    var wB=0, sB=0, best=-1, th=30;
+    for(t=0;t<256;t++){ wB += hist[t]; if(!wB) continue; var wF = N-wB; if(!wF) break; sB += t*hist[t]; var mB=sB/wB, mF=(sum-sB)/wF, between=wB*wF*(mB-mF)*(mB-mF); if(between>best){ best=between; th=t; } }
+    th = Math.max(th, 26);
+    var mask = new Uint8Array(N); for(i=0;i<N;i++) mask[i] = dist[i]>th ? 1 : 0;
+    // 内側の穴（文字など）を埋める：外周からたどれない「mask外」はmaskにする
+    var seen = new Uint8Array(N), st = new Int32Array(N), sp = 0;
+    var push = function(p){ if(!seen[p] && !mask[p]){ seen[p]=1; st[sp++]=p; } };
+    for(x=0;x<w;x++){ push(x); push((h-1)*w+x); } for(y=0;y<h;y++){ push(y*w); push(y*w+w-1); }
+    while(sp){ var p0 = st[--sp], px = p0%w, py = (p0/w)|0; if(px>0) push(p0-1); if(px<w-1) push(p0+1); if(py>0) push(p0-w); if(py<h-1) push(p0+w); }
+    for(i=0;i<N;i++) if(!seen[i]) mask[i]=1;
+    // 最大の連結領域
+    var lab = new Int32Array(N), bestLab=0, bestArea=0, nl=0;
+    for(i=0;i<N;i++){
+      if(!mask[i] || lab[i]) continue;
+      nl++; var area=0; sp=0; st[sp++]=i; lab[i]=nl;
+      while(sp){ var q=st[--sp], qx=q%w, qy=(q/w)|0; area++;
+        if(qx>0 && mask[q-1] && !lab[q-1]){ lab[q-1]=nl; st[sp++]=q-1; } if(qx<w-1 && mask[q+1] && !lab[q+1]){ lab[q+1]=nl; st[sp++]=q+1; }
+        if(qy>0 && mask[q-w] && !lab[q-w]){ lab[q-w]=nl; st[sp++]=q-w; } if(qy<h-1 && mask[q+w] && !lab[q+w]){ lab[q+w]=nl; st[sp++]=q+w; } }
+      if(area>bestArea){ bestArea=area; bestLab=nl; }
+    }
+    var ratio = bestArea/N;
+    if(ratio<0.12 || ratio>0.97) return null;
+    // 輪郭の点 → 凸包 → 最小の回転長方形
+    var pts = [];
+    for(y=0;y<h;y++) for(x=0;x<w;x++){ var k=y*w+x; if(lab[k]!==bestLab) continue;
+      if(x===0||y===0||x===w-1||y===h-1||lab[k-1]!==bestLab||lab[k+1]!==bestLab||lab[k-w]!==bestLab||lab[k+w]!==bestLab) pts.push([x,y]); }
+    pts.sort(function(a,b){ return a[0]-b[0] || a[1]-b[1]; });
+    var cross = function(o,a,b){ return (a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]); }, lo=[], up=[], pi;
+    for(pi=0;pi<pts.length;pi++){ while(lo.length>=2 && cross(lo[lo.length-2],lo[lo.length-1],pts[pi])<=0) lo.pop(); lo.push(pts[pi]); }
+    for(pi=pts.length-1;pi>=0;pi--){ while(up.length>=2 && cross(up[up.length-2],up[up.length-1],pts[pi])<=0) up.pop(); up.push(pts[pi]); }
+    var hull = lo.slice(0,-1).concat(up.slice(0,-1)); if(hull.length<4) return null;
+    var bestR = null, hi;
+    for(hi=0;hi<hull.length;hi++){
+      var a = hull[hi], b = hull[(hi+1)%hull.length], th2 = Math.atan2(b[1]-a[1], b[0]-a[0]), c = Math.cos(th2), s = Math.sin(th2);
+      var mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9, hj;
+      for(hj=0;hj<hull.length;hj++){ var rx = hull[hj][0]*c+hull[hj][1]*s, ry = -hull[hj][0]*s+hull[hj][1]*c; if(rx<mnx)mnx=rx; if(rx>mxx)mxx=rx; if(ry<mny)mny=ry; if(ry>mxy)mxy=ry; }
+      var ar = (mxx-mnx)*(mxy-mny);
+      if(!bestR || ar<bestR.ar) bestR = {ar:ar, th:th2, w:mxx-mnx, h:mxy-mny, cx:(mnx+mxx)/2, cy:(mny+mxy)/2};
+    }
+    // 長方形に近いか（輪郭が長方形をどれだけ埋めているか）と、名刺らしい縦横比か
+    if(bestArea/bestR.ar < 0.86) return null;
+    var rw = bestR.w, rh = bestR.h, th3 = bestR.th, ccx = bestR.cx, ccy = bestR.cy;
+    if(rw<rh){ var tmp=rw; rw=rh; rh=tmp; th3 += Math.PI/2; var ncx = ccx, ncy = ccy; ccx = ncx; ccy = ncy; }
+    var asp = rw/rh; if(asp<1.25 || asp>2.1) return null;
+    while(th3>Math.PI/2) th3 -= Math.PI; while(th3<=-Math.PI/2) th3 += Math.PI;   // 上下逆さまにならないよう -90〜90度にそろえる
+    // 回転後座標の中心 → 元座標
+    var ct = Math.cos(bestR.th), sn = Math.sin(bestR.th);
+    var ox = bestR.cx*ct - bestR.cy*sn, oy = bestR.cx*sn + bestR.cy*ct;
+    var shrink = 0.985, inv = 1/sc, RW = rw*inv*shrink, RH = rh*inv*shrink, k2 = Math.min(1, CARD_IMG_MAX/Math.max(RW,RH));
+    var out = document.createElement("canvas"); out.width = Math.round(RW*k2); out.height = Math.round(RH*k2);
+    var oc = out.getContext("2d"); oc.fillStyle = "#fff"; oc.fillRect(0,0,out.width,out.height);
+    oc.translate(out.width/2, out.height/2); oc.scale(k2,k2); oc.rotate(-th3); oc.translate(-ox*inv, -oy*inv); oc.drawImage(im,0,0,W,H);
+    var url = cardEncode(out);
+    return url.length > CARD_IMG_BYTES*1.4 ? null : url;
+  }
   function cardRead(src, cb){
     // 画像を縮小してJPEGのdata URLにする
     var fr = new FileReader();
@@ -3997,8 +4079,7 @@
         var s = Math.min(1, CARD_IMG_MAX/Math.max(im.width, im.height)), w = Math.max(1,Math.round(im.width*s)), h = Math.max(1,Math.round(im.height*s));
         var cv = document.createElement("canvas"); cv.width = w; cv.height = h;
         var cx = cv.getContext("2d"); cx.fillStyle = "#fff"; cx.fillRect(0,0,w,h); cx.drawImage(im,0,0,w,h);
-        var q = 0.78, out = cv.toDataURL("image/jpeg", q);
-        while(out.length > CARD_IMG_BYTES && q > 0.35){ q -= 0.1; out = cv.toDataURL("image/jpeg", q); }
+        var out = cardEncode(cv);
         cb(out.length > CARD_IMG_BYTES*1.4 ? "" : out);
       };
       im.onerror = function(){ cb(""); };
@@ -4012,14 +4093,14 @@
     return '<div class="field" style="flex:1;min-width:200px"><span>'+label+'</span>'+
       '<div id="card-prev-'+side+'" style="aspect-ratio:91/55;border:1.5px dashed var(--border);border-radius:10px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--ink-faint);font-size:12px">'+(v?'<img src="'+esc(v)+'" style="width:100%;height:100%;object-fit:contain">':'写真なし')+'</div>'+
       '<div style="display:flex;gap:6px;margin-top:6px"><label class="btn sm" style="cursor:pointer">'+iCamera()+' 撮影・選択<input type="file" accept="image/*" data-card-file="'+side+'" style="display:none"></label>'+
-      '<button type="button" class="btn sm" data-card-rmimg="'+side+'"'+(v?'':' style="display:none"')+'>削除</button></div></div>';
+      '<button type="button" class="btn sm" data-card-rmimg="'+side+'"'+(v?'':' style="display:none"')+'>削除</button><button type="button" class="btn sm" data-card-uncrop="'+side+'" style="display:none">元の写真に戻す</button></div></div>';
   }
   function openCardForm(editId){
     if(!cardsAllowed()){ toast("名刺管理を使う権限がありません"); return; }
     var c = editId ? (state.cards||[]).find(function(x){ return x.id===editId; }) : null;
     if(editId && !c) return;
     c = c || {};
-    cardDraft = {front:c.front||"", back:c.back||""};
+    cardDraft = {front:c.front||"", back:c.back||""}; cardOrig = {front:"", back:""};
     var inp = function(id,label,val,ph,type){ return '<label class="field" style="flex:1;min-width:200px">'+label+'<input type="'+(type||"text")+'" id="'+id+'" value="'+esc(val||"")+'" placeholder="'+esc(ph||"")+'" autocomplete="off"></label>'; };
     var names = state.members.map(function(m){ return m.name; }).filter(Boolean);
     var by = c.receivedBy || state.myName || "";
@@ -4197,15 +4278,16 @@
     a.download = "名刺一覧_"+todayISO()+".csv"; document.body.appendChild(a); a.click(); a.remove();
   }
   document.addEventListener("click", function(e){
-    var t = e.target.closest ? e.target.closest("[data-card-new],[data-card-ocr],[data-card-access],[data-card-view],[data-card-edit],[data-card-del],[data-card-csv],[data-card-rmimg],#card-search-btn,#card-clear") : null;
+    var t = e.target.closest ? e.target.closest("[data-card-new],[data-card-uncrop],[data-card-ocr],[data-card-access],[data-card-view],[data-card-edit],[data-card-del],[data-card-csv],[data-card-rmimg],#card-search-btn,#card-clear") : null;
     if(!t) return;
     if(t.hasAttribute("data-card-new")){ openCardForm(); return; }
+    if(t.hasAttribute("data-card-uncrop")){ var us = t.getAttribute("data-card-uncrop"); if(cardOrig[us]){ cardDraft[us] = cardOrig[us]; cardOrig[us] = ""; var pv2 = document.getElementById("card-prev-"+us); if(pv2) pv2.innerHTML = '<img src="'+cardDraft[us]+'" style="width:100%;height:100%;object-fit:contain">'; } t.style.display = "none"; return; }
     if(t.hasAttribute("data-card-ocr")){ cardOcrStart(); return; }
     if(t.hasAttribute("data-card-access")){ openCardAccess(); return; }
     if(t.hasAttribute("data-card-view")){ e.preventDefault(); openCardView(t.getAttribute("data-card-view")); return; }
     if(t.hasAttribute("data-card-edit")){ closeModal(); openCardForm(t.getAttribute("data-card-edit")); return; }
     if(t.hasAttribute("data-card-csv")){ cardCsv(); return; }
-    if(t.hasAttribute("data-card-rmimg")){ var s = t.getAttribute("data-card-rmimg"); cardDraft[s] = ""; document.getElementById("card-prev-"+s).textContent = "写真なし"; t.style.display = "none"; return; }
+    if(t.hasAttribute("data-card-rmimg")){ var s = t.getAttribute("data-card-rmimg"); cardDraft[s] = ""; cardOrig[s] = ""; document.getElementById("card-prev-"+s).textContent = "写真なし"; t.style.display = "none"; var ucb = document.querySelector('[data-card-uncrop="'+s+'"]'); if(ucb) ucb.style.display = "none"; return; }
     if(t.hasAttribute("data-card-del")){
       var id = t.getAttribute("data-card-del"), c = (state.cards||[]).find(function(x){ return x.id===id; });
       confirmDelete("「"+((c&&c.name)||"この名刺")+"」を削除しますか？（ゴミ箱から復元できます）", function(){ deleteRaw("cards", id).then(function(){ toast("名刺を削除しました"); render(); }); });
@@ -4220,12 +4302,18 @@
     if(el && el.id==="card-sort"){ state.cardSort = el.value; render(); return; }
     if(el && el.getAttribute && el.getAttribute("data-card-file")){
       var side = el.getAttribute("data-card-file"), f = el.files && el.files[0]; if(!f) return;
-      cardRead(f, function(u){
-        if(!u){ toast("画像を読み込めませんでした（サイズが大きすぎる可能性があります）"); return; }
+      cardRead(f, function(u0){
+        if(!u0){ toast("画像を読み込めませんでした（サイズが大きすぎる可能性があります）"); return; }
+        cardAutoCrop(u0, function(cropped){
+        var u = cropped || u0;
+        cardOrig[side] = cropped ? u0 : "";
         cardDraft[side] = u;
+        var undo = document.querySelector('[data-card-uncrop="'+side+'"]'); if(undo) undo.style.display = cropped ? "" : "none";
+        if(cropped) toast("名刺の枠に合わせて切り取りました（「元の写真に戻す」で取り消せます）"); else toast("名刺の枠を見つけられなかったため、写真をそのまま使います");
         var pv = document.getElementById("card-prev-"+side); if(pv) pv.innerHTML = '<img src="'+u+'" style="width:100%;height:100%;object-fit:contain">';
         var rm = document.querySelector('[data-card-rmimg="'+side+'"]'); if(rm) rm.style.display = "";
         var sb = document.getElementById("f-card-submit"); if(sb) sb.disabled = false;
+        });
       });
       el.value = "";
     }
