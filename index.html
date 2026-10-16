@@ -1322,6 +1322,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-10-16-2", title:"10月16日の更新（2）", items:[
+      {t:"管理者は全チャットを確認できます", admin:true, d:"自分が参加していないチャットも一覧に表示されます（「参加外」の印が付きます）。未読のお知らせは参加しているチャットだけです。"}
+    ]},
     {id:"2026-10-16", title:"10月16日の更新", items:[
       {t:"お知らせ", d:"バージョンアップの内容を、このお知らせでお伝えするようになりました。"},
       {t:"日付の入力欄に「クリア」ボタン", d:"スマホでも、入れた日付をワンタップで消せます。"},
@@ -1338,6 +1341,7 @@
       {t:"データベースの使用量（管理者）", admin:true, d:"設定の管理画面で、Firestoreの実際の使用量をほぼリアルタイムで確認できます（設定が必要です）。"}
     ]}
   ];
+  function releaseHasItems(r){ return r.items.some(function(x){ return !x.admin || state.isAdmin; }); }   // 管理者向けの項目しかない更新は一般には知らせない
   function releaseSeenId(){
     var me = state.myName || "";
     if(state.releaseSeen && state.releaseSeen[me]!==undefined) return state.releaseSeen[me];
@@ -1352,13 +1356,13 @@
   // 未読のバージョンアップがあるか（初めて使う端末では、最新の1件だけを知らせる）
   function releaseUnseen(){
     var seen = releaseSeenId();
-    if(seen===null || seen===undefined) return RELEASES.slice(0,1);
+    if(seen===null || seen===undefined) return RELEASES.filter(releaseHasItems).slice(0,1);
     var out = []; for(var i=0;i<RELEASES.length;i++){ if(RELEASES[i].id===seen) break; out.push(RELEASES[i]); }
-    return out;
+    return out.filter(releaseHasItems);
   }
   function openReleaseNotes(){
     var unseen = releaseUnseen().map(function(r){ return r.id; });
-    var body = RELEASES.map(function(r){
+    var body = RELEASES.filter(releaseHasItems).map(function(r){
       var isNew = unseen.indexOf(r.id)!==-1;
       var items = r.items.filter(function(x){ return !x.admin || state.isAdmin; });
       return '<div style="margin:2px 0 16px"><div style="font-size:13px;font-weight:700;margin-bottom:6px">'+esc(r.title)+(isNew?' <span style="font-size:10.5px;color:#fff;background:var(--danger);border-radius:8px;padding:1px 7px;margin-left:4px;vertical-align:1px">NEW</span>':'')+'</div>'+
@@ -4339,9 +4343,11 @@
     if(Array.isArray(c.members) && c.members.length) return c.members.indexOf(me)!==-1;
     return true;
   }
+  // 管理者は参加していないチャットも一覧に表示して内容を確認できる（未読の通知は参加しているチャットだけ）
+  function chatSeen(c){ return seesAllProjects() || chatJoined(c); }
   function renderChat(){
     if(!state.loaded.chats || !state.loaded.projects) return skeleton();
-    var visibleChats = state.chats.filter(chatJoined);
+    var visibleChats = state.chats.filter(chatSeen);
     var q = (state.chatQ||"").trim().toLowerCase();
     var isPinned = function(c){ return Array.isArray(c.pinnedBy) && c.pinnedBy.indexOf(state.myName)!==-1; };
     var kindTab = state.chatKind || "all";
@@ -4367,7 +4373,7 @@
           '<button class="chat-pin'+(isPinned(c)?" on":"")+'" data-chat-pin="'+esc(c.id)+'" title="'+(isPinned(c)?"ピン留めを外す":"ピン留めする")+'">'+iPin(isPinned(c))+'</button>'+
           '<button class="chat-pin chat-hide" data-chat-hide="'+esc(c.id)+'" title="'+(isHidden(c)?"再表示する":"非表示にする")+'">'+iEye(!isHidden(c))+'</button>'+
           '<div class="chat-ava">'+(c.kind==="group"?iUsers():iDoc())+'</div>'+
-          '<div class="chat-item-main"><div class="chat-item-name">'+esc(c.name)+((c.id!==state.activeChat && (c.reads||{})[state.myName] && String(c.updatedAt||"")>String((c.reads||{})[state.myName]))?' <span class="chat-unread">未読</span>':'')+'</div><div class="chat-item-meta"><span class="chat-kindtag '+(c.kind==="group"?"kg":"kp")+'">'+(c.kind==="group"?"グループ":"案件")+'</span><span>'+esc(fmtAgo(c.updatedAt))+'</span></div></div>'+
+          '<div class="chat-item-main"><div class="chat-item-name">'+esc(c.name)+(chatJoined(c)?'':' <span style="font-size:10px;font-weight:700;color:var(--ink-faint);border:1px solid var(--border);border-radius:6px;padding:0 5px;margin-left:4px">参加外</span>')+((c.id!==state.activeChat && (c.reads||{})[state.myName] && String(c.updatedAt||"")>String((c.reads||{})[state.myName]))?' <span class="chat-unread">未読</span>':'')+'</div><div class="chat-item-meta"><span class="chat-kindtag '+(c.kind==="group"?"kg":"kp")+'">'+(c.kind==="group"?"グループ":"案件")+'</span><span>'+esc(fmtAgo(c.updatedAt))+'</span></div></div>'+
         '</div>';
       }).join("");
     }
@@ -8327,7 +8333,7 @@
       el.addEventListener("click", function(){
         var p = state.projects.find(function(x){return x.id===el.getAttribute("data-chat-project");});
         if(!p) return;
-        if(!isMyProject(p)){ toast("この案件の担当者ではないため、チャットは表示されません"); return; }
+        if(!seesAllProjects() && !isMyProject(p)){ toast("この案件の担当者ではないため、チャットは表示されません"); return; }
         ensureProjectChat(p, function(chatId){ state.activeChat=chatId; setTab("chat"); });
       });
     });
@@ -8335,7 +8341,7 @@
       el.addEventListener("click", function(ev){ ev.preventDefault();
         var p = state.projects.find(function(x){return x.id===state.viewingProjectId;});
         if(!p) return;
-        if(!isMyProject(p)){ toast("この案件の担当者ではないため、チャットは表示されません"); return; }
+        if(!seesAllProjects() && !isMyProject(p)){ toast("この案件の担当者ではないため、チャットは表示されません"); return; }
         ensureProjectChat(p, function(chatId){ state.activeChat=chatId; setTab("chat"); });
       });
     });
