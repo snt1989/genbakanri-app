@@ -1323,7 +1323,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-16-2", title:"10月16日の更新（2）", items:[
-      {t:"管理者は全チャットを確認できます", admin:true, d:"自分が参加していないチャットも一覧に表示されます（「参加外」の印が付きます）。未読のお知らせは参加しているチャットだけです。"}
+      {t:"管理者は全チャットを確認できます", admin:true, d:"チャット一覧のボタンで「参加中のみ」と「すべてのチャット」を切り替えられます（参加外には「参加外」の印が付きます）。未読のお知らせは参加しているチャットだけです。"}
     ]},
     {id:"2026-10-16", title:"10月16日の更新", items:[
       {t:"お知らせ", d:"バージョンアップの内容を、このお知らせでお伝えするようになりました。"},
@@ -4344,7 +4344,18 @@
     return true;
   }
   // 管理者は参加していないチャットも一覧に表示して内容を確認できる（未読の通知は参加しているチャットだけ）
-  function chatSeen(c){ return seesAllProjects() || chatJoined(c); }
+  // 管理者は「参加中のみ」と「すべてのチャット」をボタンで切り替えられる（選択は端末に記憶。初期は参加中のみ）
+  function chatShowAll(){
+    if(!seesAllProjects()) return false;
+    if(state.chatAll===undefined){ try{ state.chatAll = localStorage.getItem("gc_chat_all")==="1"; }catch(e){ state.chatAll = false; } }
+    return !!state.chatAll;
+  }
+  function chatSeen(c){ return chatShowAll() || chatJoined(c); }
+  function chatScopeBar(){
+    if(!seesAllProjects()) return "";
+    var all = chatShowAll(), b = function(v, label){ var on = all===v; return '<button data-chat-scope="'+(v?"all":"mine")+'" style="flex:1;border:1px solid var(--border);background:'+(on?'var(--accent)':'var(--surface)')+';color:'+(on?'#fff':'var(--ink-soft)')+';font-weight:700;font-size:11.5px;padding:6px 4px;cursor:pointer;'+(v?'border-radius:0 8px 8px 0;border-left:0':'border-radius:8px 0 0 8px')+'">'+label+'</button>'; };
+    return '<div style="display:flex;padding:6px 10px 2px">'+b(false,"参加中のみ")+b(true,"すべて表示")+'</div>';
+  }
   function renderChat(){
     if(!state.loaded.chats || !state.loaded.projects) return skeleton();
     var visibleChats = state.chats.filter(chatSeen);
@@ -4361,7 +4372,7 @@
     var cnt = function(f){ return visibleChats.filter(function(c){ return !isHidden(c) && f(c); }).length; };
     var kindBar = '<div class="chat-kinds">'+[["all","すべて",cnt(function(){return true;})],["pinned","ピン留め",cnt(isPinned)],["project","案件",cnt(function(c){return c.kind!=="group";})],["group","グループ",cnt(function(c){return c.kind==="group";})],["hidden","非表示",visibleChats.filter(isHidden).length]].map(function(k){
       return '<button data-chat-kind="'+k[0]+'" class="'+(kindTab===k[0]?"on":"")+'">'+k[1]+'<i>'+k[2]+'</i></button>'; }).join("")+'</div>';
-    html += '<div class="chat-list"><div class="chat-search"><div class="sb"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8"/></svg><input type="text" id="chat-q" placeholder="チャット名" value="'+esc(state.chatQ||"")+'"></div><button id="chat-qbtn">検索</button></div>'+kindBar+'<div class="chat-list-body">';
+    html += '<div class="chat-list"><div class="chat-search"><div class="sb"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8"/></svg><input type="text" id="chat-q" placeholder="チャット名" value="'+esc(state.chatQ||"")+'"></div><button id="chat-qbtn">検索</button></div>'+kindBar+chatScopeBar()+'<div class="chat-list-body">';
     if(listChats.length===0){ html += '<div class="empty" style="padding:20px;font-size:12px;color:var(--ink-faint)">'+(q?"該当するチャットがありません":"チャットがありません")+'</div>'; }
     else{
       var sorted = listChats.slice().sort(function(a,b){ return (isPinned(b)?1:0)-(isPinned(a)?1:0) || (b.updatedAt||"").localeCompare(a.updatedAt||""); });
@@ -8436,6 +8447,11 @@
     c.querySelectorAll("[data-seg]").forEach(function(el){ el.addEventListener("click", function(){ state.memberSeg = el.getAttribute("data-seg"); render(); }); });
 
     c.querySelectorAll("[data-select-chat]").forEach(function(el){ el.addEventListener("click", function(){ state.activeChat = el.getAttribute("data-select-chat"); state.chatPop=""; state.chatPaneOpen = true; render(); }); });
+    c.querySelectorAll("[data-chat-scope]").forEach(function(el){ el.addEventListener("click", function(){
+      state.chatAll = el.getAttribute("data-chat-scope")==="all";
+      try{ localStorage.setItem("gc_chat_all", state.chatAll?"1":"0"); }catch(e){}
+      render();
+    }); });
     c.querySelectorAll("[data-chat-kind]").forEach(function(el){ el.addEventListener("click", function(){ state.chatKind = el.getAttribute("data-chat-kind"); render(); }); });
     c.querySelectorAll("[data-chat-hide]").forEach(function(el){ el.addEventListener("click", function(ev){
       ev.stopPropagation();
