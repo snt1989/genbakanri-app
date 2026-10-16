@@ -298,6 +298,16 @@
   .chat-send.ready{opacity:1;}
   .chat-hint{text-align:right;font-size:11px;color:var(--ink-faint);margin-top:4px;}
   .chat-pop{position:absolute;bottom:100%;left:20px;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);padding:8px;z-index:5;max-width:320px;max-height:240px;overflow:auto;}
+  .cm .cbub.stampb{background:transparent!important;padding:2px 0;}
+  .stamp{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:92px;padding:8px 14px 7px;border:3px solid var(--sc);border-radius:16px;background:#fff;color:var(--sc);font-weight:800;line-height:1.2;transform:rotate(-3deg);box-shadow:0 1px 0 rgba(0,0,0,.06);user-select:none}
+  .stamp .se{font-size:34px;line-height:1.15}.stamp .st{font-size:14px;letter-spacing:.04em}
+  .cm.me .stamp{transform:rotate(3deg)}
+  .chat-pop.stamps{max-width:340px;width:calc(100vw - 40px)}
+  .chat-pop .stgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:2px}
+  .chat-pop .stgrid button{background:none;border:0;padding:2px;cursor:pointer;border-radius:12px;font-family:inherit}
+  .chat-pop .stgrid button:hover{background:var(--surface-2)}
+  .chat-pop .stgrid .stamp{min-width:0;width:100%;padding:5px 4px 4px;border-width:2px;transform:none}
+  .chat-pop .stgrid .stamp .se{font-size:24px}.chat-pop .stgrid .stamp .st{font-size:11.5px}
   .chat-pop .emo{display:grid;grid-template-columns:repeat(8,1fr);gap:2px;}
   .chat-pop .emo button{font-size:20px;background:none;border:none;cursor:pointer;padding:3px;border-radius:6px;}
   .chat-pop .emo button:hover,.chat-pop .mem:hover{background:var(--surface-2);}
@@ -1322,6 +1332,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-10-16-3", title:"10月16日の更新（3）", items:[
+      {t:"チャットにスタンプ", d:"入力欄の「スタンプ」ボタンから、了解・ありがとう・お疲れ様など18種類のスタンプをワンタップで送れます。"}
+    ]},
     {id:"2026-10-16-2", title:"10月16日の更新（2）", items:[
       {t:"管理者は全チャットを確認できます", admin:true, d:"チャット一覧のボタンで「参加中のみ」と「すべてのチャット」を切り替えられます（参加外には「参加外」の印が付きます）。未読のお知らせは参加しているチャットだけです。"}
     ]},
@@ -4260,6 +4273,29 @@
   }
 
   /* ============ CHAT ============ */
+  // チャットのスタンプ（絵文字＋ひとこと。押すとすぐ送信されます）。id は保存されるので、変更・並べ替えはしても id は変えないこと
+  var STAMPS = [
+    {id:"ryokai", e:"👍", t:"了解", c:"#1F7A4D"},
+    {id:"arigato", e:"🙏", t:"ありがとう", c:"#C2410C"},
+    {id:"otsukare", e:"🍵", t:"お疲れ様", c:"#0F766E"},
+    {id:"onegai", e:"🙇", t:"お願いします", c:"#7C3AED"},
+    {id:"ok", e:"🆗", t:"OK", c:"#1D4ED8"},
+    {id:"kakunin", e:"👀", t:"確認します", c:"#0369A1"},
+    {id:"shochi", e:"🫡", t:"承知しました", c:"#15803D"},
+    {id:"sumimasen", e:"🙏", t:"すみません", c:"#B45309"},
+    {id:"kanryo", e:"✅", t:"完了", c:"#16A34A"},
+    {id:"tasukaru", e:"😊", t:"助かります", c:"#DB2777"},
+    {id:"shikyu", e:"🚨", t:"至急", c:"#DC2626"},
+    {id:"kaishi", e:"🛠️", t:"作業開始", c:"#1D4ED8"},
+    {id:"toucyaku", e:"🚚", t:"到着", c:"#0E7490"},
+    {id:"kyukei", e:"☕", t:"休憩中", c:"#92400E"},
+    {id:"ame", e:"☔", t:"雨で中止", c:"#475569"},
+    {id:"modoru", e:"🏃", t:"戻ります", c:"#6D28D9"},
+    {id:"ganbaro", e:"💪", t:"頑張ろう", c:"#EA580C"},
+    {id:"naruhodo", e:"💡", t:"なるほど", c:"#CA8A04"}
+  ];
+  function stampOf(id){ return STAMPS.find(function(x){ return x.id===id; }) || {id:id, e:"💬", t:String(id||"スタンプ"), c:"#64748B"}; }
+  function stampHtml(id){ var st = stampOf(id); return '<span class="stamp" style="--sc:'+st.c+'"><span class="se">'+st.e+'</span><span class="st">'+esc(st.t)+'</span></span>'; }
   var CHAT_EMOJI = ["😀","😊","😂","🙂","😉","😍","🤔","😅","🙏","👍","👏","🙌","💪","✨","🔥","🎉","✅","❌","⚠️","📷","📄","🚧","🔧","🌧️","☀️","🚛","🕐","❗","❓","🙇","👌","🤝"];
   function fmtAgo(iso){
     if(!iso) return "";
@@ -4410,8 +4446,8 @@
               '<a href="'+esc(m.attachment.url)+'" target="_blank" rel="noopener"><img class="catt" src="'+esc(m.attachment.url)+'" alt=""></a>' :
               '<br><a class="cfile" href="'+esc(m.attachment.url)+'" target="_blank" rel="noopener">'+iDoc()+esc(m.attachment.filename||"ファイル")+'</a>') : '';
           return out+'<div class="cm'+(mine?" me":"")+'" id="cm-'+esc(m.id||"")+'">'+(mine?'':'<div class="cav" style="background:'+avaColor(m.author)+'">'+esc(initials(m.author))+'</div>')+
-            '<div class="cbody">'+(mine?'':'<div class="cname">'+esc(m.author)+'</div>')+'<div class="crow"><div class="cbub">'+(m.replyTo?'<div class="cquote" data-chat-jump="'+esc(m.replyTo.id||"")+'"><b>'+esc(m.replyTo.author||"")+'</b><span>'+esc(m.replyTo.text||"")+'</span></div>':'')+chatText(m.text)+att+loc+'</div><div class="ctime">'+esc(chatTime(m.ts))+(m.edited?'<span class="cedited">編集済み</span>':'')+'</div>'+
-            (m.id ? '<div class="cact"><button data-chat-reply="'+esc(m.id)+'" title="返信">'+iReply()+'</button>'+(mine?'<button data-chat-medit="'+esc(m.id)+'" title="編集">'+iEdit()+'</button>':'')+((mine||state.isAdmin)?'<button class="del" data-chat-mdel="'+esc(m.id)+'" title="削除">'+iTrash()+'</button>':'')+'</div>' : '')+
+            '<div class="cbody">'+(mine?'':'<div class="cname">'+esc(m.author)+'</div>')+'<div class="crow"><div class="cbub'+(m.stamp?" stampb":"")+'">'+(m.replyTo?'<div class="cquote" data-chat-jump="'+esc(m.replyTo.id||"")+'"><b>'+esc(m.replyTo.author||"")+'</b><span>'+esc(m.replyTo.text||"")+'</span></div>':'')+(m.stamp?stampHtml(m.stamp):chatText(m.text))+att+loc+'</div><div class="ctime">'+esc(chatTime(m.ts))+(m.edited?'<span class="cedited">編集済み</span>':'')+'</div>'+
+            (m.id ? '<div class="cact"><button data-chat-reply="'+esc(m.id)+'" title="返信">'+iReply()+'</button>'+(mine&&!m.stamp?'<button data-chat-medit="'+esc(m.id)+'" title="編集">'+iEdit()+'</button>':'')+((mine||state.isAdmin)?'<button class="del" data-chat-mdel="'+esc(m.id)+'" title="削除">'+iTrash()+'</button>':'')+'</div>' : '')+
             '</div>'+readLine(chat, m, mine)+'</div></div>';
         }).join("");
       }
@@ -4420,9 +4456,11 @@
       html += '<div class="chat-input-wrap">';
       var rp = (state.chatReply||{})[chat.id];
       if(rp) html += '<div class="chat-replybar"><div><b>'+esc(rp.author)+'</b> に返信<span>'+esc(rp.text)+'</span></div><button type="button" id="chat-reply-x" title="返信をやめる">×</button></div>';
+      if(state.chatPop==="stamp") html += '<div class="chat-pop stamps"><div class="stgrid">'+STAMPS.map(function(st){ return '<button type="button" data-chat-stamp="'+st.id+'" title="'+esc(st.t)+'">'+stampHtml(st.id)+'</button>'; }).join("")+'</div></div>';
       if(state.chatPop==="emoji") html += '<div class="chat-pop"><div class="emo">'+CHAT_EMOJI.map(function(e){ return '<button data-chat-emoji="'+e+'">'+e+'</button>'; }).join("")+'</div></div>';
       if(state.chatPop==="mention") html += '<div class="chat-pop"><button class="mem" data-chat-mention="全員" style="font-weight:700">@全員<span style="font-weight:400;color:var(--ink-faint);font-size:11px;margin-left:6px">このチャットのメンバー全員宛て</span></button>'+chatMembers(chat).map(function(m){ return '<button class="mem" data-chat-mention="'+esc(m.name)+'">@'+esc(m.name)+'</button>'; }).join("")+'</div>';
       html += '<div class="chat-tools">'+
+        '<button type="button" data-chat-tool="stamp" title="スタンプ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9l-5 5H6a2 2 0 0 1-2-2z"/><path d="M15 20v-3a2 2 0 0 1 2-2h3"/><path d="M8.5 10h.01M13.5 10h.01"/></svg></button>'+
         '<button type="button" data-chat-tool="emoji" title="絵文字"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c1 1.3 2.2 2 3.5 2s2.5-.7 3.5-2"/><path d="M9 9.5h.01M15 9.5h.01"/></svg></button>'+
         '<button type="button" data-chat-tool="mention" title="メンションする">@</button>'+
         '<button type="button" data-chat-tool="file" title="ファイルを添付"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 2h8l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm7 1.5V8h4.5L13 3.5z"/></svg></button>'+
@@ -8489,7 +8527,7 @@
         if(!db){ state.chatMsgs[cid] = (state.chatMsgs[cid]||[]).concat([msg]); var ch=state.chats.find(function(x){return x.id===cid;}); if(ch) ch.updatedAt=msg.ts; if(done) done(); render(); return; }
         db.collection("chats").doc(cid).collection("messages").add(msg).then(function(){
           db.collection("chats").doc(cid).update({updatedAt:msg.ts}).catch(function(){});
-          pushNotify(cid, msg.text || (msg.attachment ? "（添付: "+(msg.attachment.filename||"ファイル")+"）" : (msg.location ? "📍 現在地" : "")));
+          pushNotify(cid, msg.text || (msg.stamp ? "【スタンプ】"+stampOf(msg.stamp).t : "") || (msg.attachment ? "（添付: "+(msg.attachment.filename||"ファイル")+"）" : (msg.location ? "📍 現在地" : "")));
           if(done) done();
         }).catch(function(){ toast("送信に失敗しました"); });
       };
@@ -8529,6 +8567,12 @@
         state.chatDraft[state.activeChat] = input.value; state.chatPop = state.chatPop===k ? "" : k; render();
       }); });
       var insertText = function(t){ var cur = input.value; state.chatDraft[state.activeChat] = cur + t; state.chatPop = ""; render(); var i2=document.getElementById("chat-input"); if(i2){ i2.focus(); i2.setSelectionRange(i2.value.length,i2.value.length); } };
+      c.querySelectorAll("[data-chat-stamp]").forEach(function(el){ el.addEventListener("click", function(){
+        var id = el.getAttribute("data-chat-stamp"); state.chatPop = "";
+        var m0 = {text:"", stamp:id}, rpl = (state.chatReply||{})[state.activeChat];
+        if(rpl){ m0.replyTo = {id:rpl.id, author:rpl.author, text:rpl.text}; delete state.chatReply[state.activeChat]; }
+        postMsg(m0, function(){ if(db) render(); });
+      }); });
       c.querySelectorAll("[data-chat-emoji]").forEach(function(el){ el.addEventListener("click", function(){ insertText(el.getAttribute("data-chat-emoji")); }); });
       c.querySelectorAll("[data-chat-mention]").forEach(function(el){ el.addEventListener("click", function(){ insertText("@"+el.getAttribute("data-chat-mention")+" "); }); });
       ["chat-file","chat-image"].forEach(function(id){
@@ -8551,7 +8595,7 @@
     c.querySelectorAll("[data-chat-reply]").forEach(function(el){ el.addEventListener("click", function(){
       var m = (state.chatMsgs[state.activeChat]||[]).find(function(x){return x.id===el.getAttribute("data-chat-reply");}); if(!m) return;
       var inp = document.getElementById("chat-input"); if(inp) (state.chatDraft = state.chatDraft||{})[state.activeChat] = inp.value;
-      var t = (m.text || (m.attachment ? "（添付: "+(m.attachment.filename||"ファイル")+"）" : "")).replace(/\s+/g," ").slice(0,60);
+      var t = (m.text || (m.stamp ? "【スタンプ】"+stampOf(m.stamp).t : "") || (m.attachment ? "（添付: "+(m.attachment.filename||"ファイル")+"）" : "")).replace(/\s+/g," ").slice(0,60);
       state.chatReply = state.chatReply || {}; state.chatReply[state.activeChat] = {id:m.id, author:m.author, text:t};
       render(); var i2 = document.getElementById("chat-input"); if(i2) i2.focus();
     }); });
