@@ -307,12 +307,12 @@
   .crx .rx{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--border);background:var(--surface);color:var(--ink-soft);border-radius:14px;padding:2px 8px 2px 6px;font-size:11.5px;font-family:inherit;cursor:pointer;line-height:1.5}
   .crx .rx .re{font-size:15px;line-height:1}
   .crx .rx.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:700}
-  .chat-pop.stamps{max-width:340px;width:calc(100vw - 40px)}
-  .chat-pop .stgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:2px}
-  .chat-pop .stgrid button{background:none;border:0;padding:2px;cursor:pointer;border-radius:12px;font-family:inherit}
+  .chat-pop.stamps{max-width:270px;width:calc(100vw - 40px);max-height:250px;padding:6px}
+  .chat-pop .stgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;padding:0}
+  .chat-pop .stgrid button{background:none;border:0;padding:1px;cursor:pointer;border-radius:12px;font-family:inherit}
   .chat-pop .stgrid button:hover{background:var(--surface-2)}
-  .chat-pop .stgrid .stamp{min-width:0;width:100%;padding:5px 4px 4px;border-width:2px;transform:none}
-  .chat-pop .stgrid .stamp .se{font-size:24px}.chat-pop .stgrid .stamp .st{font-size:11.5px}
+  .chat-pop .stgrid .stamp{min-width:0;width:100%;padding:2px 1px 2px;border-width:1.5px;border-radius:9px;transform:none}
+  .chat-pop .stgrid .stamp .se{font-size:18px}.chat-pop .stgrid .stamp .st{font-size:9px;letter-spacing:0;white-space:nowrap}
   .chat-pop .emo{display:grid;grid-template-columns:repeat(8,1fr);gap:2px;}
   .chat-pop .emo button{font-size:20px;background:none;border:none;cursor:pointer;padding:3px;border-radius:6px;}
   .chat-pop .emo button:hover,.chat-pop .mem:hover{background:var(--surface-2);}
@@ -8641,7 +8641,8 @@
     c.querySelectorAll("[data-chat-rx]").forEach(function(el){ el.addEventListener("click", function(){ toggleRx(el.getAttribute("data-chat-rx"), el.getAttribute("data-rx-stamp")); }); });
     c.querySelectorAll("[data-chat-react]").forEach(function(el){ el.addEventListener("click", function(){
       var mid = el.getAttribute("data-chat-react");
-      openModal("スタンプを付ける", '<div class="chat-pop stamps" style="position:static;border:0;box-shadow:none;max-width:none;max-height:none;padding:0"><div class="stgrid">'+STAMPS.map(function(st){ return '<button type="button" data-rx-pick="'+st.id+'" title="'+esc(st.t)+'">'+stampHtml(st.id)+'</button>'; }).join("")+'</div></div>', '<button class="btn" data-close-modal>キャンセル</button>');
+      openModal("スタンプを付ける", '<div class="chat-pop stamps" style="position:static;border:0;box-shadow:none;width:auto;max-width:none;max-height:none;padding:0"><div class="stgrid">'+STAMPS.map(function(st){ return '<button type="button" data-rx-pick="'+st.id+'" title="'+esc(st.t)+'">'+stampHtml(st.id)+'</button>'; }).join("")+'</div></div>', '<button class="btn" data-close-modal>キャンセル</button>');
+      var mbx = document.getElementById("modal-box"); if(mbx && window.innerWidth>640) mbx.style.maxWidth = "320px";
       document.querySelectorAll("#modal-box [data-rx-pick]").forEach(function(b){ b.addEventListener("click", function(){ closeModal(); toggleRx(mid, b.getAttribute("data-rx-pick")); }); });
     }); });
     c.querySelectorAll("[data-chat-medit]").forEach(function(el){ el.addEventListener("click", function(){
