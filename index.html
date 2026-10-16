@@ -302,6 +302,11 @@
   .stamp{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:92px;padding:8px 14px 7px;border:3px solid var(--sc);border-radius:16px;background:#fff;color:var(--sc);font-weight:800;line-height:1.2;transform:rotate(-3deg);box-shadow:0 1px 0 rgba(0,0,0,.06);user-select:none}
   .stamp .se{font-size:34px;line-height:1.15}.stamp .st{font-size:14px;letter-spacing:.04em}
   .cm.me .stamp{transform:rotate(3deg)}
+  .crx{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+  .cm.me .crx{justify-content:flex-end}
+  .crx .rx{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--border);background:var(--surface);color:var(--ink-soft);border-radius:14px;padding:2px 8px 2px 6px;font-size:11.5px;font-family:inherit;cursor:pointer;line-height:1.5}
+  .crx .rx .re{font-size:15px;line-height:1}
+  .crx .rx.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:700}
   .chat-pop.stamps{max-width:340px;width:calc(100vw - 40px)}
   .chat-pop .stgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:2px}
   .chat-pop .stgrid button{background:none;border:0;padding:2px;cursor:pointer;border-radius:12px;font-family:inherit}
@@ -1332,6 +1337,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-10-16-4", title:"10月16日の更新（4）", items:[
+      {t:"メッセージにスタンプを付けられます", d:"メッセージの横のスタンプボタンから、了解・ありがとうなどを付けられます。付いたスタンプをもう一度押すと取り消せます。付けた人の名前は、スタンプに触れる（長押しする）と見られます。"}
+    ]},
     {id:"2026-10-16-3", title:"10月16日の更新（3）", items:[
       {t:"チャットにスタンプ", d:"入力欄の「スタンプ」ボタンから、了解・ありがとう・お疲れ様など18種類のスタンプをワンタップで送れます。"}
     ]},
@@ -4296,6 +4304,17 @@
   ];
   function stampOf(id){ return STAMPS.find(function(x){ return x.id===id; }) || {id:id, e:"💬", t:String(id||"スタンプ"), c:"#64748B"}; }
   function stampHtml(id){ var st = stampOf(id); return '<span class="stamp" style="--sc:'+st.c+'"><span class="se">'+st.e+'</span><span class="st">'+esc(st.t)+'</span></span>'; }
+  // メッセージに付いたスタンプ（リアクション）。m.reactions = { スタンプid: [付けた人の名前, ...] }
+  function rxHtml(m){
+    var r = m.reactions; if(!r || !m.id) return "";
+    var ids = Object.keys(r).filter(function(k){ return Array.isArray(r[k]) && r[k].length; });
+    if(!ids.length) return "";
+    var me = state.myName;
+    return '<div class="crx">'+ids.map(function(k){
+      var st = stampOf(k), who = r[k], on = who.indexOf(me)!==-1;
+      return '<button type="button" class="rx'+(on?' on':'')+'" data-chat-rx="'+esc(m.id)+'" data-rx-stamp="'+esc(k)+'" title="'+esc(who.join("、"))+'"><span class="re">'+st.e+'</span><span>'+esc(st.t)+' '+who.length+'</span></button>';
+    }).join("")+'</div>';
+  }
   var CHAT_EMOJI = ["😀","😊","😂","🙂","😉","😍","🤔","😅","🙏","👍","👏","🙌","💪","✨","🔥","🎉","✅","❌","⚠️","📷","📄","🚧","🔧","🌧️","☀️","🚛","🕐","❗","❓","🙇","👌","🤝"];
   function fmtAgo(iso){
     if(!iso) return "";
@@ -4447,8 +4466,8 @@
               '<br><a class="cfile" href="'+esc(m.attachment.url)+'" target="_blank" rel="noopener">'+iDoc()+esc(m.attachment.filename||"ファイル")+'</a>') : '';
           return out+'<div class="cm'+(mine?" me":"")+'" id="cm-'+esc(m.id||"")+'">'+(mine?'':'<div class="cav" style="background:'+avaColor(m.author)+'">'+esc(initials(m.author))+'</div>')+
             '<div class="cbody">'+(mine?'':'<div class="cname">'+esc(m.author)+'</div>')+'<div class="crow"><div class="cbub'+(m.stamp?" stampb":"")+'">'+(m.replyTo?'<div class="cquote" data-chat-jump="'+esc(m.replyTo.id||"")+'"><b>'+esc(m.replyTo.author||"")+'</b><span>'+esc(m.replyTo.text||"")+'</span></div>':'')+(m.stamp?stampHtml(m.stamp):chatText(m.text))+att+loc+'</div><div class="ctime">'+esc(chatTime(m.ts))+(m.edited?'<span class="cedited">編集済み</span>':'')+'</div>'+
-            (m.id ? '<div class="cact"><button data-chat-reply="'+esc(m.id)+'" title="返信">'+iReply()+'</button>'+(mine&&!m.stamp?'<button data-chat-medit="'+esc(m.id)+'" title="編集">'+iEdit()+'</button>':'')+((mine||state.isAdmin)?'<button class="del" data-chat-mdel="'+esc(m.id)+'" title="削除">'+iTrash()+'</button>':'')+'</div>' : '')+
-            '</div>'+readLine(chat, m, mine)+'</div></div>';
+            (m.id ? '<div class="cact"><button data-chat-reply="'+esc(m.id)+'" title="返信">'+iReply()+'</button><button data-chat-react="'+esc(m.id)+'" title="スタンプを付ける"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="12" r="8.5"/><path d="M8 14c.8 1.1 1.8 1.7 3 1.7s2.2-.6 3-1.7M8.7 9.7h.01M13.3 9.7h.01M19 3v5M16.5 5.5h5"/></svg></button>'+(mine&&!m.stamp?'<button data-chat-medit="'+esc(m.id)+'" title="編集">'+iEdit()+'</button>':'')+((mine||state.isAdmin)?'<button class="del" data-chat-mdel="'+esc(m.id)+'" title="削除">'+iTrash()+'</button>':'')+'</div>' : '')+
+            '</div>'+rxHtml(m)+readLine(chat, m, mine)+'</div></div>';
         }).join("");
       }
       html += '</div>';
@@ -8609,6 +8628,22 @@
     if(chatEdit) chatEdit.addEventListener("click", function(){ var ch = state.chats.find(function(x){return x.id===state.activeChat;}); if(ch) openChatForm(ch); });
     var msgRef = function(id){ return db.collection("chats").doc(state.activeChat).collection("messages").doc(id); };
     var findMsg = function(id){ return (state.chatMsgs[state.activeChat]||[]).find(function(x){return x.id===id;}); };
+    // メッセージへのスタンプ：もう一度押すと取り消し。同じスタンプを複数の人が付けると人数が増える
+    var toggleRx = function(msgId, stampId){
+      var m = findMsg(msgId); if(!m || !state.myName) return;
+      var r = {}; Object.keys(m.reactions||{}).forEach(function(k){ r[k] = (m.reactions[k]||[]).slice(); });
+      var arr = r[stampId] || [], i = arr.indexOf(state.myName);
+      if(i===-1) arr.push(state.myName); else arr.splice(i,1);
+      if(arr.length) r[stampId] = arr; else delete r[stampId];
+      if(!db){ m.reactions = r; render(); return; }
+      msgRef(msgId).update({reactions:r}).catch(function(){ toast("スタンプを付けられませんでした"); });
+    };
+    c.querySelectorAll("[data-chat-rx]").forEach(function(el){ el.addEventListener("click", function(){ toggleRx(el.getAttribute("data-chat-rx"), el.getAttribute("data-rx-stamp")); }); });
+    c.querySelectorAll("[data-chat-react]").forEach(function(el){ el.addEventListener("click", function(){
+      var mid = el.getAttribute("data-chat-react");
+      openModal("スタンプを付ける", '<div class="chat-pop stamps" style="position:static;border:0;box-shadow:none;max-width:none;max-height:none;padding:0"><div class="stgrid">'+STAMPS.map(function(st){ return '<button type="button" data-rx-pick="'+st.id+'" title="'+esc(st.t)+'">'+stampHtml(st.id)+'</button>'; }).join("")+'</div></div>', '<button class="btn" data-close-modal>キャンセル</button>');
+      document.querySelectorAll("#modal-box [data-rx-pick]").forEach(function(b){ b.addEventListener("click", function(){ closeModal(); toggleRx(mid, b.getAttribute("data-rx-pick")); }); });
+    }); });
     c.querySelectorAll("[data-chat-medit]").forEach(function(el){ el.addEventListener("click", function(){
       var id = el.getAttribute("data-chat-medit"), m = findMsg(id); if(!m) return;
       openModal("メッセージの編集", '<textarea id="f-medit" style="min-height:110px;width:100%">'+esc(m.text||"")+'</textarea>', '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-msave">保存する</button>');
