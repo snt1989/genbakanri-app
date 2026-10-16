@@ -4165,16 +4165,41 @@
     };
   }
   /* ---- 名刺の写真から文字を読み取る（OCR）。ブラウザ内で Tesseract.js を使う（外部サービスへ写真は送らない） ---- */
-  var cardOcrLib = null;
+  var cardOcrLib = null, cardWorkerP = null;
+  var CARD_OCR_LIBS = ["https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js", "https://unpkg.com/tesseract.js@5.1.1/dist/tesseract.min.js"];
+  var CARD_OCR_LANGS = ["https://tessdata.projectnaptha.com/4.0.0_fast", "https://cdn.jsdelivr.net/npm/@tesseract.js-data/jpn@1.0.0/4.0.0_fast", "https://cdn.jsdelivr.net/npm/@tesseract.js-data/jpn@1.0.0/4.0.0_best_int"];
   function cardOcrLoad(){
+    if(window.Tesseract) return Promise.resolve(window.Tesseract);
     if(cardOcrLib) return cardOcrLib;
-    cardOcrLib = new Promise(function(res, rej){
-      if(window.Tesseract) return res(window.Tesseract);
-      var sc = document.createElement("script"); sc.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
-      sc.onload = function(){ window.Tesseract ? res(window.Tesseract) : rej(new Error("load")); }; sc.onerror = function(){ rej(new Error("load")); };
-      document.head.appendChild(sc);
-    }).catch(function(e){ cardOcrLib = null; throw e; });
+    var tryLib = function(idx){
+      return new Promise(function(res, rej){
+        var sc = document.createElement("script"), to = setTimeout(function(){ sc.remove(); rej(new Error("timeout")); }, 20000);
+        sc.src = CARD_OCR_LIBS[idx];
+        sc.onload = function(){ clearTimeout(to); window.Tesseract ? res(window.Tesseract) : rej(new Error("load")); };
+        sc.onerror = function(){ clearTimeout(to); sc.remove(); rej(new Error("load")); };
+        document.head.appendChild(sc);
+      }).catch(function(e){ if(idx+1<CARD_OCR_LIBS.length) return tryLib(idx+1); throw e; });
+    };
+    cardOcrLib = tryLib(0).catch(function(e){ cardOcrLib = null; throw e; });
     return cardOcrLib;
+  }
+  // 日本語データをダウンロードして OCR 用のワーカーを作る（進みが25秒止まったら次の配信元に切り替える）。作ったワーカーは使い回す
+  function cardOcrWorker(T, onSt){
+    if(cardWorkerP) return cardWorkerP;
+    var attempt = function(idx){
+      return new Promise(function(res, rej){
+        var last = Date.now(), done = false, w = null;
+        var tm = setInterval(function(){ if(!done && Date.now()-last>25000){ done = true; clearInterval(tm); try{ if(w) w.terminate(); }catch(e){} rej(new Error("stall")); } }, 2000);
+        T.createWorker("jpn", 1, {
+          langPath: CARD_OCR_LANGS[idx],
+          logger: function(m){ last = Date.now(); onSt(m); },
+          errorHandler: function(){}
+        }).then(function(x){ w = x; if(done){ try{ x.terminate(); }catch(e){} return; } done = true; clearInterval(tm); res(x); },
+          function(e){ if(done) return; done = true; clearInterval(tm); rej(e); });
+      }).catch(function(e){ if(idx+1<CARD_OCR_LANGS.length) return attempt(idx+1); throw e; });
+    };
+    cardWorkerP = attempt(0).catch(function(e){ cardWorkerP = null; throw e; });
+    return cardWorkerP;
   }
   function cardOcrPrep(u){
     return new Promise(function(res){
@@ -4187,12 +4212,7 @@
       im.onerror = function(){ res(u); }; im.src = u;
     });
   }
-  function cardOcrRun(T, img, onProg){
-    var opt = function(lang){ return {logger:function(m){ if(m && m.status==="recognizing text") onProg(Math.round((m.progress||0)*100)); }, langPath:lang}; };
-    return T.recognize(img, "jpn+eng", opt("https://cdn.jsdelivr.net/npm/@tesseract.js-data/jpn@1.0.0/4.0.0_best_int")).catch(function(){
-      return T.recognize(img, "jpn+eng", opt(undefined));
-    }).then(function(r){ return (r && r.data && r.data.text) || ""; });
-  }
+  function cardOcrRun(w, img){ return w.recognize(img).then(function(r){ return (r && r.data && r.data.text) || ""; }); }
   // OCRの生テキストから項目を推測する（足りない所は人が直す前提）
   function cardParse(text){
     var out = {}, used = {};
@@ -4249,14 +4269,22 @@
     if(!side){ toast("先に名刺の写真を追加してください"); return; }
     var btn = document.getElementById("card-ocr-btn"), st = document.getElementById("card-ocr-status");
     var setSt = function(t){ if(st) st.textContent = t; };
-    if(btn) btn.disabled = true; setSt("読み取りの準備中…（初回は言語データの読み込みに時間がかかります）");
+    if(btn) btn.disabled = true;
     var srcs = [cardDraft.front, cardDraft.back].filter(Boolean);
+    var stMap = function(m){
+      var p = Math.round((m.progress||0)*100), t = m.status||"";
+      if(/core/.test(t)) setSt("OCRエンジンを読み込み中…");
+      else if(/language|traineddata/.test(t)) setSt("日本語データをダウンロード中… "+p+"%（初回だけ時間がかかります）");
+      else if(/initializ/.test(t)) setSt("準備中…");
+      else if(/recogniz/.test(t)) setSt("文字を読み取り中… "+p+"%");
+    };
+    setSt("OCRを読み込み中…");
     cardOcrLoad().then(function(T){
+      return cardOcrWorker(T, stMap);
+    }).then(function(w){
       var all = "", chain = Promise.resolve();
-      srcs.forEach(function(u, idx){
-        chain = chain.then(function(){ return cardOcrPrep(u); }).then(function(img){
-          return cardOcrRun(T, img, function(p){ setSt("読み取り中… "+(idx+1)+"/"+srcs.length+"枚目 "+p+"%"); });
-        }).then(function(t){ all += "\n"+t; });
+      srcs.forEach(function(u){
+        chain = chain.then(function(){ return cardOcrPrep(u); }).then(function(img){ return cardOcrRun(w, img); }).then(function(t){ all += "\n"+t; });
       });
       return chain.then(function(){ return all; });
     }).then(function(text){
@@ -4267,7 +4295,7 @@
       var sb = document.getElementById("f-card-submit"), ne = document.getElementById("f-card-name"); if(sb && ne) sb.disabled = !ne.value.trim() && !cardDraft.front;
       setSt(filled ? filled+"項目を入力しました。読み間違いがないか確認してください" : (text.trim() ? "項目を判別できませんでした。下の読み取り結果を見ながら入力してください" : "文字を読み取れませんでした。明るい場所でまっすぐ撮影した写真でお試しください"));
     }).catch(function(){
-      setSt("OCRを読み込めませんでした（通信を確認してください。この画面では利用できない場合があります）");
+      setSt("OCRを読み込めませんでした。通信状況を確認して、もう一度お試しください（会社の回線などで外部サイトへの接続が制限されている場合は使えません。その場合は手入力してください）");
     }).then(function(){ if(btn) btn.disabled = false; });
   }
   function cardCsv(){
