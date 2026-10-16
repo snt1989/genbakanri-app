@@ -1288,6 +1288,7 @@
     state.projects.filter(function(p){ return p.endDate && p.endDate>=today && p.endDate<=lim && (p.status==="施工中"||p.status==="契約済") && (state.isAdmin || isMyProject(p)); }).forEach(function(p){
       items.push({grp:"project", title:p.name, sub:"工期の終了が近づいています（"+fmtDate(p.endDate)+"）", go:function(){ goProjectDetail(p.id); }});
     });
+    if(releaseUnseen().length) items.unshift({grp:"update", urgent:true, title:"アプリが新しくなりました", sub:"新しい機能・変更点をお知らせします", go:openReleaseNotes});
     state.chats.forEach(function(c){
       if(!chatJoined(c)) return;
       var rd = (c.reads||{})[me];
@@ -1316,20 +1317,71 @@
     else if(pushSupported() && state.push.status && state.push.status.configured && !state.push.sub) out.push({title:"スマホ通知をオンにしましょう", sub:"チャットの新着などをすぐ受け取れます", go:goPersonalSettings});
     return out;
   }
+  /* ============ バージョンアップのお知らせ ============
+     新しい機能や修正を公開するたびに、RELEASES の先頭に1件追加する（id は日付 "YYYY-MM-DD"、同じ日に複数あれば "-2" などを付ける）。
+     追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
+     admin:true の項目は管理者にだけ表示されます。 */
+  var RELEASES = [
+    {id:"2026-10-16", title:"10月16日の更新", items:[
+      {t:"お知らせ", d:"バージョンアップの内容を、このお知らせでお伝えするようになりました。"},
+      {t:"日付の入力欄に「クリア」ボタン", d:"スマホでも、入れた日付をワンタップで消せます。"},
+      {t:"自分が参加しているチャットだけを表示", d:"案件チャットは担当者、グループチャットはメンバーに選ばれた人だけに表示されます（未読の通知も同じです）。"},
+      {t:"入力中の内容が消えなくなりました", d:"案件登録・メンバー登録の入力中に、他の人の更新で入力内容が消える問題を直しました。"},
+      {t:"案件のメモ", d:"案件ごとに申し送りなどのメモを残せます（社外メンバーには表示されません）。"},
+      {t:"登録・編集の記録", d:"案件の登録者・最終編集者と、変更履歴（いつ・誰が・何を）を確認できます。"},
+      {t:"案件の重複チェック", d:"案件名や顧客・住所が同じ案件をまとめて表示します。重複でないものは「確認済み」にして除外できます。"},
+      {t:"ホーム画面アイコンのバッジ", d:"ホーム画面に追加したアプリのアイコンに、お知らせの件数が表示されます。"},
+      {t:"案件を顧客名で並べ替え", d:"案件一覧で顧客名の昇順・降順に並べ替えられます。"},
+      {t:"写真・ファイルの容量表示", d:"ファイルごとのサイズと、案件ごとの容量が見られます。"},
+      {t:"連携アプリのページ", d:"備品管理・報告写真・黒板・勤怠・社用車管理へ、ここから移動できます。備品管理へは自動でログインします。"},
+      {t:"報告写真アプリの報告書を案件に保存", d:"案件の画面から報告写真アプリを開き、作った報告書のPDFをその案件の「写真・ファイル」に保存できます。"},
+      {t:"データベースの使用量（管理者）", admin:true, d:"設定の管理画面で、Firestoreの実際の使用量をほぼリアルタイムで確認できます（設定が必要です）。"}
+    ]}
+  ];
+  function releaseSeenId(){
+    var me = state.myName || "";
+    if(state.releaseSeen && state.releaseSeen[me]!==undefined) return state.releaseSeen[me];
+    try{ return localStorage.getItem("gc_release_seen_"+me); }catch(e){ return null; }
+  }
+  function releaseMarkSeen(){
+    var me = state.myName || "", id = RELEASES[0].id;
+    (state.releaseSeen = state.releaseSeen || {})[me] = id;
+    try{ localStorage.setItem("gc_release_seen_"+me, id); }catch(e){}
+    try{ lastBadge = -1; }catch(e){}
+  }
+  // 未読のバージョンアップがあるか（初めて使う端末では、最新の1件だけを知らせる）
+  function releaseUnseen(){
+    var seen = releaseSeenId();
+    if(seen===null || seen===undefined) return RELEASES.slice(0,1);
+    var out = []; for(var i=0;i<RELEASES.length;i++){ if(RELEASES[i].id===seen) break; out.push(RELEASES[i]); }
+    return out;
+  }
+  function openReleaseNotes(){
+    var unseen = releaseUnseen().map(function(r){ return r.id; });
+    var body = RELEASES.map(function(r){
+      var isNew = unseen.indexOf(r.id)!==-1;
+      var items = r.items.filter(function(x){ return !x.admin || state.isAdmin; });
+      return '<div style="margin:2px 0 16px"><div style="font-size:13px;font-weight:700;margin-bottom:6px">'+esc(r.title)+(isNew?' <span style="font-size:10.5px;color:#fff;background:var(--danger);border-radius:8px;padding:1px 7px;margin-left:4px;vertical-align:1px">NEW</span>':'')+'</div>'+
+        items.map(function(x){ return '<div style="padding:8px 0;border-top:1px solid var(--border)"><div style="font-size:12.5px;font-weight:700">'+esc(x.t)+'</div><div style="font-size:12px;line-height:1.6;color:var(--ink-soft);margin-top:2px">'+esc(x.d)+'</div></div>'; }).join("")+'</div>';
+    }).join("");
+    openModal("アプリが新しくなりました", body, '<button class="btn primary" data-close-modal>閉じる</button>');
+    releaseMarkSeen(); render();
+  }
   var __noticeFns = [];
   function openNotices(){
     var items = noticeItems(), setup = noticeSetup(); __noticeFns = items.concat(setup);
-    var GL = {task:"タスク", project:"案件", chat:"チャット"}, ic = {task:"✓", project:"🏗", chat:"💬"};
+    var GL = {update:"アプリの更新", task:"タスク", project:"案件", chat:"チャット"}, ic = {update:"🆕", task:"✓", project:"🏗", chat:"💬"};
     var row = function(it, i, g){ return '<button class="notice-row" data-notice="'+i+'" style="display:flex;gap:10px;align-items:flex-start;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--border);padding:10px 2px;cursor:pointer;color:inherit;font:inherit"><span style="width:22px;text-align:center;flex:none">'+(ic[g]||"🔔")+'</span><span style="flex:1;min-width:0"><span style="display:block;font-size:13px;font-weight:700;line-height:1.5;word-break:break-all">'+esc(it.title)+'</span><span style="display:block;font-size:11.5px;color:'+(it.urgent?"var(--danger)":"var(--ink-faint)")+';line-height:1.5">'+esc(it.sub)+'</span></span></button>'; };
     var body = "";
     if(!items.length && !setup.length) body = '<div style="padding:26px 6px;text-align:center;color:var(--ink-faint);font-size:13px">新しいお知らせはありません</div>';
-    ["task","project","chat"].forEach(function(g){
+    ["update","task","project","chat"].forEach(function(g){
       var xs = items.map(function(it,i){ return [it,i]; }).filter(function(p){ return p[0].grp===g; });
       if(!xs.length) return;
       body += '<div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);margin:10px 0 0">'+GL[g]+'（'+xs.length+'）</div>'+xs.map(function(p){ return row(p[0], p[1], g); }).join("");
     });
     if(setup.length) body += '<div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);margin:14px 0 0">ご案内</div>'+setup.map(function(it,k){ return row(it, items.length+k, ""); }).join("");
-    openModal("お知らせ", body, '<button class="btn" data-close-modal>閉じる</button>');
+    openModal("お知らせ", body, '<button class="btn" id="rel-history" style="margin-right:auto">更新の履歴</button><button class="btn" data-close-modal>閉じる</button>');
+    var rh = document.getElementById("rel-history"); if(rh) rh.addEventListener("click", function(){ closeModal(); openReleaseNotes(); });
     document.querySelectorAll("#modal-box [data-notice]").forEach(function(el){ el.addEventListener("click", function(){ var f = __noticeFns[+el.getAttribute("data-notice")]; closeModal(); if(f && f.go) f.go(); }); });
   }
   /* ---- 通知オフの人へのお知らせ ---- */
