@@ -1337,6 +1337,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-10-16-5", title:"10月16日の更新（5）", items:[
+      {t:"案件一覧を顧客からも検索", d:"案件一覧の検索で、案件名・住所に加えて、顧客名（ふりがな）・電話番号でも探せます。全角半角・大文字小文字・ひらがな／カタカナの違いは気にせず検索できます。"}
+    ]},
     {id:"2026-10-16-4", title:"10月16日の更新（4）", items:[
       {t:"メッセージにスタンプを付けられます", d:"メッセージの横のスタンプボタンから、了解・ありがとうなどを付けられます。付いたスタンプをもう一度押すと取り消せます。付けた人の名前は、スタンプに触れる（長押しする）と見られます。"}
     ]},
@@ -2948,8 +2951,20 @@
     var f = mode==="sales" ? state.salesFilter : state.constFilter;
     var title = mode==="sales" ? "営業案件一覧" : "施工案件一覧";
 
+    // 検索：案件名・住所・顧客名（ふりがな・電話番号も）。全角半角・大文字小文字・空白の違いは無視する。社外メンバーには社外秘の項目では一致させない
+    var fz = function(x){ return String(x||"").normalize("NFKC").toLowerCase().replace(/[\s\u3000]/g,"").replace(/[\u30a1-\u30f6]/g,function(ch){ return String.fromCharCode(ch.charCodeAt(0)-0x60); }); };   // カタカナ→ひらがなにそろえる
+    var fq = fz(f.name), custById = {};
+    if(fq) state.customers.forEach(function(c){ custById[c.id] = c; });
+    var matchQ = function(p){
+      var cu = p.customerId ? custById[p.customerId] : null;
+      var hay = [p.name];
+      if(!projAddrHidden(p)) hay.push(propertyAddressOf(p).full, p.address);
+      if(!hiddenFor(p,"c_name")) hay.push(p.customerName, p.customerKana, cu&&cu.name, cu&&cu.kana);
+      if(!hiddenFor(p,"c_contact")) hay.push(p.customerPhone, cu&&cu.phone);
+      return hay.some(function(x){ return x && fz(x).indexOf(fq)!==-1; });
+    };
     var filtered = state.projects.filter(function(p){
-      if(f.name && (p.name||"").indexOf(f.name)===-1 && propertyAddressOf(p).full.indexOf(f.name)===-1 && (p.address||"").indexOf(f.name)===-1) return false;
+      if(fq && !matchQ(p)) return false;
       if(f.status.length && p.status && f.status.indexOf(p.status)===-1) return false;
       if(f.type!=="all" && p.division!==f.type) return false;
       if(f.noSched){ var wc = projectWorkCounts(p); if(wc.steps>0 && wc.events>0) return false; }
@@ -2977,7 +2992,7 @@
 
     html += '<div class="card filter-card" data-filter-mode="'+mode+'">';
     html += '<div class="filter-line">'+
-      '<div class="fitem" style="min-width:220px"><span>案件名・住所で検索</span><input type="text" id="flt-name" value="'+esc(f.name)+'" placeholder="案件名または住所"></div>'+
+      '<div class="fitem" style="min-width:220px"><span>案件名・顧客・住所で検索</span><input type="text" id="flt-name" value="'+esc(f.name)+'" placeholder="案件名・顧客名・住所・電話番号"></div>'+
       '<div class="fitem"><span>事業部</span><select id="flt-type"><option value="all">すべて</option>'+DIVISIONS.map(function(t){return '<option value="'+esc(t)+'"'+(f.type===t?" selected":"")+'>'+esc(t)+'</option>';}).join("")+'</select></div>'+
       '<label class="checkopt" style="align-self:flex-end;padding-bottom:8px"><input type="checkbox" id="flt-nosched"'+(f.noSched?" checked":"")+'>工程表・カレンダー未作成のみ</label>'+
       '<button class="btn primary" id="flt-search">'+iSearch()+' 検索する</button>'+
