@@ -1342,6 +1342,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-10-18-1", title:"10月18日の更新", items:[
+      {t:"スマホで画面が落ちる問題への対策（名刺管理）", d:"名刺の一覧では小さなサムネイルだけを表示し、24枚ずつ「もっと見る」で追加表示するようにしました（これまでの名刺も、開くと自動でサムネイルが作られます）。OCRも使うメモリを減らし、読み取りのたびに終了するようにしました。"}
+    ]},
     {id:"2026-10-16-8", title:"10月16日の更新（8）", items:[
       {t:"【管理者向け】名刺管理を追加", d:"左のメニューに「名刺管理」が増えました（管理者のみ表示）。名刺の表・裏の写真と、氏名・会社名・連絡先・受け取った日などを登録でき、氏名・会社名・電話・メールで検索、分類で絞り込み、CSV出力ができます。写真を選ぶと名刺の枠を自動で見つけて、傾きを直しながら切り取ります。写真から文字を読み取って入力する「OCR」も使え、管理者は「利用メンバーの設定」で管理者以外にも使える人を指定できます。"}
     ]},
@@ -3975,8 +3978,10 @@
       ((state.cardQuery||(state.cardCat&&state.cardCat!=="all"))?'<button class="btn" id="card-clear">条件をクリア</button>':'')+'</div></div>';
     html += '<div class="summary-line"><span>名刺 <b>'+list.length+'</b>枚'+(list.length!==all.length?'（全'+all.length+'枚中）':'')+'</span></div>';
     if(!list.length) return html + (all.length ? emptyState(iUsers,"条件に一致する名刺がありません","条件を変えるか「条件をクリア」を押してください") : emptyState(iUsers,"名刺が登録されていません","右上の「名刺を登録」から、名刺の写真と情報を保存できます"));
-    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px">'+list.map(function(c){
-      var img = c.front ? '<img src="'+esc(c.front)+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block">' : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--ink-faint);font-size:12px">画像なし</div>';
+    var shown = Math.max(24, state.cardShown||24); if(!state.cardShown || state.cardShown<24) state.cardShown = 24;
+    cardThumbMigrate();
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px">'+list.slice(0,shown).map(function(c){
+      var img = c.thumb ? '<img src="'+esc(c.thumb)+'" alt="" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block">' : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--ink-faint);font-size:12px">'+(c.front?'画像あり（読み込み準備中）':'画像なし')+'</div>';
       return '<div class="card" style="padding:0;overflow:hidden;display:flex;flex-direction:column"><div data-card-view="'+esc(c.id)+'" style="cursor:pointer;aspect-ratio:91/55;background:var(--surface-2);border-bottom:1px solid var(--border)">'+img+'</div>'+
         '<div style="padding:12px 14px;display:flex;flex-direction:column;gap:3px;flex:1">'+
         '<a href="#" data-card-view="'+esc(c.id)+'" style="color:inherit;font-weight:700;font-size:14.5px;text-decoration:none">'+esc(c.name||"（氏名未入力）")+'</a>'+
@@ -3986,7 +3991,32 @@
         '<div style="font-size:11px;color:var(--ink-faint);margin-top:auto;padding-top:6px">'+(c.category?'<span class="tag">'+esc(c.category)+'</span> ':'')+(c.receivedDate?fmtDate(c.receivedDate)+' 受領':'')+(c.receivedBy?'（'+esc(c.receivedBy)+'）':'')+'</div>'+
         '<div style="display:flex;gap:6px;margin-top:8px"><button class="btn sm" data-card-view="'+esc(c.id)+'">詳細</button><button class="btn sm" data-card-edit="'+esc(c.id)+'">'+iEdit()+' 編集</button></div></div></div>';
     }).join("")+'</div>';
+    if(list.length>shown) html += '<div style="text-align:center;margin:16px 0"><button class="btn" data-card-more>もっと見る（残り'+(list.length-shown)+'枚）</button></div>';
     return html;
+  }
+  // 一覧用の小さなサムネイル（スマホで大きな写真を何枚も同時に表示するとメモリ不足で落ちるため）
+  function cardThumb(u, cb){
+    var im = new Image();
+    im.onload = function(){
+      try{
+        var k = Math.min(1, 360/Math.max(im.width, im.height)), cv = document.createElement("canvas"); cv.width = Math.max(1,Math.round(im.width*k)); cv.height = Math.max(1,Math.round(im.height*k));
+        cv.getContext("2d").drawImage(im,0,0,cv.width,cv.height); var out = cv.toDataURL("image/jpeg", 0.62); cv.width = cv.height = 1; cb(out);
+      }catch(e){ cb(""); }
+    };
+    im.onerror = function(){ cb(""); };
+    im.src = u;
+  }
+  var cardThumbBusy = false, cardThumbTried = {};
+  function cardThumbMigrate(){
+    if(cardThumbBusy || !db || !cardsAllowed()) return;
+    var c = (state.cards||[]).find(function(x){ return x.front && !x.thumb && !cardThumbTried[x.id]; });
+    if(!c) return;
+    cardThumbBusy = true; cardThumbTried[c.id] = 1;
+    cardThumb(c.front, function(t){
+      var done = function(){ setTimeout(function(){ cardThumbBusy = false; cardThumbMigrate(); }, 700); };
+      if(!t) return done();
+      db.collection("cards").doc(c.id).update({thumb:t}).then(done, done);
+    });
   }
   function cardEncode(cv){
     var q = 0.78, out = cv.toDataURL("image/jpeg", q);
@@ -4131,7 +4161,11 @@
         category:v("f-card-cat"), receivedDate:v("f-card-date"), receivedBy:v("f-card-by"), memo:v("f-card-memo"), front:cardDraft.front, back:cardDraft.back};
       if(!c.id && state.myName) data.createdBy = state.myName;
       if(c.id && state.myName) data.updatedBy = state.myName;
-      writeDoc("cards", c.id||null, data, c.id?"名刺を更新しました":"名刺を登録しました");
+      var save = function(){ writeDoc("cards", c.id||null, data, c.id?"名刺を更新しました":"名刺を登録しました"); };
+      sub.disabled = true;
+      if(!data.front){ data.thumb = ""; return save(); }
+      if(data.front===c.front && c.thumb){ data.thumb = c.thumb; return save(); }
+      cardThumb(data.front, function(t){ data.thumb = t; save(); });
     };
   }
   function openCardView(id){
@@ -4205,7 +4239,7 @@
     return new Promise(function(res){
       var im = new Image();
       im.onload = function(){
-        var s = Math.min(2, 2000/Math.max(im.width,im.height)), w = Math.round(im.width*s), h = Math.round(im.height*s);
+        var s = Math.min(1, 1400/Math.max(im.width,im.height)), w = Math.round(im.width*s), h = Math.round(im.height*s);
         var cv = document.createElement("canvas"); cv.width = w; cv.height = h; var cx = cv.getContext("2d");
         cx.filter = "grayscale(1) contrast(1.25)"; cx.drawImage(im,0,0,w,h); res(cv);
       };
@@ -4286,7 +4320,9 @@
       srcs.forEach(function(u){
         chain = chain.then(function(){ return cardOcrPrep(u); }).then(function(img){ return cardOcrRun(w, img); }).then(function(t){ all += "\n"+t; });
       });
-      return chain.then(function(){ return all; });
+      // 使い終わったらワーカー（数百MBのメモリを使う）を必ず閉じる。スマホのメモリ不足で画面が落ちるのを防ぐ
+      var close = function(){ cardWorkerP = null; try{ w.terminate(); }catch(e){} };
+      return chain.then(function(){ close(); return all; }, function(e){ close(); throw e; });
     }).then(function(text){
       var r = cardParse(text), map = {name:"f-card-name",kana:"f-card-kana",company:"f-card-company",department:"f-card-dept",title:"f-card-title",phone:"f-card-phone",mobile:"f-card-mobile",email:"f-card-email",address:"f-card-addr",website:"f-card-web"};
       var filled = 0;
@@ -4306,9 +4342,10 @@
     a.download = "名刺一覧_"+todayISO()+".csv"; document.body.appendChild(a); a.click(); a.remove();
   }
   document.addEventListener("click", function(e){
-    var t = e.target.closest ? e.target.closest("[data-card-new],[data-card-uncrop],[data-card-ocr],[data-card-access],[data-card-view],[data-card-edit],[data-card-del],[data-card-csv],[data-card-rmimg],#card-search-btn,#card-clear") : null;
+    var t = e.target.closest ? e.target.closest("[data-card-new],[data-card-more],[data-card-uncrop],[data-card-ocr],[data-card-access],[data-card-view],[data-card-edit],[data-card-del],[data-card-csv],[data-card-rmimg],#card-search-btn,#card-clear") : null;
     if(!t) return;
     if(t.hasAttribute("data-card-new")){ openCardForm(); return; }
+    if(t.hasAttribute("data-card-more")){ state.cardShown = (state.cardShown||24)+24; render(); return; }
     if(t.hasAttribute("data-card-uncrop")){ var us = t.getAttribute("data-card-uncrop"); if(cardOrig[us]){ cardDraft[us] = cardOrig[us]; cardOrig[us] = ""; var pv2 = document.getElementById("card-prev-"+us); if(pv2) pv2.innerHTML = '<img src="'+cardDraft[us]+'" style="width:100%;height:100%;object-fit:contain">'; } t.style.display = "none"; return; }
     if(t.hasAttribute("data-card-ocr")){ cardOcrStart(); return; }
     if(t.hasAttribute("data-card-access")){ openCardAccess(); return; }
@@ -4321,7 +4358,7 @@
       confirmDelete("「"+((c&&c.name)||"この名刺")+"」を削除しますか？（ゴミ箱から復元できます）", function(){ deleteRaw("cards", id).then(function(){ toast("名刺を削除しました"); render(); }); });
       return;
     }
-    if(t.id==="card-search-btn"){ state.cardQuery = document.getElementById("card-search").value.trim(); state.cardCat = document.getElementById("card-cat").value; state.cardSort = document.getElementById("card-sort").value; render(); return; }
+    if(t.id==="card-search-btn"){ state.cardShown = 24; state.cardQuery = document.getElementById("card-search").value.trim(); state.cardCat = document.getElementById("card-cat").value; state.cardSort = document.getElementById("card-sort").value; render(); return; }
     if(t.id==="card-clear"){ state.cardQuery = ""; state.cardCat = "all"; render(); }
   });
   document.addEventListener("change", function(e){
