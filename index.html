@@ -1077,7 +1077,7 @@
     settingsSeg:"company",
     freee:{settings:{}, status:null, master:null, loading:false, busy:false, error:""},
     works:{status:null, loading:false, error:"", code:null},
-    mobileNav:null, navDraft:null, listDefaults:null,
+    mobileNav:(function(){ try{ var v = JSON.parse(localStorage.getItem("gc_mobilenav")||"null"); return Array.isArray(v) ? v : null; }catch(e){ return null; } })(), navDraft:null, listDefaults:null,
     editingMember:null,
     activeChat:null,
     chatMsgs:{},
@@ -1358,6 +1358,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-18-1", title:"10月18日の更新", items:[
+      {t:"スマホ下部のメニューバーが勝手に切り替わる問題を修正", d:"管理者が決めたメニューバーを端末に記憶し、起動直後から表示するようにしました。起動のたびに一瞬別の並びになってから切り替わることがなくなります。"},
       {t:"開いた直後に画面が落ちる問題への自己修復", d:"スマホで起動の途中に画面が落ちた場合、次の起動で端末内のキャッシュを自動で消し、メモリだけのキャッシュで動くようにしました。"},
       {t:"スマホで画面が落ちる問題への対策（名刺管理）", d:"名刺の一覧では小さなサムネイルだけを表示し、24枚ずつ「もっと見る」で追加表示するようにしました（これまでの名刺も、開くと自動でサムネイルが作られます）。OCRも使うメモリを減らし、読み取りのたびに終了するようにしました。"}
     ]},
@@ -2058,7 +2059,11 @@
     if(!db) return;
     db.doc("settings/mobileNav").get().then(function(snap){
       var d = snap.exists ? snap.data() : null;
-      if(d && Array.isArray(d.tabs)){ state.mobileNav = d.tabs; render(); }
+      if(d && Array.isArray(d.tabs)){
+        var changed = JSON.stringify(state.mobileNav||null)!==JSON.stringify(d.tabs);
+        state.mobileNav = d.tabs; try{ localStorage.setItem("gc_mobilenav", JSON.stringify(d.tabs)); }catch(e){}
+        if(changed) bgRender();
+      }
     }).catch(function(){});
   }
   function mobileNavEditorHtml(){
@@ -2095,7 +2100,7 @@
     each("data-nav-add", function(id){ var d = draft(); if(d.length<MOBILE_NAV_MAX && d.indexOf(id)===-1) d.push(id); });
     var save = function(list, msg){
       if(!state.isAdmin){ toast("管理者のみ行えます"); return; }
-      var done = function(){ state.mobileNav = list.slice(); state.navDraft = null; toast(msg); render(); };
+      var done = function(){ state.mobileNav = list.slice(); try{ localStorage.setItem("gc_mobilenav", JSON.stringify(list)); }catch(e){} state.navDraft = null; toast(msg); render(); };
       if(!db){ done(); return; }
       db.doc("settings/mobileNav").set({tabs:list, updatedAt:new Date().toISOString()}).then(done).catch(function(){ toast("保存に失敗しました"); });
     };
