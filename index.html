@@ -867,8 +867,23 @@
       var app = appMod.initializeApp(cfg);
       // 端末にデータを保存（再読み込みのたびに全件を読み直さない＝Firestoreの読み取り回数を節約）
       var fs;
+      // 起動の途中で画面が落ちた（＝前回の起動が10秒もたずに終わった）場合は、端末内のキャッシュが原因の可能性が高いので、
+      // キャッシュを消して、以降はメモリだけのキャッシュで動かす（スマホで「問題が繰り返し起きました」と出て開けなくなるのを防ぐ）
+      var memMode = false;
       try{
-        fs = fsMod.initializeFirestore(app, {localCache: fsMod.persistentLocalCache({tabManager: fsMod.persistentMultipleTabManager()})});
+        var crashed = localStorage.getItem("gc_boot")==="1";
+        if(crashed){ localStorage.setItem("gc_memcache","1"); }
+        memMode = localStorage.getItem("gc_memcache")==="1";
+        localStorage.setItem("gc_boot","1");
+        setTimeout(function(){ try{ localStorage.removeItem("gc_boot"); }catch(e){} }, 10000);
+        if(crashed && indexedDB && indexedDB.databases){
+          var dbs = await indexedDB.databases();
+          await Promise.all((dbs||[]).filter(function(d){ return d && d.name && /^firestore\//.test(d.name); }).map(function(d){ return new Promise(function(r){ var q = indexedDB.deleteDatabase(d.name); q.onsuccess = q.onerror = q.onblocked = function(){ r(); }; setTimeout(r, 3000); }); }));
+        }
+      }catch(e){}
+      try{
+        fs = memMode ? fsMod.initializeFirestore(app, {localCache: fsMod.memoryLocalCache()})
+                     : fsMod.initializeFirestore(app, {localCache: fsMod.persistentLocalCache({tabManager: fsMod.persistentMultipleTabManager()})});
       }catch(e){ fs = fsMod.getFirestore(app); }
 
       function wrapSnap(qs){
@@ -1343,6 +1358,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-18-1", title:"10月18日の更新", items:[
+      {t:"開いた直後に画面が落ちる問題への自己修復", d:"スマホで起動の途中に画面が落ちた場合、次の起動で端末内のキャッシュを自動で消し、メモリだけのキャッシュで動くようにしました。"},
       {t:"スマホで画面が落ちる問題への対策（名刺管理）", d:"名刺の一覧では小さなサムネイルだけを表示し、24枚ずつ「もっと見る」で追加表示するようにしました（これまでの名刺も、開くと自動でサムネイルが作られます）。OCRも使うメモリを減らし、読み取りのたびに終了するようにしました。"}
     ]},
     {id:"2026-10-16-8", title:"10月16日の更新（8）", items:[
