@@ -921,9 +921,9 @@
         });
       }
       function makeCollectionRef(path){
-        var orderField = null, orderDir = "asc", limitN = null;
+        var orderField = null, orderDir = "asc", limitN = null, whereC = [];
         var buildQ = function(){
-          var constraints = [];
+          var constraints = whereC.map(function(w){ return fsMod.where(w[0], w[1], w[2]); });
           if(orderField) constraints.push(fsMod.orderBy(orderField, orderDir));
           if(limitN) constraints.push(fsMod.limit(limitN));
           return constraints.length ? fsMod.query.apply(null, [fsMod.collection(fs, path)].concat(constraints)) : fsMod.collection(fs, path);
@@ -937,6 +937,7 @@
           orderBy: function(f, dir){ orderField = f; orderDir = dir==="desc" ? "desc" : "asc"; return api; },
           get: function(){ return fsMod.getDocs(buildQ()).then(wrapSnap); },
           limit: function(n){ limitN = n; return api; },
+          where: function(f, op, v){ whereC.push([f, op, v]); return api; },
           onSnapshot: function(cb, errCb){
             var q = buildQ();
             // 通信の状態（サーバーと照合済みか／未送信の書き込みがあるか）を画面の「同期」表示に伝える。
@@ -1399,6 +1400,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
+      {t:"写真・ファイルの読み込みを軽くしました", d:"案件の画面では、その案件の写真・ファイルだけを読み込むようにしました（以前は全案件分を一度に読み込んでいました）。読み込みに失敗したときは、原因を画面に表示します。"},
       {t:"大きいファイル（PDFなど）がアップロードできない問題を修正", d:"約900KBを超える画像以外のファイルは保存できませんでした。10MBまでのファイルを分割して保存できるようにしました。画像は従来どおり自動で縮小されます。保存が後から失敗した場合も画面にお知らせが出ます。"}
     ]},
     {id:"2026-10-20-1", title:"10月20日の更新", items:[
@@ -1849,26 +1851,40 @@
     cards:   {}
   };
   var lazyUnsub = {};
-  function lazyStart(name){
-    if(!db || state.lazyOn[name]) return;
-    state.lazyOn[name] = true;
-    var q = db.collection(name); if(LAZY_COLS[name].order) q = q.orderBy(LAZY_COLS[name].order);
+  state.lazyScope = state.lazyScope || {};
+  function lazyStart(name, scopeId){
+    if(!db) return;
+    var scope = scopeId || "";
+    if(state.lazyOn[name]){
+      // 案件内の画面で絞り込み読み込み中に全件が必要になった（またはその逆で別案件になった）場合は読み込み直す
+      if(name!=="files" || (state.lazyScope.files||"")===scope || (state.lazyScope.files==="" )) return;
+      try{ if(typeof lazyUnsub[name]==="function") lazyUnsub[name](); }catch(e){}
+      state.loaded[name] = false;
+    }
+    state.lazyOn[name] = true; if(name==="files") state.lazyScope.files = scope;
+    var q = db.collection(name);
+    if(name==="files" && scope) q = q.where("projectId","==",scope);
+    else if(LAZY_COLS[name].order) q = q.orderBy(LAZY_COLS[name].order);
     lazyUnsub[name] = q.onSnapshot(function(snap){
-      state[name] = snap.docs.map(toObj); state.loaded[name] = true; bgRender();
+      state[name] = snap.docs.map(toObj);
+      if(name==="files" && scope) state.files.sort(function(a,b){ return String(a.uploadedAt||"").localeCompare(String(b.uploadedAt||"")); });
+      state.loaded[name] = true; bgRender();
     }, function(e){
-      if(name==="files") return onErr(e);
+      state.lazyOn[name] = false;
+      if(name==="files"){ state.loaded.files = true; state.files = state.files||[]; state.syncError = (e&&e.code)||"unknown"; if(e&&e.code==="resource-exhausted") quotaMark(); toast(e&&e.code==="resource-exhausted" ? "Firestoreの無料枠（1日の読み取り上限）を超えました。日本時間の夕方（16時前後）にリセットされます" : "写真・ファイルの読み込みエラー: "+(e&&e.code||"unknown")+(e&&e.message?"（"+String(e.message).slice(0,80)+"）":"")); render(); return; }
       state.loaded[name] = true; state[name] = []; bgRender();
     });
   }
   function lazyReset(){
     Object.keys(lazyUnsub).forEach(function(k){ try{ if(typeof lazyUnsub[k]==="function") lazyUnsub[k](); }catch(e){} });
-    lazyUnsub = {}; state.lazyOn = {};
+    lazyUnsub = {}; state.lazyOn = {}; state.lazyScope = {};
   }
   // いまの画面に必要なコレクションを開始する（render の先頭で呼ぶ）
   function lazyNeeds(){
     if(!db) return;
     var t = state.tab, seg = state.settingsSeg;
-    if(["files","project-detail","project-files","reports"].indexOf(t)!==-1){ lazyStart("files"); lazyStart("folders"); }
+    if(t==="project-detail"||t==="project-files"){ lazyStart("files", t==="project-files" ? state.filesProjectId : state.viewingProjectId); lazyStart("folders"); }
+    else if(["files","reports"].indexOf(t)!==-1){ lazyStart("files"); lazyStart("folders"); }
     if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1){ lazyStart("files"); lazyStart("folders"); lazyStart("trash"); }
     if(t==="settings" && seg==="trash") lazyStart("trash");
     if(t==="cards" && cardsAllowed()) lazyStart("cards");
