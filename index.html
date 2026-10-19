@@ -1400,6 +1400,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
+      {t:"写真・ファイルをタップするとエラーになる問題を修正（iPhone）", d:"iPhoneのSafariでは、保存データ形式のリンクを新しいタブで開けませんでした。開く前に変換して表示するようにしました。"},
       {t:"写真・ファイルの読み込みを軽くしました", d:"案件の画面では、その案件の写真・ファイルだけを読み込むようにしました（以前は全案件分を一度に読み込んでいました）。読み込みに失敗したときは、原因を画面に表示します。"},
       {t:"大きいファイル（PDFなど）がアップロードできない問題を修正", d:"約900KBを超える画像以外のファイルは保存できませんでした。10MBまでのファイルを分割して保存できるようにしました。画像は従来どおり自動で縮小されます。保存が後から失敗した場合も画面にお知らせが出ます。"}
     ]},
@@ -2051,6 +2052,17 @@
     if(f.chunked) return chunkBlob(f);
     return fetch(fileUrl(f)).then(function(r){ if(!r.ok) throw 0; return r.blob(); });
   }
+  /* データURL(data:)のリンクは、iPhoneのSafariでは新しいタブで開けずエラーになるため、Blob URLに変換して開く */
+  document.addEventListener("click", function(ev){
+    var a = ev.target && ev.target.closest ? ev.target.closest('a[href^="data:"]') : null; if(!a) return;
+    ev.preventDefault(); ev.stopPropagation();
+    var href = a.getAttribute("href"), dl = a.hasAttribute("download"), w = dl ? null : window.open("", "_blank");
+    fetch(href).then(function(r){ return r.blob(); }).then(function(b){
+      var u = URL.createObjectURL(b);
+      if(dl){ var t = document.createElement("a"); t.href = u; t.download = a.getAttribute("download")||"file"; document.body.appendChild(t); t.click(); t.remove(); }
+      else if(w){ w.location.href = u; } else { location.href = u; }
+    }).catch(function(){ if(w) w.close(); toast("ファイルを開けませんでした"); });
+  }, true);
   document.addEventListener("click", function(ev){
     var a = ev.target && ev.target.closest ? ev.target.closest('a[href^="#fc-"]') : null; if(!a) return;
     ev.preventDefault(); ev.stopPropagation();
