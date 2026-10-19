@@ -1924,7 +1924,7 @@
     var order = Object.keys(SYNC_NAMES).filter(function(k){ return subs[k] || state.loaded[k]!==undefined; });
     var rows = order.map(function(k){
       var o = subs[k], label, c;
-      if(!o){ label = state.loaded[k] ? "読み込み済み" : "未読み込み"; c = "var(--ink-faint)"; }
+      if(!o){ label = state.loaded[k] ? "読み込み済み" : "未使用（画面を開くと読み込み）"; c = "var(--ink-faint)"; }
       else if(o.err){ label = "エラー（"+o.err+"）"; c = "var(--danger)"; }
       else if(o.pending){ label = "送信中"; c = "#e38a00"; }
       else if(o.fromCache){ label = "端末のデータ（照合待ち）"; c = "#e38a00"; }
