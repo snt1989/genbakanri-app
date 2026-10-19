@@ -1871,7 +1871,6 @@
       if(name==="files" && scope) state.files.sort(function(a,b){ return String(a.uploadedAt||"").localeCompare(String(b.uploadedAt||"")); });
       state.loaded[name] = true; bgRender();
     }, function(e){
-      state.lazyOn[name] = false;
       if(name==="files"){ state.loaded.files = true; state.files = state.files||[]; state.syncError = (e&&e.code)||"unknown"; if(e&&e.code==="resource-exhausted") quotaMark(); toast(e&&e.code==="resource-exhausted" ? "Firestoreの無料枠（1日の読み取り上限）を超えました。日本時間の夕方（16時前後）にリセットされます" : "写真・ファイルの読み込みエラー: "+(e&&e.code||"unknown")+(e&&e.message?"（"+String(e.message).slice(0,80)+"）":"")); render(); return; }
       state.loaded[name] = true; state[name] = []; bgRender();
     });

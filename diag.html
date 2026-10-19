@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>データ診断</title>
+<style>body{margin:0;padding:18px;font:14px/1.7 -apple-system,"Hiragino Sans",sans-serif;color:#1d2a24}h1{font-size:18px}pre{white-space:pre-wrap;word-break:break-all;background:#f1f4f2;border-radius:10px;padding:12px;font-size:12.5px}button{font-size:15px;font-weight:700;padding:12px 16px;border-radius:12px;border:1px solid #175c40;background:#175c40;color:#fff;width:100%}</style></head><body>
+<h1>データ診断（アプリ本体は動かしません）</h1>
+<p>アプリが開けないとき、どのデータが重いかを調べます。数十秒かかることがあります。結果の文章をそのまま送ってください。</p>
+<button id="go">診断を始める</button><pre id="out">待機中</pre>
+<script>
+(function(){
+  var out=document.getElementById("out"), L=[];
+  function p(t){ L.push(t); out.textContent=L.join("\n"); }
+  function size(o){ return JSON.stringify(o).length; }
+  async function run(){
+    L=[]; p("設定を取得中…");
+    var cfg; try{ cfg=await (await fetch("/api/config")).json(); }catch(e){ p("設定の取得に失敗: "+e); return; }
+    var base="https://firestore.googleapis.com/v1/projects/"+cfg.projectId+"/databases/(default)/documents/";
+    var cols=["members","projects","customers","tasks","chats","reports","events","steps","settings"];
+    for(var i=0;i<cols.length;i++){
+      var c=cols[i], tok="", n=0, tot=0, max=0, maxId="", err="";
+      try{
+        do{
+          var r=await fetch(base+c+"?pageSize=100&key="+encodeURIComponent(cfg.apiKey)+(tok?"&pageToken="+encodeURIComponent(tok):""));
+          if(!r.ok){ err="HTTP "+r.status+" "+(await r.text()).slice(0,120); break; }
+          var j=await r.json(); tok=j.nextPageToken||"";
+          (j.documents||[]).forEach(function(d){ var z=size(d); n++; tot+=z; if(z>max){ max=z; maxId=d.name.split("/").pop(); } });
+        }while(tok);
+      }catch(e){ err=String(e); }
+      p(c+": "+n+"件 / 合計 "+Math.round(tot/1024)+"KB / 最大1件 "+Math.round(max/1024)+"KB ("+maxId+")"+(err?" ← エラー: "+err:""));
+    }
+    p("--- 完了 ---");
+  }
+  document.getElementById("go").onclick=run;
+})();
+</script></body></html>
