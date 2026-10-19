@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>現場管理アプリ 復旧ページ</title>
+<style>
+  body{margin:0;padding:20px 18px 40px;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;background:#fafafa;color:#1d2a24;line-height:1.7;}
+  h1{font-size:19px;margin:6px 0 4px;} p{font-size:13.5px;margin:6px 0;color:#4b5a53;}
+  .card{background:#fff;border:1px solid #dde4e0;border-radius:14px;padding:16px;margin:14px 0;}
+  button,a.btn{display:block;width:100%;box-sizing:border-box;text-align:center;font-size:15px;font-weight:700;padding:14px;border-radius:12px;border:1px solid #175c40;background:#175c40;color:#fff;margin-top:10px;text-decoration:none;}
+  button.sub,a.btn.sub{background:#fff;color:#175c40;}
+  pre{white-space:pre-wrap;word-break:break-all;font-size:12px;background:#f1f4f2;border-radius:10px;padding:10px;margin:8px 0 0;}
+  .ok{color:#1c7c3a;font-weight:700;}
+</style>
+</head>
+<body>
+<h1>現場管理アプリ 復旧ページ</h1>
+<p>アプリが開けない（「問題が繰り返し起きました」など）ときに使うページです。アプリ本体の処理は動かさないので、アプリが落ちていても開けます。上から順にお試しください。</p>
+
+<div class="card">
+  <b>① 端末内のキャッシュを消してから開く（おすすめ）</b>
+  <p>この端末に保存された一時データ（キャッシュ・データベースの控え）だけを消します。ログイン情報や、サーバー上のデータは消えません。</p>
+  <button id="b1">キャッシュを消してアプリを開く</button>
+</div>
+
+<div class="card">
+  <b>② メモリ方式で開く</b>
+  <p>端末にデータを保存せず、毎回サーバーから読み込む方式で開きます。①でも直らないときにお試しください（読み込みは少し遅くなります）。</p>
+  <button id="b2" class="sub">メモリ方式でアプリを開く</button>
+</div>
+
+<div class="card">
+  <b>③ 端末内のデータをすべて消す</b>
+  <p>ログイン情報を含めて、この端末に保存されたものを全部消します。アプリを開いたら、電話番号（または氏名）とパスワードで入り直してください。</p>
+  <button id="b3" class="sub">すべて消してアプリを開く</button>
+</div>
+
+<div class="card">
+  <b>この端末の状態</b>
+  <pre id="info">調べています…</pre>
+</div>
+<p id="msg" class="ok"></p>
+
+<script>
+(function(){
+  var $ = function(id){ return document.getElementById(id); };
+  function say(t){ $("msg").textContent = t; }
+  async function clearCaches(){
+    try{ var regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(function(r){ return r.unregister(); })); }catch(e){}
+    try{ var ks = await caches.keys(); await Promise.all(ks.map(function(k){ return caches.delete(k); })); }catch(e){}
+    try{
+      if(indexedDB.databases){
+        var dbs = await indexedDB.databases();
+        await Promise.all((dbs||[]).map(function(d){ return new Promise(function(r){ var q = indexedDB.deleteDatabase(d.name); q.onsuccess = q.onerror = q.onblocked = function(){ r(); }; setTimeout(r, 3000); }); }));
+      }
+    }catch(e){}
+    try{ localStorage.removeItem("gc_boot"); localStorage.removeItem("gc_crashes"); localStorage.removeItem("gc_okboots"); localStorage.removeItem("gc_memcache"); localStorage.removeItem("gc_mig_perm1"); }catch(e){}
+  }
+  function go(){ location.replace("/?r="+Date.now()); }
+  $("b1").onclick = async function(){ say("消しています…"); await clearCaches(); say("完了。アプリを開きます"); setTimeout(go, 400); };
+  $("b2").onclick = async function(){ say("切り替えています…"); await clearCaches(); try{ localStorage.setItem("gc_memcache","1"); }catch(e){} say("完了。アプリを開きます"); setTimeout(go, 400); };
+  $("b3").onclick = async function(){
+    if(!confirm("ログイン情報も含めて、この端末のデータをすべて消します。よろしいですか？")) return;
+    say("消しています…"); await clearCaches();
+    try{ localStorage.clear(); sessionStorage.clear(); }catch(e){}
+    say("完了。アプリを開きます"); setTimeout(go, 400);
+  };
+  (async function(){
+    var L = [];
+    L.push("端末: "+navigator.userAgent);
+    try{ L.push("保存データ(localStorage): "+Object.keys(localStorage).length+"件"); L.push("  gc_boot="+localStorage.getItem("gc_boot")+" / gc_crashes="+localStorage.getItem("gc_crashes")+" / gc_memcache="+localStorage.getItem("gc_memcache")); }catch(e){ L.push("localStorage: 使えません"); }
+    try{ var regs = await navigator.serviceWorker.getRegistrations(); L.push("サービスワーカー: "+regs.length+"件"); }catch(e){ L.push("サービスワーカー: 不明"); }
+    try{ L.push("キャッシュ: "+(await caches.keys()).join(", ")); }catch(e){}
+    try{ if(indexedDB.databases){ var d = await indexedDB.databases(); L.push("データベース(IndexedDB): "+(d.map(function(x){ return x.name; }).join(", ")||"なし")); } }catch(e){}
+    try{ if(navigator.storage && navigator.storage.estimate){ var s = await navigator.storage.estimate(); L.push("使用容量: "+Math.round((s.usage||0)/1048576)+" MB"); } }catch(e){}
+    $("info").textContent = L.join("\n");
+  })();
+})();
+</script>
+</body>
+</html>
