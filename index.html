@@ -7,6 +7,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <title>現場管理アプリ</title>
 <style>
@@ -861,6 +865,9 @@
 <script type="module">
   window.__fbDbPromise = (async function(){
     try{
+      // 設定ファイルの取得と、Firebase本体の読み込みを同時に始める（順番に待つと起動が遅くなる）
+      var impApp = import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"), impFs = import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+      impApp.catch(function(){}); impFs.catch(function(){});
       var cfgRes = await fetch("/api/config");
       if(!cfgRes.ok) return null;
       var cfg = await cfgRes.json();
@@ -873,8 +880,8 @@
       // one registry while getFirestore() looks for it in the other, failing
       // with "Service firestore is not available". gstatic's modular URLs
       // are Google's officially supported, mutually-compatible build.
-      var appMod = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
-      var fsMod = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+      var appMod = await impApp;
+      var fsMod = await impFs;
       var app = appMod.initializeApp(cfg);
       // 端末にデータを保存（再読み込みのたびに全件を読み直さない＝Firestoreの読み取り回数を節約）
       var fs;
@@ -883,10 +890,13 @@
       var memMode = false;
       try{
         var crashed = localStorage.getItem("gc_boot")==="1";
-        if(crashed){ localStorage.setItem("gc_memcache","1"); }
+        var nCrash = Number(localStorage.getItem("gc_crashes")||0);
+        if(crashed){ nCrash++; localStorage.setItem("gc_crashes", String(nCrash)); }
+        // 落ちたら、まずキャッシュを消して作り直す。2回続けて落ちた場合だけ、メモリのみの方式にする（毎回全件を読むので遅くなるため）
+        if(nCrash>=2) localStorage.setItem("gc_memcache","1");
         memMode = localStorage.getItem("gc_memcache")==="1";
         localStorage.setItem("gc_boot","1");
-        setTimeout(function(){ try{ localStorage.removeItem("gc_boot"); }catch(e){} }, 10000);
+        setTimeout(function(){ try{ localStorage.removeItem("gc_boot"); localStorage.setItem("gc_crashes","0"); if(localStorage.getItem("gc_memcache")==="1"){ localStorage.setItem("gc_okboots", String(Number(localStorage.getItem("gc_okboots")||0)+1)); if(Number(localStorage.getItem("gc_okboots"))>=3){ localStorage.removeItem("gc_memcache"); localStorage.setItem("gc_okboots","0"); } } }catch(e){} }, 10000);
         if(crashed && indexedDB && indexedDB.databases){
           var dbs = await indexedDB.databases();
           await Promise.all((dbs||[]).filter(function(d){ return d && d.name && /^firestore\//.test(d.name); }).map(function(d){ return new Promise(function(r){ var q = indexedDB.deleteDatabase(d.name); q.onsuccess = q.onerror = q.onblocked = function(){ r(); }; setTimeout(r, 3000); }); }));
@@ -900,6 +910,16 @@
       function wrapSnap(qs){
         return { docs: qs.docs.map(function(d){ return { id: d.id, data: function(){ return d.data(); } }; }) };
       }
+      // 書き込みは端末に即反映され、サーバーへの送信は裏で続く。通信が遅い・切れている時に「保存中」のまま固まらないよう、
+      // 1.5秒たっても確認が来なければ先に進む（失敗したら後から画面に知らせる）
+      function ackRace(p){
+        return new Promise(function(res, rej){
+          var done = false, t = setTimeout(function(){ if(!done){ done = true; res(); } }, 1500);
+          p.then(function(v){ if(!done){ done = true; clearTimeout(t); res(v); } }, function(e){
+            if(!done){ done = true; clearTimeout(t); rej(e); } else { try{ if(window.__writeFail) window.__writeFail(e); }catch(x){} }
+          });
+        });
+      }
       function makeCollectionRef(path){
         var orderField = null, orderDir = "asc", limitN = null;
         var buildQ = function(){
@@ -911,7 +931,8 @@
         var api = {
           doc: function(id){ return makeDocRef(path+"/"+id); },
           add: function(data){
-            return fsMod.addDoc(fsMod.collection(fs, path), data).then(function(ref){ return { id: ref.id }; });
+            var nref = fsMod.doc(fsMod.collection(fs, path));   // IDは端末で先に決まる
+            return ackRace(fsMod.setDoc(nref, data)).then(function(){ return { id: nref.id }; });
           },
           orderBy: function(f, dir){ orderField = f; orderDir = dir==="desc" ? "desc" : "asc"; return api; },
           get: function(){ return fsMod.getDocs(buildQ()).then(wrapSnap); },
@@ -939,9 +960,9 @@
               return { exists: snap.exists(), data: function(){ return snap.data(); }, id: snap.id };
             });
           },
-          set: function(data){ return fsMod.setDoc(ref, data); },
-          update: function(data){ return fsMod.updateDoc(ref, data); },
-          delete: function(){ return fsMod.deleteDoc(ref); },
+          set: function(data){ return ackRace(fsMod.setDoc(ref, data)); },
+          update: function(data){ return ackRace(fsMod.updateDoc(ref, data)); },
+          delete: function(){ return ackRace(fsMod.deleteDoc(ref)); },
           collection: function(sub){ return makeCollectionRef(path+"/"+sub); }
         };
       }
@@ -961,7 +982,7 @@
       // connect immediately.
       (async function(){
         try{
-          var existing = await fsMod.getDocs(fsMod.collection(fs, "projects"));
+          var existing = await fsMod.getDocs(fsMod.query(fsMod.collection(fs, "projects"), fsMod.limit(1)));   // 空かどうかだけ調べる（全件は読まない）
           if(existing.empty){
             var SEED = window.__GENBA_SEED_DATA__ || {};
             var batch = fsMod.writeBatch(fs);
@@ -985,6 +1006,7 @@
       // backgrounded, same reasoning as the seed step above.
       (async function(){
         try{
+          if(localStorage.getItem("gc_mig_perm1")==="1") return;   // この端末では実施済み（毎回の読み取りを省く）
           var membersSnap = await fsMod.getDocs(fsMod.collection(fs, "members"));
           var BOOTSTRAP_ADMIN_NAMES = ["阿部 晋太郎", "鷹羽 悠希"];
           var migBatch = fsMod.writeBatch(fs);
@@ -1004,6 +1026,7 @@
             }
           });
           if(any) await migBatch.commit();
+          try{ localStorage.setItem("gc_mig_perm1","1"); }catch(e){}
         }catch(e){ console.error("Firestore permission migration failed (non-fatal)", e); }
       })();
 
@@ -1376,6 +1399,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-20-1", title:"10月20日の更新", items:[
+      {t:"データの読み込み・保存を速くしました", d:"起動時に毎回行っていた余計な読み取りを減らし、Firebaseの読み込みを並行して始めるようにしました。通信が遅い・切れているときに保存が「処理中」のまま固まらないよう、保存は端末に先に反映してから裏でサーバーへ送ります（右上の「同期」表示で送信中かどうか確認できます）。"},
       {t:"読み込み中にログイン画面に戻って見える問題を修正", d:"「ログイン状態を保持」している場合、データの読み込みが終わるまでログイン画面ではなく「読み込み中…」を表示し、終わったらそのままホームに入ります。"},
       {t:"データの同期状況を確認できるようにしました", d:"画面右上に「同期済み／送信中／オフライン／同期エラー」が表示されます。クリックすると、案件・顧客・チャットなどデータごとの状態と最終更新時刻を確認できます。"}
     ]},
