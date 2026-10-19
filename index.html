@@ -1398,6 +1398,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
+      {t:"大きいファイル（PDFなど）がアップロードできない問題を修正", d:"約900KBを超える画像以外のファイルは保存できませんでした。10MBまでのファイルを分割して保存できるようにしました。画像は従来どおり自動で縮小されます。保存が後から失敗した場合も画面にお知らせが出ます。"}
+    ]},
     {id:"2026-10-20-1", title:"10月20日の更新", items:[
       {t:"データの読み込み・保存を速くしました", d:"起動時に毎回行っていた余計な読み取りを減らし、Firebaseの読み込みを並行して始めるようにしました。通信が遅い・切れているときに保存が「処理中」のまま固まらないよう、保存は端末に先に反映してから裏でサーバーへ送ります（右上の「同期」表示で送信中かどうか確認できます）。"},
       {t:"読み込み中にログイン画面に戻って見える問題を修正", d:"「ログイン状態を保持」している場合、データの読み込みが終わるまでログイン画面ではなく「読み込み中…」を表示し、終わったらそのままホームに入ります。"},
@@ -4886,8 +4889,34 @@
   }
   function uploadFail(e){ toast(e && e.message==="too large" ? "ファイルが大きすぎます（画像以外は約650KBまで）" : "アップロードに失敗しました"); }
 
+  /* 大きいファイル(PDF等)：claude.ai の assets が無い環境では、約600KBずつに分けて fileChunks に保存する */
+  var CHUNK_RAW = 600*1024, CHUNK_FILE_MAX = 10*1024*1024;
+  function isShrinkable(file){ var t=file.type||""; return t.indexOf("image/")===0 && t!=="image/svg+xml" && t!=="image/gif"; }
+  function uploadChunked(projectId, file, folderId){
+    var p = state.projects.find(function(x){return x.id===projectId;});
+    if(file.size>CHUNK_FILE_MAX){ toast("ファイルが大きすぎます（10MBまで）"); return; }
+    var id = uid(), n = Math.ceil(file.size/CHUNK_RAW), done = 0;
+    toast("アップロード中… 0/"+n);
+    var chain = Promise.resolve();
+    for(var i=0;i<n;i++) (function(i){
+      chain = chain.then(function(){
+        return readAsDataURL(file.slice(i*CHUNK_RAW,(i+1)*CHUNK_RAW)).then(function(d){
+          return db.doc("fileChunks/"+id+"_"+i).set({data:d.slice(d.indexOf(",")+1), i:i});
+        }).then(function(){ done++; toast("アップロード中… "+done+"/"+n); });
+      });
+    })(i);
+    chain.then(function(){
+      return db.collection("files").doc(id).set({projectId:projectId, projectName:p?p.name:"", folderId:folderId||null, chunked:true, chunks:n,
+        filename:file.name||"ファイル", contentType:file.type||"application/octet-stream", size:file.size||0, uploadedAt:new Date().toISOString(), uploadedBy:state.myName||""});
+    }).then(function(){ toast("写真・ファイルを追加しました"); }).catch(function(e){
+      for(var i=0;i<n;i++) db.doc("fileChunks/"+id+"_"+i).delete().catch(function(){});
+      toast("アップロードに失敗しました"+(e&&e.code==="resource-exhausted"?"（データベースの上限）":""));
+    });
+  }
+  window.__writeFail = function(e){ try{ toast("保存が反映されませんでした"+(e&&e.code?"（"+e.code+"）":"")); }catch(x){} };
   function uploadProjectFile(projectId, file, folderId){
     var p = state.projects.find(function(x){return x.id===projectId;});
+    if(!assetsCap && db && !isShrinkable(file) && file.size>600000){ uploadChunked(projectId, file, folderId); return; }
     toast("アップロード中…");
     uploadBlob(file).then(function(res){
       writeDoc("files", null, {
