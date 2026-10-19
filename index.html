@@ -81,6 +81,11 @@
     padding:12px 24px;display:flex;align-items:center;justify-content:flex-end;gap:16px;
   }
   .topbar-user{display:flex;align-items:center;gap:9px;font-size:12.5px;}
+  .syncbtn{display:flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--surface);border-radius:99px;padding:4px 11px;font-size:11.5px;font-weight:700;color:var(--ink-soft);cursor:pointer;white-space:nowrap;}
+  .syncbtn .sync-dot{width:8px;height:8px;border-radius:50%;background:var(--ink-faint);flex:none;}
+  .syncbtn.ok .sync-dot{background:#1c9c47;} .syncbtn.warn .sync-dot{background:#e38a00;animation:syncpulse 1.2s infinite;} .syncbtn.err .sync-dot{background:var(--danger);}
+  @keyframes syncpulse{50%{opacity:.35}}
+  @media(max-width:900px){ .syncbtn{padding:4px 8px;font-size:11px;} }
   .bellwrap{position:relative;color:var(--ink-soft);padding:8px;margin:-8px;}
   .bellwrap svg{width:19px;height:19px;}
   .bell-dot{position:absolute;top:-3px;right:-4px;background:var(--warning);color:#3a2a00;font-size:9px;font-weight:800;border-radius:99px;padding:1px 4px;min-width:14px;text-align:center;line-height:1.3;}
@@ -750,6 +755,7 @@
   <div id="main">
     <header class="topbar">
       <button class="menubtn" id="menu-toggle"></button>
+      <button class="syncbtn" id="sync-btn" title="データの同期状況"><span class="sync-dot"></span><span class="sync-txt">同期</span></button>
       <div class="bellwrap" id="bell-icon"></div>
       <div class="topbar-user"><div class="avatar" id="user-avatar">阿</div><span id="user-name">阿部 晋太郎（株式会社三桜）</span><button class="iconbtn" id="logout-btn" title="ログアウト"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg></button></div>
     </header>
@@ -907,7 +913,14 @@
           limit: function(n){ limitN = n; return api; },
           onSnapshot: function(cb, errCb){
             var q = buildQ();
-            return fsMod.onSnapshot(q, function(qs){ cb(wrapSnap(qs)); }, errCb);
+            // 通信の状態（サーバーと照合済みか／未送信の書き込みがあるか）を画面の「同期」表示に伝える。
+            // メタデータだけの変化では画面を作り直さない（データが変わったときだけ cb を呼ぶ）
+            var first = true;
+            return fsMod.onSnapshot(q, {includeMetadataChanges:true}, function(qs){
+              try{ if(window.__syncNote && path.indexOf("/")===-1) window.__syncNote(path, qs.metadata.fromCache, qs.metadata.hasPendingWrites, qs.size); }catch(e){}
+              if(!first && !qs.docChanges().length) return;
+              first = false; cb(wrapSnap(qs));
+            }, function(e){ try{ if(window.__syncNote && path.indexOf("/")===-1) window.__syncNote(path, true, false, 0, e && e.code || "error"); }catch(x){} if(errCb) errCb(e); });
           }
         };
         return api;
@@ -1357,6 +1370,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-10-20-1", title:"10月20日の更新", items:[
+      {t:"データの同期状況を確認できるようにしました", d:"画面右上に「同期済み／送信中／オフライン／同期エラー」が表示されます。クリックすると、案件・顧客・チャットなどデータごとの状態と最終更新時刻を確認できます。"}
+    ]},
     {id:"2026-10-18-1", title:"10月18日の更新", items:[
       {t:"スマホ下部のメニューバーが勝手に切り替わる問題を修正", d:"管理者が決めたメニューバーを端末に記憶し、起動直後から表示するようにしました。起動のたびに一瞬別の並びになってから切り替わることがなくなります。"},
       {t:"開いた直後に画面が落ちる問題への自己修復", d:"スマホで起動の途中に画面が落ちた場合、次の起動で端末内のキャッシュを自動で消し、メモリだけのキャッシュで動くようにしました。"},
@@ -1821,6 +1837,63 @@
     toast("バックアップ用にデータを読み込んでいます。数秒後にもう一度押してください");
     return false;
   }
+  /* ---- データの同期状況（画面右上の「同期」表示） ---- */
+  var SYNC_NAMES = {projects:"案件",customers:"顧客",members:"メンバー",tasks:"タスク",chats:"チャット",reports:"報告書",events:"予定",steps:"工程",files:"ファイル",folders:"フォルダ",cards:"名刺",trash:"ゴミ箱"};
+  var syncInfo = {subs:{}, lastServer:0, online:(typeof navigator.onLine==="boolean" ? navigator.onLine : true), timer:0};
+  window.__syncNote = function(path, fromCache, pending, size, err){
+    var o = syncInfo.subs[path] || (syncInfo.subs[path] = {});
+    o.fromCache = !!fromCache; o.pending = !!pending; o.size = size; o.err = err||""; o.at = Date.now();
+    if(!fromCache && !err) syncInfo.lastServer = Date.now();
+    syncSchedule();
+  };
+  function syncSchedule(){ if(syncInfo.timer) return; syncInfo.timer = setTimeout(function(){ syncInfo.timer = 0; syncRender(); }, 250); }
+  function syncStatus(){
+    if(window.claude) return state.loaded.projects ? {k:"ok", t:"保存済み", d:"claude.ai の保存領域を使っています"} : {k:"warn", t:"読み込み中", d:""};
+    if(!db || state.offlineMode) return {k:"err", t:"オフライン（デモ）", d:"サーバーに接続できていません。入力した内容は保存されません"};
+    if(!syncInfo.online) return {k:"warn", t:"オフライン", d:"通信できません。通信が戻ると、入力した内容は自動で送られます"};
+    var subs = syncInfo.subs, keys = Object.keys(subs);
+    var errs = keys.filter(function(k){ return subs[k].err; });
+    if(state.syncError && state.syncError!=="timeout" && errs.length) return {k:"err", t:"同期エラー", d:"エラー内容: "+state.syncError};
+    if(keys.some(function(k){ return subs[k].pending; })) return {k:"warn", t:"送信中", d:"端末で入力した内容をサーバーへ送っています"};
+    var core = ["projects","customers","members","tasks"];
+    if(core.some(function(k){ return !state.loaded[k]; })) return {k:"warn", t:"読み込み中", d:"データを読み込んでいます"};
+    if(keys.length && core.some(function(k){ return subs[k] && subs[k].fromCache; }) && !syncInfo.lastServer) return {k:"warn", t:"確認中", d:"サーバーと照合しています"};
+    return {k:"ok", t:"同期済み", d:"サーバーのデータと一致しています"};
+  }
+  function syncRender(){
+    var b = document.getElementById("sync-btn"); if(!b) return;
+    var st = syncStatus();
+    b.className = "syncbtn "+st.k; b.querySelector(".sync-txt").textContent = st.t;
+    b.title = st.t+(st.d?"："+st.d:"")+"（クリックで詳細）";
+  }
+  function syncDetail(){
+    var st = syncStatus(), subs = syncInfo.subs;
+    var fmtT = function(ms){ if(!ms) return "—"; var d = new Date(ms); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")+":"+String(d.getSeconds()).padStart(2,"0"); };
+    var color = {ok:"#1c9c47",warn:"#e38a00",err:"var(--danger)"}[st.k];
+    var order = Object.keys(SYNC_NAMES).filter(function(k){ return subs[k] || state.loaded[k]!==undefined; });
+    var rows = order.map(function(k){
+      var o = subs[k], label, c;
+      if(!o){ label = state.loaded[k] ? "読み込み済み" : "未読み込み"; c = "var(--ink-faint)"; }
+      else if(o.err){ label = "エラー（"+o.err+"）"; c = "var(--danger)"; }
+      else if(o.pending){ label = "送信中"; c = "#e38a00"; }
+      else if(o.fromCache){ label = "端末のデータ（照合待ち）"; c = "#e38a00"; }
+      else { label = "同期済み"; c = "#1c9c47"; }
+      return '<div style="display:flex;align-items:center;gap:8px;padding:7px 2px;border-top:1px solid var(--border);font-size:12.5px"><span style="width:76px;flex:none">'+esc(SYNC_NAMES[k])+'</span><span style="flex:1;min-width:0;color:'+c+';font-weight:700">'+esc(label)+'</span><span style="width:44px;text-align:right;flex:none">'+(o&&o.size!=null?o.size+'件':'')+'</span><span style="width:60px;text-align:right;flex:none;color:var(--ink-faint)">'+(o?fmtT(o.at):'')+'</span></div>';
+    }).join("");
+    openModal("データの同期状況",
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><span style="width:12px;height:12px;border-radius:50%;background:'+color+'"></span><b style="font-size:15px">'+esc(st.t)+'</b></div>'+
+      '<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.7;margin-bottom:10px">'+esc(st.d)+'</div>'+
+      '<div style="font-size:12px;color:var(--ink-soft);line-height:1.9;margin-bottom:8px">通信：<b>'+(syncInfo.online?"オンライン":"オフライン")+'</b>　／　接続先：<b>'+(window.claude?"claude.ai":(state.offlineMode||!db?"なし":"Firebase"))+'</b>　／　サーバーと最後に照合：<b>'+fmtT(syncInfo.lastServer)+'</b>　／　保存方式：<b>'+(localStorage.getItem("gc_memcache")==="1"?"メモリのみ":"端末に保存")+'</b></div>'+
+      (rows?'<div style="display:flex;gap:8px;padding:4px 2px;font-size:11px;color:var(--ink-faint)"><span style="width:76px;flex:none">データ</span><span style="flex:1">状態</span><span style="width:44px;text-align:right;flex:none">件数</span><span style="width:60px;text-align:right;flex:none">最終更新</span></div>'+rows:'')+
+      '<div style="font-size:11.5px;color:var(--ink-faint);line-height:1.7;margin-top:10px">他の人が変更した内容は自動で反映されます（画面の再読み込みは不要です）。「端末のデータ（照合待ち）」が長く続く場合は、通信状況を確認してください。</div>',
+      '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="sync-reload">最新の状態に読み込み直す</button>');
+    document.getElementById("sync-reload").onclick = function(){ location.reload(); };
+  }
+  window.addEventListener("online", function(){ syncInfo.online = true; syncRender(); });
+  window.addEventListener("offline", function(){ syncInfo.online = false; syncRender(); });
+  setInterval(function(){ syncRender(); }, 20000);
+  document.addEventListener("click", function(e){ if(e.target.closest && e.target.closest("#sync-btn")) syncDetail(); });
+
   function onErr(e){
     state.syncError = (e && e.code) || "unknown";
     if(state.syncError==="resource-exhausted") quotaMark();
@@ -2214,7 +2287,7 @@
       }).join("")+'<button class="bn'+((!inBn||state.sidebarOpen)?" on":"")+'" id="bn-menu">'+iMenu()+'<span>メニュー</span></button>';
     }
     (function(){ var n = noticeCount(); if(db && !window.claude) syncAppBadge(n); document.getElementById("bell-icon").innerHTML = iBell()+(n? '<span class="bell-dot">'+(n>99?"99+":n)+'</span>':''); })();
-    document.getElementById("menu-toggle").innerHTML = iMenu();
+    document.getElementById("menu-toggle").innerHTML = iMenu(); syncRender();
     document.getElementById("sidebar").classList.toggle("open", state.sidebarOpen);
     var un = document.getElementById("user-name");
     var displayName = state.myName || state.orgSettings.representative;
