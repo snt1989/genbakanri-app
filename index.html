@@ -1896,7 +1896,12 @@
     if(!syncInfo.online) return {k:"warn", t:"オフライン", d:"通信できません。通信が戻ると、入力した内容は自動で送られます"};
     var subs = syncInfo.subs, keys = Object.keys(subs);
     var errs = keys.filter(function(k){ return subs[k].err; });
-    if(state.syncError && state.syncError!=="timeout" && errs.length) return {k:"err", t:"同期エラー", d:"エラー内容: "+state.syncError};
+    if(state.syncError && state.syncError!=="timeout" && (errs.length || state.syncError==="resource-exhausted")){
+      var why = {"resource-exhausted":"Firebaseの1日の読み取り上限（無料枠）を超えています。日本時間の夕方（16時前後）にリセットされるまで、新しいデータを読み込めません。Firebaseを有料のBlazeプランにすると解消します（プランの変更はご自身で行う必要があります）",
+        "permission-denied":"データベースへのアクセスが許可されていません（Firestoreのセキュリティルールを確認してください）",
+        "unavailable":"サーバーに接続できません。通信状況を確認してください"}[state.syncError];
+      return {k:"err", t:state.syncError==="resource-exhausted"?"読み取り上限":"同期エラー", d:(why||"エラー内容: "+state.syncError)};
+    }
     if(keys.some(function(k){ return subs[k].pending; })) return {k:"warn", t:"送信中", d:"端末で入力した内容をサーバーへ送っています"};
     var core = ["projects","customers","members","tasks"];
     if(core.some(function(k){ return !state.loaded[k]; })) return {k:"warn", t:"読み込み中", d:"データを読み込んでいます"};
