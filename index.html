@@ -536,6 +536,10 @@
 
   #login-screen{position:fixed;inset:0;background:var(--bg);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;}
   #login-screen.hidden{display:none;}
+  #login-screen .login-wait{display:none;flex-direction:column;align-items:center;gap:14px;color:var(--ink-soft);font-size:13px;font-weight:700;}
+  #login-screen.autowait .login-card{display:none;} #login-screen.autowait .login-wait{display:flex;}
+  .login-wait .spin{width:30px;height:30px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:lwspin .9s linear infinite;}
+  @keyframes lwspin{to{transform:rotate(360deg)}}
   .login-card{width:100%;max-width:340px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:28px 26px;}
   .login-brand{display:flex;align-items:center;gap:9px;margin-bottom:4px;}
   .login-brand-name{font-size:16px;font-weight:700;}
@@ -771,6 +775,7 @@
 <div id="toast"></div>
 
 <div id="login-screen">
+  <div class="login-wait"><div class="brand-mark" style="width:44px;height:44px;border-radius:12px"></div><div class="spin"></div><div>読み込み中…</div></div>
   <div class="login-card">
     <div class="login-brand">
       <div class="brand-mark"></div>
@@ -1371,6 +1376,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-20-1", title:"10月20日の更新", items:[
+      {t:"読み込み中にログイン画面に戻って見える問題を修正", d:"「ログイン状態を保持」している場合、データの読み込みが終わるまでログイン画面ではなく「読み込み中…」を表示し、終わったらそのままホームに入ります。"},
       {t:"データの同期状況を確認できるようにしました", d:"画面右上に「同期済み／送信中／オフライン／同期エラー」が表示されます。クリックすると、案件・顧客・チャットなどデータごとの状態と最終更新時刻を確認できます。"}
     ]},
     {id:"2026-10-18-1", title:"10月18日の更新", items:[
@@ -1608,6 +1614,17 @@
     if(scr) scr.classList.add("hidden");
     renderShell(); render();
   }
+  // 前回「ログイン状態を保持」していた場合は、データの読み込みが終わるまでログイン画面を見せず「読み込み中」を出す
+  // （読み込みの途中でログイン画面が出て、ログインし直しになったように見えるのを防ぐ）
+  function loginWaitOn(){
+    try{
+      var pw = localStorage.getItem("gc_login_password"), id = localStorage.getItem("gc_login_phone") || localStorage.getItem("gc_login_name");
+      if(!pw || !id || state.authed) return;
+    }catch(e){ return; }
+    var scr = document.getElementById("login-screen"); if(scr) scr.classList.add("autowait");
+    setTimeout(loginWaitOff, 20000);
+  }
+  function loginWaitOff(){ var scr = document.getElementById("login-screen"); if(scr) scr.classList.remove("autowait"); }
   function tryAutoLogin(){
     if(state.authed) return;
     var name, phone, pass;
@@ -1615,6 +1632,7 @@
     if((!name && !phone) || !pass) return;
     var m = state.members.find(function(x){ return (phone ? normPhone(x.phone)===phone : (!normPhone(x.phone) && x.name===name)) && x.password===pass; });
     if(m) completeLogin(m, true, "auto");
+    else if(state.loaded.members){ loginWaitOff(); if(state.offlineMode===false){ try{ showLoginError("保存されたログイン情報では入れませんでした。もう一度ログインしてください"); }catch(e){} } }
   }
   function logout(){
     state.authed = false;
@@ -1622,7 +1640,7 @@
     state.isAdmin = false;
     try{ localStorage.removeItem("gc_login_name"); localStorage.removeItem("gc_login_phone"); localStorage.removeItem("gc_login_password"); }catch(e){}
     var scr = document.getElementById("login-screen");
-    if(scr) scr.classList.remove("hidden");
+    if(scr){ scr.classList.remove("hidden"); scr.classList.remove("autowait"); }
     var pf = document.getElementById("login-password"); if(pf) pf.value = "";
     clearLoginError();
   }
@@ -1708,6 +1726,7 @@
   }
 
   async function boot(){
+    loginWaitOn();
     bindLoginAndTopbarEvents();
     renderShell(); render();
     showInviteScreen();
@@ -1932,7 +1951,7 @@
     if(!state.loaded.chats) state.chats = SAMPLE_CHATS.slice();
     Object.keys(state.loaded).forEach(function(k){state.loaded[k]=true;});
     updateLoginHint();
-    tryAutoLogin();
+    tryAutoLogin(); loginWaitOff();
   }
   function updateLoginHint(){
     var el = document.getElementById("login-hint");
