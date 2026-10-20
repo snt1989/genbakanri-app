@@ -3,7 +3,7 @@
 <style>body{margin:0;padding:18px;font:14px/1.7 -apple-system,"Hiragino Sans",sans-serif;color:#1d2a24}h1{font-size:18px}pre{white-space:pre-wrap;word-break:break-all;background:#f1f4f2;border-radius:10px;padding:12px;font-size:12.5px}button{font-size:15px;font-weight:700;padding:12px 16px;border-radius:12px;border:1px solid #175c40;background:#175c40;color:#fff;width:100%}</style></head><body>
 <h1>データ診断（アプリ本体は動かしません）</h1>
 <p>アプリが開けないとき、どのデータが重いかを調べます。数十秒かかることがあります。結果の文章をそのまま送ってください。</p>
-<button id="go">診断を始める</button><pre id="out">待機中</pre>
+<button id="go">診断を始める</button><button id="go2" style="margin-top:10px;background:#fff;color:#175c40">案件データを詳しく調べる（件数が多いとき）</button><pre id="out">待機中</pre>
 <script>
 (function(){
   var out=document.getElementById("out"), L=[];
@@ -28,6 +28,35 @@
     }
     p("--- 完了 ---");
   }
+
+  function fv(f){ if(!f) return ""; return f.stringValue!==undefined?f.stringValue:(f.integerValue!==undefined?f.integerValue:(f.timestampValue||"")); }
+  async function run2(){
+    L=[]; p("案件を読み込み中…（数十秒かかります）");
+    var cfg=await (await fetch("/api/config")).json();
+    var base="https://firestore.googleapis.com/v1/projects/"+cfg.projectId+"/databases/(default)/documents/projects";
+    var tok="", docs=[];
+    try{
+      do{
+        var r=await fetch(base+"?pageSize=300&key="+encodeURIComponent(cfg.apiKey)+(tok?"&pageToken="+encodeURIComponent(tok):""));
+        if(!r.ok){ p("エラー HTTP "+r.status+" "+(await r.text()).slice(0,150)); return; }
+        var j=await r.json(); tok=j.nextPageToken||""; (j.documents||[]).forEach(function(d){ var o={}; Object.keys(d.fields||{}).forEach(function(k){ o[k]=fv(d.fields[k]); }); docs.push(o); });
+        L[0]="案件を読み込み中… "+docs.length+"件"; out.textContent=L.join("\n");
+      }while(tok);
+    }catch(e){ p("通信エラー: "+e); return; }
+    L=[]; p("案件: 全"+docs.length+"件");
+    var cnt=function(key){ var m={}; docs.forEach(function(o){ var v=o[key]||"（空）"; m[v]=(m[v]||0)+1; }); return Object.keys(m).map(function(k){ return [k,m[k]]; }).sort(function(a,b){ return b[1]-a[1]; }); };
+    var top=function(key,n){ return cnt(key).slice(0,n).map(function(x){ return "  "+x[0]+": "+x[1]+"件"; }).join("\n"); };
+    var names=cnt("name"); p("案件名の種類: "+names.length+"種類（同じ名前が複数ある案件名の上位）"); p(names.filter(function(x){ return x[1]>1; }).slice(0,8).map(function(x){ return "  "+x[0].slice(0,30)+": "+x[1]+"件"; }).join("\n")||"  （重複なし）");
+    p("進捗の内訳:\n"+top("status",10));
+    p("事業部の内訳:\n"+top("division",5));
+    p("登録者の内訳:\n"+top("createdBy",6));
+    var days=cnt("createdAt").length; var ym={}; docs.forEach(function(o){ var k=String(o.createdAt||"").slice(0,7)||"（日付なし）"; ym[k]=(ym[k]||0)+1; });
+    p("登録した月ごとの件数:\n"+Object.keys(ym).sort().slice(-14).map(function(k){ return "  "+k+": "+ym[k]+"件"; }).join("\n"));
+    var ud={}; docs.forEach(function(o){ var k=String(o.updatedAt||"").slice(0,7)||"（なし）"; ud[k]=(ud[k]||0)+1; });
+    p("最終更新の月ごとの件数:\n"+Object.keys(ud).sort().slice(-8).map(function(k){ return "  "+k+": "+ud[k]+"件"; }).join("\n"));
+    p("--- 完了 ---");
+  }
+  document.getElementById("go2").onclick=run2;
   document.getElementById("go").onclick=run;
 })();
 </script></body></html>
