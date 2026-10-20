@@ -1400,6 +1400,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
+      {t:"設定の「管理画面」をタブで見やすくしました", d:"「概要」「メンバー権限」「セキュリティ」「画面の設定」「写真・メール」「データ」の6つのタブに分けました。"},
       {t:"写真のサイズを管理画面で全員共通に設定できるようにしました", d:"管理者が「設定 → 管理画面」の「写真のサイズ（全員共通）」で、アップロードする写真の大きさ・画質と、「写真を軽量化」の初期設定を決められます。アップロード時にサイズを聞かれることはなくなりました。"},
       {t:"Shiftキーで範囲選択できるようにしました（パソコン）", d:"一括編集や、案件のファイル画面で、Shiftキーを押しながらチェックすると、前に選んだものとの間をまとめて選択できます。"},
       {t:"ボタンで最新版に更新できるようにしました", d:"画面右上の「同期」を開き、「最新版に更新して読み込み直す」を押すと、この端末の古いアプリのキャッシュを消して最新版を読み込みます（ログイン状態やデータは消えません）。"},
@@ -5744,6 +5745,7 @@
     if(u && u.error==="notconfigured") return '<div style="font-size:12.5px;line-height:1.8;color:var(--ink-soft)"><b>設定が必要です。</b>実際の使用量はGoogle Cloud Monitoringから取得します。<br>1) Google Cloud コンソール（このFirebaseと同じプロジェクト）で「Cloud Monitoring API」を有効化<br>2) サービスアカウントを作成し、役割「モニタリング閲覧者」を付けてJSONキーを発行<br>3) JSONキーの全文を、Vercelの環境変数 <code>GCP_SERVICE_ACCOUNT</code> に登録して再デプロイ<br><span style="color:var(--ink-faint)">※キーはチャットに貼らず、Vercelにだけ登録してください。</span></div>';
     if(!u || u.error){ return '<div style="font-size:12.5px;color:var(--danger);line-height:1.7">取得できませんでした：'+esc((u && (u.detail||u.error)) || (state.usageErr||"不明なエラー"))+'</div>'; }
     var row = function(label, val, lim){
+      val = Number(val)||0; lim = Number(lim)||1;
       var pct = Math.min(100, val/lim*100), col = pct>=90 ? "var(--danger)" : (pct>=60 ? "var(--warning)" : "var(--accent)");
       return '<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap"><b style="font-size:13px">'+label+'</b><span class="num" style="font-size:13px"><b style="font-size:17px">'+val.toLocaleString()+'</b> ／ '+lim.toLocaleString()+' 件（'+pct.toFixed(1)+'%）</span></div>'+
         '<div style="height:9px;border-radius:99px;background:var(--surface-2);overflow:hidden;margin-top:5px"><div style="height:100%;width:'+Math.max(pct,0.5)+'%;background:'+col+'"></div></div></div>';
@@ -5806,6 +5808,7 @@
   function renderSettingsAdmin(){
     if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
     if(!state.loaded.members || !state.loaded.projects) return skeleton();
+    var sec = {};
     var counts = {admin:0, general:0, external:0};
     state.members.forEach(function(m){ var p=memberPermission(m); counts[p]=(counts[p]||0)+1; });
     var stat = function(label, val){ return '<div class="card" style="padding:14px 16px;min-width:120px;flex:1"><div style="font-size:11px;color:var(--ink-faint);font-weight:600">'+label+'</div><div class="num" style="font-size:22px;font-weight:700;margin-top:4px">'+val+'</div></div>'; };
@@ -5817,11 +5820,12 @@
       stat("案件", state.projects.length)+
       stat("顧客", state.customers.length)+
     '</div>';
-    html += renderUsageCard();
-    html += renderQuotaCard();
-    html += renderStorageCard();
-    html += renderGmailCard();
-    html += renderPhotoCfgCard();
+    var safe = function(fn){ try{ return fn(); }catch(e){ return ''; } };   // 1つのカードで不具合があっても、他のタブや項目は表示する
+    html += safe(renderUsageCard);
+    html += safe(renderQuotaCard);
+    html += safe(renderStorageCard);
+    sec.overview = html; html = '';
+    sec.photo = safe(renderPhotoCfgCard) + safe(renderGmailCard);
 
     html += '<h2 style="font-size:13.5px;margin:4px 0 10px">メンバー権限・パスワード管理</h2>';
     html += '<div class="tablewrap"><table><thead><tr><th>氏名</th><th>所属会社</th><th>権限</th><th></th></tr></thead><tbody>';
@@ -5837,6 +5841,7 @@
     html += '</tbody></table></div>';
     html += '<div style="font-size:11.5px;color:var(--ink-faint);margin:8px 0 18px">メンバーの追加・削除は「メンバー」タブから行えます。パスワードの初期化は「1234」に戻します。</div>';
 
+    sec.members = html; html = '';
     html += '<h2 style="font-size:13.5px;margin:4px 0 10px">削除用パスワード</h2>';
     html += '<div class="card" style="padding:16px 18px;max-width:520px;display:flex;flex-direction:column;gap:12px;margin-bottom:18px">';
     html += '<div style="font-size:11.5px;color:var(--ink-faint);line-height:1.6">案件・顧客・メンバー・写真/ファイルを削除するときに入力するパスワードです（全員共通）。初期値は「0000」です。'+(state.deletePassword===DEFAULT_DELETE_PASSWORD?'<br><b style="color:var(--danger)">現在は初期パスワードのままです。変更をおすすめします。</b>':'')+'</div>';
@@ -5857,17 +5862,22 @@
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="secret-def-save">'+iAdmin()+'初期設定を保存する</button><button class="btn outline" id="secret-def-reset">標準に戻す</button></div>';
     html += '</div>';
 
+    sec.security = html; html = '';
     html += mobileNavEditorHtml();
 
     html += listDefaultsEditorHtml();
 
+    sec.display = html; html = '';
     html += '<h2 style="font-size:13.5px;margin:4px 0 10px">データの状態とバックアップ</h2>';
     html += '<div class="card" style="padding:16px 18px;max-width:520px;display:flex;flex-direction:column;gap:10px">';
     html += '<div class="side-stat" style="padding:0;border:none">接続モード<b style="font-size:12.5px">'+(state.offlineMode?'オフライン（デモ）':(window.claude?'claude.ai':'Firebase'))+'</b></div>';
     html += '<div class="side-stat" style="padding:0;border:none">ログイン中<b style="font-size:12.5px">'+esc(state.myName||"")+'</b></div>';
     html += '<div><button class="btn outline" id="admin-backup">'+iAdmin()+'全データをバックアップ（JSON）</button></div>';
     html += '</div>';
-    return html;
+    sec.data = html;
+    var AT = [["overview","概要"],["members","メンバー権限"],["security","セキュリティ"],["display","画面の設定"],["photo","写真・メール"],["data","データ"]];
+    if(!sec[state.adminTab]) state.adminTab = "overview";
+    return '<div class="segmented" style="margin-bottom:16px;flex-wrap:wrap">'+AT.map(function(x){ return '<div class="segopt'+(state.adminTab===x[0]?" active":"")+'" data-admtab="'+x[0]+'">'+x[1]+'</div>'; }).join("")+'</div>'+sec[state.adminTab];
   }
 
 /* ============ 報告書 ============ */
@@ -9493,6 +9503,7 @@
     var llr = document.getElementById("ll-reload"); if(llr) llr.addEventListener("click", function(){ loginLogsLoad(true); render(); });
     bindNavEvents(c);
     bindListDefEvents(c);
+    c.querySelectorAll("[data-admtab]").forEach(function(el){ el.addEventListener("click", function(){ state.adminTab = el.getAttribute("data-admtab"); state.navDraft = null; render(); }); });
     c.querySelectorAll("[data-setseg]").forEach(function(el){ el.addEventListener("click", function(){ state.settingsSeg = el.getAttribute("data-setseg"); render(); }); });
 
     var setZip = document.getElementById("set-zip"), setAddr = document.getElementById("set-address");
