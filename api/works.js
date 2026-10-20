@@ -7,7 +7,7 @@ function readBody(req){
   if(req.body && typeof req.body === "object") return req.body;
   try{ return JSON.parse(req.body || "{}"); }catch(e){ return {}; }
 }
-var FLAGS = ["notifyStatus", "notifyReport", "notifyTask", "notifyDigest"];
+var FLAGS = ["notifyStatus", "notifyReport", "notifyTask", "notifyDigest", "notifyUpdate"];
 var EVENT_FLAG = {status: "notifyStatus", report: "notifyReport", task: "notifyTask"};
 
 module.exports = async function handler(req, res){
@@ -72,6 +72,23 @@ async function run(b, me, req){
       if(!flag) throw W.httpErr(400, "不明な通知種別です");
       if(s[flag] === false || !s.channelId) return {ok: true, sent: false};
       await W.sendChannel(s.channelId, String(b.text || "").slice(0, 1500) + "\n（操作: " + who(me) + "）");
+      return {ok: true, sent: true};
+    }
+    case "notifyUpdate": {
+      // アプリの更新内容を通知する。管理者のアプリが新しい版を開いたときに自動で1回だけ送る（force=true は手動送信）
+      need(admin, "管理者のみ実行できます");
+      var rid = String(b.id || "").slice(0, 60);
+      if(!rid) throw W.httpErr(400, "更新情報がありません");
+      if(!s.channelId) { if(b.force) throw W.httpErr(400, "送り先のトークルームが未設定です"); return {ok: true, sent: false}; }
+      if(!b.force && (s.notifyUpdate === false || s.lastUpdateNotified === rid)) return {ok: true, sent: false};
+      var lines = ["【現場管理アプリ】アプリが新しくなりました（" + String(b.title || rid).slice(0, 60) + "）"];
+      (Array.isArray(b.items) ? b.items : []).slice(0, 12).forEach(function(it){
+        lines.push("・" + String(it.t || "").slice(0, 80) + (it.d ? "\n　" + String(it.d).slice(0, 120) : ""));
+      });
+      lines.push("※ 画面が古いときは、右上の「同期」から「最新版に更新して読み込み直す」を押してください。");
+      await W.patchDoc("settings/works", {lastUpdateNotified: rid});   // 先に記録して、重複送信を防ぐ
+      try{ await W.sendChannel(s.channelId, lines.join("\n").slice(0, 1500)); }
+      catch(e){ await W.patchDoc("settings/works", {lastUpdateNotified: ""}); throw e; }
       return {ok: true, sent: true};
     }
     case "share": {

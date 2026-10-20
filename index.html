@@ -1411,6 +1411,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
+      {t:"LINE WORKSでアプリの更新も通知します", d:"アプリが新しくなると、更新内容がLINE WORKSのトークルームに届きます（設定 → 連携 → LINE WORKS の「アプリの更新」でオン・オフできます）。", admin:true},
       {t:"入力すると候補が出るようになりました（オートコンプリート）", d:"案件・担当者などの件数の多いプルダウンは、文字を入力して絞り込めるようになりました。会社名の欄には、登録済みの会社名の候補が出ます。"},
       {t:"設定の「LINE WORKS」と「freee連携」を「連携」にまとめました", d:"「設定 → 連携」を開き、上の「LINE WORKS」「freee」で切り替えます。"},
       {t:"設定の「管理画面」をタブで見やすくしました", d:"「概要」「メンバー権限」「セキュリティ」「画面の設定」「写真・メール」の5つのタブに分けました（データの状態とバックアップは「バックアップ」に移しました）。"},
@@ -1660,6 +1661,7 @@
     var scr = document.getElementById("login-screen");
     if(scr) scr.classList.add("hidden");
     renderShell(); render();
+    if(state.isAdmin) setTimeout(function(){ try{ worksLoadStatus(); }catch(e){} }, 1500);   // LINE WORKS連携が有効なら、アプリの更新内容を通知する
   }
   // 前回「ログイン状態を保持」していた場合は、データの読み込みが終わるまでログイン画面を見せず「読み込み中」を出す
   // （読み込みの途中でログイン画面が出て、ログインし直しになったように見えるのを防ぐ）
@@ -6523,7 +6525,20 @@
     if(!worksAvailable() || w.loading || (w.status && !force) || (w.failed && !force) || !myMember()) return Promise.resolve(w.status);
     w.loading = true;
     return worksCall("status").then(function(j){ w.status = j; w.error = ""; w.failed = false; }, function(e){ w.status = null; w.error = e.message; w.failed = true; })
-      .then(function(){ w.loading = false; if((state.tab==="settings" && state.settingsSeg==="works") || state.viewingProjectId) render(); return w.status; });
+      .then(function(){ w.loading = false; if((state.tab==="settings" && state.settingsSeg==="works") || state.viewingProjectId) render(); try{ worksAutoUpdate(w.status); }catch(e){} return w.status; });
+  }
+  // アプリの更新内容をLINE WORKSへ通知（管理者の画面が新しい版になったとき、1つの版につき1回だけ・サーバー側で重複を防ぐ）
+  function worksUpdatePayload(){
+    var r = RELEASES[0]; if(!r) return null;
+    var items = r.items.filter(function(x){ return !x.admin; }).map(function(x){ return {t:x.t, d:x.d}; });
+    if(!items.length) return null;
+    return {id:r.id, title:r.title, items:items};
+  }
+  function worksAutoUpdate(st){
+    if(!state.isAdmin || !st || !st.configured || !st.channelId || (st.flags && st.flags.notifyUpdate===false) || state.worksUpdateSent) return;
+    var p = worksUpdatePayload(); if(!p) return;
+    state.worksUpdateSent = true;
+    worksCall("notifyUpdate", p).catch(function(){});
   }
   function worksReady(){ var s = state.works.status; return !!(s && s.configured); }
   // 画面での登録・更新に合わせて、トークルームへ通知する（失敗しても画面の操作は妨げない）
@@ -6583,8 +6598,9 @@
       chk("wk-notifyStatus","案件の登録・進捗の変更","案件を登録したときと、進捗（契約済・施工中など）を変えたときに通知します")+
       chk("wk-notifyReport","報告書の提出","報告書の状態が「提出済」になったとき（LINE WORKSからの日報登録を含む）に通知します")+
       chk("wk-notifyTask","タスクの追加","タスクを新しく追加したときに通知します")+
+      chk("wk-notifyUpdate","アプリの更新","アプリが新しくなったとき、更新内容をトークルームに1回だけ通知します（管理者が新しい版を開いたときに送ります）")+
       chk("wk-notifyDigest","毎朝8時の確認","期限が今日・明日・超過のタスクと、工期の終了が3日以内の案件をまとめて通知します")+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="wk-save">'+iAdmin()+'設定を保存する</button><button class="btn outline" id="wk-test">'+iAdmin()+'テスト送信</button></div></div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="wk-save">'+iAdmin()+'設定を保存する</button><button class="btn outline" id="wk-test">'+iAdmin()+'テスト送信</button><button class="btn outline" id="wk-update">'+iAdmin()+'最新の更新内容を通知する</button></div></div>'+
       '<div class="card" style="padding:16px 18px;max-width:600px;margin-bottom:14px;display:flex;flex-direction:column;gap:8px">'+
       '<h2 style="font-size:13.5px">Bot の Callback URL</h2>'+
       '<div style="font-size:11.5px;color:var(--ink-faint);line-height:1.6">LINE WORKS Developer Console の Bot 設定の「Callback URL」に次を登録します。</div>'+
@@ -6882,12 +6898,18 @@
     });
     var collect = function(){
       var d = {channelId: document.getElementById("wk-channel").value.trim()};
-      ["notifyStatus","notifyReport","notifyTask","notifyDigest"].forEach(function(k){ d[k] = document.getElementById("wk-"+k).checked; });
+      ["notifyStatus","notifyReport","notifyTask","notifyDigest","notifyUpdate"].forEach(function(k){ var e = document.getElementById("wk-"+k); if(e) d[k] = e.checked; });
       return d;
     };
     on("wk-save", admin(function(el){
       el.disabled = true;
       worksCall("saveSettings", collect()).then(function(){ toast("設定を保存しました"); state.works.status = null; worksLoadStatus(true); render(); }, function(e){ el.disabled = false; toast("保存できませんでした："+e.message); });
+    }));
+    on("wk-update", admin(function(el){
+      var p = worksUpdatePayload(); if(!p){ toast("通知できる更新内容がありません"); return; }
+      if(!window.confirm("最新の更新内容「"+p.title+"」を、LINE WORKSのトークルームに送信します。よろしいですか？")) return;
+      el.disabled = true;
+      worksCall("notifyUpdate", Object.assign({force:true}, p)).then(function(){ el.disabled = false; toast("更新内容を通知しました"); }, function(e){ el.disabled = false; toast("送信できません："+e.message); });
     }));
     on("wk-test", admin(function(el){
       el.disabled = true;
