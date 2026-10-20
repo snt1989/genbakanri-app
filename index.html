@@ -496,7 +496,8 @@
 
   /* ---- Project detail ---- */
   .detail-grid{display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:flex-start;max-width:1180px;}
-  @media (max-width:960px){.detail-grid{grid-template-columns:1fr;}}
+  .detail-grid > *{min-width:0;}
+  @media (max-width:960px){.detail-grid{grid-template-columns:minmax(0,1fr);}}
   .detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin:6px 0 16px;}
   .detail-head h1{font-size:19px;}
   .detail-head .updated{font-size:11px;color:var(--ink-faint);}
@@ -3858,7 +3859,7 @@
     var rows = '';
     var badges = (hiddenFor(p,"p_status") ? '' : statusBadge(p)+lockTag("p_status")) + freeeBadge(p) +
       (hiddenFor(p,"p_amount") ? '' : '<span class="num" style="font-weight:700">'+fmtYen(p.amount)+'</span>'+lockTag("p_amount"));
-    rows += '<div class="kv" style="display:flex;align-items:center;gap:14px">'+badges+'<span style="margin-left:auto;display:flex;gap:8px"><button class="btn sm" data-report-project="'+p.id+'" title="報告写真アプリで報告書を作り、この案件の写真・ファイルに保存します">'+iImage()+' 報告書を作成</button><button class="btn sm" data-edit-project="'+p.id+'">編集</button></span></div>';
+    rows += '<div class="kv" style="display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap">'+badges+'<span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-report-project="'+p.id+'" title="報告写真アプリで報告書を作り、この案件の写真・ファイルに保存します">'+iImage()+' 報告書を作成</button><button class="btn sm" data-edit-project="'+p.id+'">編集</button></span></div>';
     rows += kvRow("案件名", esc(p.name));
     rows += kvRow("事業部", esc(p.division||"—"), "p_type", p);
     rows += kvRow("施工予定", (p.startDate||p.endDate) ? (fmtDate(p.startDate)+" 〜 "+fmtDate(p.endDate)) : "-", "p_period", p);
