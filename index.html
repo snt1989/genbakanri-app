@@ -1400,6 +1400,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
+      {t:"Shiftキーで範囲選択できるようにしました（パソコン）", d:"一括編集や、案件のファイル画面で、Shiftキーを押しながらチェックすると、前に選んだものとの間をまとめて選択できます。"},
       {t:"ボタンで最新版に更新できるようにしました", d:"画面右上の「同期」を開き、「最新版に更新して読み込み直す」を押すと、この端末の古いアプリのキャッシュを消して最新版を読み込みます（ログイン状態やデータは消えません）。"},
       {t:"写真の読み込みを速くしました", d:"新しくアップロードする写真は、見た目をほぼ変えずに今までより小さく（約300KB目安）保存します。アップロードのときに写真のサイズ（長辺800〜2000px）を選べます。すでに保存した写真は、管理者が「写真・ファイル」画面や案件の「ファイル」画面の「写真を軽量化」で、大きさ・画質・対象を選んで軽くできます。"},
       {t:"写真・ファイルの読み込みを軽くしました", d:"案件の画面では、その案件の写真・ファイルだけを読み込むようにしました（以前は全案件分を一度に読み込んでいました）。読み込みに失敗したときは、原因を画面に表示します。"},
@@ -8621,8 +8622,20 @@
       el.insertBefore(box, el.firstChild);
     });
 
+    // Shiftを押しながら選ぶと、前に選んだ行との間をまとめて選択／解除する（パソコン用）
+    var bulkRange = function(id, on){
+      var ids = Array.prototype.map.call(c.querySelectorAll("[data-row-id]"), function(r){ return r.getAttribute("data-row-id"); });
+      var a = ids.indexOf(state.bulkLast), b = ids.indexOf(id);
+      if(a>-1 && b>-1) bulkSetSelected(ids.slice(Math.min(a,b), Math.max(a,b)+1), on);
+    };
     c.querySelectorAll("input[data-bulk-chk]").forEach(function(chk){
-      chk.addEventListener("click", function(ev){ ev.stopPropagation(); });
+      chk.addEventListener("click", function(ev){
+        ev.stopPropagation();
+        var row = chk.closest("[data-row-id]"); if(!row) return;
+        var id = row.getAttribute("data-row-id");
+        if(ev.shiftKey && state.bulkLast && state.bulkLast!==id) bulkRange(id, chk.checked);
+        state.bulkLast = id;
+      });
       chk.addEventListener("change", function(){
         var row = chk.closest("[data-row-id]");
         if(row) state.bulk.selected[row.getAttribute("data-row-id")] = chk.checked;
@@ -8634,8 +8647,9 @@
       a.addEventListener("click", function(ev){
         if(ev.target.closest("[data-del-file]")) return;
         ev.preventDefault();
-        var id = a.getAttribute("data-row-id");
-        state.bulk.selected[id] = !state.bulk.selected[id];
+        var id = a.getAttribute("data-row-id"), on = !state.bulk.selected[id];
+        if(ev.shiftKey && state.bulkLast && state.bulkLast!==id) bulkRange(id, on);
+        state.bulk.selected[id] = on; state.bulkLast = id;
         bulkRefreshCount();
       });
     });
@@ -9039,7 +9053,20 @@
     if(pfNew) pfNew.addEventListener("click", function(){ openFolderModal(state.filesProjectId, null); });
     c.querySelectorAll("[data-pf-edit-folder]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); ev.stopPropagation(); var g=state.folders.find(function(x){return x.id===el.getAttribute("data-pf-edit-folder");}); if(g) openFolderModal(state.filesProjectId, g); }); });
     c.querySelectorAll("[data-pf-edit-file]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); ev.stopPropagation(); var f=state.files.find(function(x){return x.id===el.getAttribute("data-pf-edit-file");}); if(f) openFileEditModal(f); }); });
-    c.querySelectorAll("[data-pf-chk]").forEach(function(el){ el.addEventListener("change", function(){ var id=el.getAttribute("data-pf-chk"); if(el.checked) state.pfSel[id]=true; else delete state.pfSel[id]; render(); }); });
+    c.querySelectorAll("[data-pf-chk]").forEach(function(el){
+      var shift = false;
+      el.addEventListener("click", function(ev){ shift = !!ev.shiftKey; });
+      el.addEventListener("change", function(){
+        var id = el.getAttribute("data-pf-chk"), ids = [id];
+        if(shift && state.pfLast && state.pfLast!==id){   // Shiftを押しながら選ぶと、前に選んだものとの間をまとめて選択
+          var all = Array.prototype.map.call(c.querySelectorAll("[data-pf-chk]"), function(x){ return x.getAttribute("data-pf-chk"); });
+          var a = all.indexOf(state.pfLast), b = all.indexOf(id);
+          if(a>-1 && b>-1) ids = all.slice(Math.min(a,b), Math.max(a,b)+1);
+        }
+        ids.forEach(function(k){ if(el.checked) state.pfSel[k]=true; else delete state.pfSel[k]; });
+        state.pfLast = id; shift = false; render();
+      });
+    });
     var pfSelAll = document.getElementById("pf-selall");
     if(pfSelAll) pfSelAll.addEventListener("change", function(){
       var ids = Array.prototype.map.call(c.querySelectorAll("[data-pf-chk]"), function(x){ return x.getAttribute("data-pf-chk"); });
