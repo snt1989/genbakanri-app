@@ -1411,7 +1411,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
-      {t:"設定の「管理画面」をタブで見やすくしました", d:"「概要」「メンバー権限」「セキュリティ」「画面の設定」「写真・メール」「データ」の6つのタブに分けました。"},
+      {t:"設定の「管理画面」をタブで見やすくしました", d:"「概要」「メンバー権限」「セキュリティ」「画面の設定」「写真・メール」の5つのタブに分けました（データの状態とバックアップは「バックアップ」に移しました）。"},
       {t:"写真のサイズを管理画面で全員共通に設定できるようにしました", d:"管理者が「設定 → 管理画面」の「写真のサイズ（全員共通）」で、アップロードする写真の大きさ・画質と、「写真を軽量化」の初期設定を決められます。アップロード時にサイズを聞かれることはなくなりました。"},
       {t:"Shiftキーで範囲選択できるようにしました（パソコン）", d:"一括編集や、案件のファイル画面で、Shiftキーを押しながらチェックすると、前に選んだものとの間をまとめて選択できます。"},
       {t:"ボタンで最新版に更新できるようにしました", d:"画面右上の「同期」を開き、「最新版に更新して読み込み直す」を押すと、この端末の古いアプリのキャッシュを消して最新版を読み込みます（ログイン状態やデータは消えません）。"},
@@ -5878,20 +5878,12 @@
 
     html += listDefaultsEditorHtml();
 
-    sec.display = html; html = '';
-    html += '<h2 style="font-size:13.5px;margin:4px 0 10px">データの状態とバックアップ</h2>';
-    html += '<div class="card" style="padding:16px 18px;max-width:520px;display:flex;flex-direction:column;gap:10px">';
-    html += '<div class="side-stat" style="padding:0;border:none">接続モード<b style="font-size:12.5px">'+(state.offlineMode?'オフライン（デモ）':(window.claude?'claude.ai':'Firebase'))+'</b></div>';
-    html += '<div class="side-stat" style="padding:0;border:none">ログイン中<b style="font-size:12.5px">'+esc(state.myName||"")+'</b></div>';
-    html += '<div><button class="btn outline" id="admin-backup">'+iAdmin()+'全データをバックアップ（JSON）</button></div>';
-    html += '</div>';
-    sec.data = html;
+    sec.display = html;
     var AT = [["overview","📊","概要","メンバー数・データベースの使用量・サーバーの容量など、全体の状況を確認します。"],
       ["members","👥","メンバー権限","メンバーごとの権限（管理者・一般・外部）の変更と、パスワードの初期化を行います。"],
       ["security","🔒","セキュリティ","削除用パスワードと、社外秘の初期設定を管理します。"],
       ["display","🖥️","画面の設定","スマホ下部のメニューと、一覧画面の初期の表示内容を決めます。"],
-      ["photo","📷","写真・メール","アップロードする写真のサイズ（全員共通）と、Gmail連携を設定します。"],
-      ["data","💾","データ","データの接続状態の確認と、全データのバックアップを行います。"]];
+      ["photo","📷","写真・メール","アップロードする写真のサイズ（全員共通）と、Gmail連携を設定します。"]];
     if(!sec[state.adminTab]) state.adminTab = "overview";
     var cur = AT.filter(function(x){ return x[0]===state.adminTab; })[0];
     return '<div class="admtabs">'+AT.map(function(x){ return '<div class="admtab'+(state.adminTab===x[0]?" active":"")+'" data-admtab="'+x[0]+'"><span>'+x[1]+'</span>'+x[2]+'</div>'; }).join("")+'</div>'+
@@ -6934,9 +6926,18 @@
     state.backupPreview = null;
     return runBatch(ps, "復元");
   }
+  function dataStateCardHtml(){
+    var html = '<h2 style="font-size:13.5px;margin:4px 0 10px">データの状態</h2>';
+    html += '<div class="card" style="padding:16px 18px;max-width:560px;display:flex;flex-direction:column;gap:10px;margin-bottom:22px">';
+    html += '<div class="side-stat" style="padding:0;border:none">接続モード<b style="font-size:12.5px">'+(state.offlineMode?'オフライン（デモ）':(window.claude?'claude.ai':'Firebase'))+'</b></div>';
+    html += '<div class="side-stat" style="padding:0;border:none">ログイン中<b style="font-size:12.5px">'+esc(state.myName||"")+'</b></div>';
+    html += '<div><button class="btn outline" id="admin-backup">'+iAdmin()+'全データをバックアップ（JSON）</button></div>';
+    html += '</div>';
+    return html;
+  }
   function renderSettingsBackup(){
     var last = lastBackupAt(), days = last ? Math.floor((Date.now()-new Date(last).getTime())/86400000) : null;
-    var html = '<h2 style="font-size:13.5px;margin:4px 0 10px">バックアップ</h2>';
+    var html = dataStateCardHtml() + '<h2 style="font-size:13.5px;margin:4px 0 10px">バックアップ</h2>';
     html += '<div class="card" style="padding:16px 18px;max-width:560px;display:flex;flex-direction:column;gap:12px">';
     html += '<div class="side-stat" style="padding:0;border:none">最後のバックアップ<b style="font-size:12.5px">'+(last?esc(last.slice(0,10)+" "+last.slice(11,16))+"（"+days+"日前）":"まだありません")+'</b></div>';
     if(days===null || days>=7) html += '<div class="badge" style="background:#fff4e5;color:#a55b00;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.5;white-space:normal;display:block;height:auto">'+(days===null?'バックアップがまだ取られていません。':'最後のバックアップから'+days+'日経っています。')+'定期的に保存しておくと安心です。</div>';
