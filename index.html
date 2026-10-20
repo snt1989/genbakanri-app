@@ -1428,6 +1428,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
+      {t:"案件が多くても速く開けるようにしました", d:"案件が3,000件以上あるため、通常は進行中の案件と最近更新した案件だけを読み込むようにしました（読み込み量が大幅に減ります）。清算済・失注の古い案件は、案件一覧の「過去の案件も読み込む」で読み込めます。バックアップとCSV出力は、自動的に全件を対象にします。"},
       {t:"全体の点検と不具合の修正", d:"案件の画面を開いたあとでもバックアップに全案件のファイルが含まれるよう修正し、管理画面の利用状況表示が崩れる場合の保護を入れました。", admin:true},
       {t:"案件の画面から連携アプリを開けるようになりました", d:"案件の詳細画面に「連携アプリ」のボタンを並べました（スマホでは見やすいタイル表示です）。備品管理・報告写真・黒板・勤怠・社用車管理を、それぞれ直接開けます（報告写真アプリは、その案件を指定して開きます）。"},
       {t:"LINE WORKSでアプリの更新も通知します", d:"アプリが新しくなると、更新内容がLINE WORKSのトークルームに届きます（設定 → 連携 → LINE WORKS の「アプリの更新」でオン・オフできます）。", admin:true},
@@ -1849,9 +1850,7 @@
   }
 
   function subscribeAll(){
-    db.collection("projects").onSnapshot(function(snap){
-      state.projects = snap.docs.map(toObj); state.loaded.projects=true; bgRender();
-    }, onErr);
+    subscribeProjects();
     db.collection("customers").onSnapshot(function(snap){
       state.customers = snap.docs.map(toObj).sort(function(a,b){return (b.registeredDate||"").localeCompare(a.registeredDate||"");});
       state.loaded.customers=true; bgRender();
@@ -1881,6 +1880,54 @@
     db.collection("steps").onSnapshot(function(snap){
       state.steps = snap.docs.map(toObj); state.loaded.steps=true; bgRender();
     }, function(e){ state.loaded.steps=true; state.steps=[]; bgRender(); });
+  }
+
+  /* ---- 案件が数千件ある場合に備え、通常は「進行中の案件」と「最近更新した案件」だけを読み込む ----
+     （清算済・失注の古い案件は、案件一覧の「過去の案件を読み込む」を押したときに全件を読み込む） */
+  var PROJ_ARCHIVED = ["清算済","失注"], PROJ_RECENT_DAYS = 14;
+  var projUnsub = [], projSets = {A:{}, B:{}, X:{}}, projFullWaiters = [];
+  state.projMode = "partial";
+  function projMerge(){
+    var m = {};
+    ["A","B","X"].forEach(function(k){ Object.keys(projSets[k]).forEach(function(id){ m[id] = projSets[k][id]; }); });
+    state.projects = Object.keys(m).map(function(id){ return m[id]; });
+  }
+  function projUnsubAll(){ projUnsub.forEach(function(u){ try{ if(typeof u==="function") u(); }catch(e){} }); projUnsub = []; }
+  function subscribeProjects(){
+    projUnsubAll(); projSets = {A:{}, B:{}, X:projSets.X||{}};
+    if(state.projMode==="full") return subscribeProjectsFull();
+    var cutoff = new Date(Date.now() - PROJ_RECENT_DAYS*86400000).toISOString();
+    var byId = function(snap){ var o = {}; snap.docs.forEach(function(d){ var x = toObj(d); o[x.id] = x; }); return o; };
+    projUnsub.push(db.collection("projects").where("status","not-in",PROJ_ARCHIVED).onSnapshot(function(snap){
+      projSets.A = byId(snap); projMerge(); state.loaded.projects = true; bgRender();
+    }, function(e){
+      // この絞り込みが使えない場合は、安全のため全件読み込みに切り替える
+      if(e && e.code==="resource-exhausted") return onErr(e);
+      state.projMode = "full"; subscribeProjects();
+    }));
+    projUnsub.push(db.collection("projects").where("updatedAt",">=",cutoff).onSnapshot(function(snap){
+      projSets.B = byId(snap); projMerge(); bgRender();
+    }, function(e){ /* 最近更新した案件は補助なので、失敗しても続行 */ }));
+  }
+  function subscribeProjectsFull(){
+    projUnsub.push(db.collection("projects").onSnapshot(function(snap){
+      projSets = {A:{}, B:{}, X:{}}; snap.docs.forEach(function(d){ var x = toObj(d); projSets.A[x.id] = x; });
+      projMerge(); state.loaded.projects = true; bgRender();
+      var w = projFullWaiters; projFullWaiters = []; w.forEach(function(f){ try{ f(); }catch(e){} });
+    }, onErr));
+  }
+  // 過去の案件も含めて、全件を読み込む（読み込みが終わると resolve）
+  function loadAllProjects(){
+    if(!db || state.projMode==="full") return Promise.resolve();
+    state.projMode = "full"; toast("過去の案件を読み込んでいます…");
+    return new Promise(function(res){ projFullWaiters.push(res); subscribeProjects(); });
+  }
+  // 一覧にない案件（過去の案件など）を、IDを指定して1件だけ読み込む
+  function ensureProject(id, cb){
+    if(!db || !id || rawStore.projects.some(function(p){ return p.id===id; })){ cb(); return; }
+    db.collection("projects").doc(id).get().then(function(snap){
+      if(snap && snap.exists){ var x = toObj(snap); projSets.X[x.id] = x; projMerge(); }
+    }).catch(function(){}).then(function(){ cb(); });
   }
 
   /* ---- 読み取り量を減らすため、写真・ファイル／フォルダ／ゴミ箱は「必要な画面を開いたとき」だけ読み込む ---- */
@@ -1932,6 +1979,7 @@
   // バックアップ前：未読み込みのコレクションがあれば読み込みを始めて false を返す（欠けたまま保存しない）
   function lazyReady(){
     if(!db) return true;
+    if(state.projMode!=="full"){ loadAllProjects(); toast("バックアップ用に、過去の案件も含めて読み込んでいます。数秒後にもう一度押してください"); return false; }
     var wait = Object.keys(LAZY_COLS).filter(function(k){ return !(state.lazyOn[k] && state.loaded[k]) || (k==="files" && state.lazyScope.files); });   // 案件ごとの絞り込み読み込み中は、全件の読み込みをやり直す
     if(!wait.length) return true;
     wait.forEach(lazyStart);
@@ -2416,7 +2464,7 @@
     bulkReset(); state.personalOpen=false; state.tab=id; state.sidebarOpen=false; if(!SUBPAGES[id]) state.returnTab=id; render();
   }
   function goProjectForm(mode, project){ state.formMode=mode||state.returnTab; state.editingProject=project||null; state.tab="project-form"; render(); }
-  function goProjectDetail(id){ state.viewingProjectId=id; state.tab="project-detail"; render(); }
+  function goProjectDetail(id){ state.viewingProjectId=id; state.tab="project-detail"; render(); ensureProject(id, function(){ if(state.viewingProjectId===id) render(); }); }
   // 案件別ファイル管理ページ. from: "detail" (案件詳細) or "files" (写真・ファイル一覧)
   function goProjectFiles(id, from){ bulkReset(); state.filesProjectId=id; state.filesBack=from||"detail"; state.projectFilesKind="all"; state.pfFolder=""; state.pfSel={}; state.pfMine=false; state.tab="project-files"; render(); }
   function goMemberForm(ext){
@@ -3239,8 +3287,9 @@
     html += '</div>';
 
     if(f.assignees.length) html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:var(--accent-soft);border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:12.5px"><span>担当者：<b>'+esc(f.assignees.join("、"))+'</b> の案件を表示中</span><button type="button" class="btn sm" data-assignee-all>全員を表示</button></div>';
+    if(state.projMode!=="full") html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:var(--surface-2,#f1f4f2);border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:12.5px"><span>表示を速くするため、<b>進行中の案件と、最近更新した案件</b>だけを読み込んでいます（清算済・失注の古い案件は含まれません）。</span><button class="btn sm" data-proj-loadall="1">過去の案件も読み込む</button></div>';
     html += '<div class="summary-line">'+
-      '<span><b>'+filtered.length+'</b>件 / 全'+state.projects.length+'件</span>'+
+      '<span><b>'+filtered.length+'</b>件 / 全'+state.projects.length+'件'+(state.projMode!=="full"?'（読み込み済み）':'')+'</span>'+
       STATUS_LIST.slice(0,4).map(function(s){return '<span>'+s+' <b style="font-size:13px">'+counts[s]+'</b></span>';}).join("")+
       '<span>合計金額 <b class="num" style="font-size:14px">'+fmtYen(totalAmount)+'</b></span>'+
       projColsPicker()+
@@ -5100,6 +5149,8 @@
     }).catch(uploadFail);
   }
 
+  document.addEventListener("click", function(ev){ var b = ev.target.closest && ev.target.closest("[data-proj-loadall]"); if(b){ b.disabled = true; loadAllProjects(); } });
+
   /* ============ オートコンプリート（入力すると候補が出る） ============
      ・件数の多いプルダウン（案件・担当者・都道府県など）は、入力して絞り込める欄に自動で変わる
      ・会社名の欄には、登録済みの会社名の候補を表示する */
@@ -5949,7 +6000,7 @@
       stat("管理者", counts.admin)+
       stat("一般", counts.general)+
       stat("外部", counts.external)+
-      stat("案件", state.projects.length)+
+      stat(state.projMode!=="full"?"案件（読み込み済み）":"案件", state.projects.length)+
       stat("顧客", state.customers.length)+
     '</div>';
     var safe = function(fn){ try{ return fn(); }catch(e){ return ''; } };   // 1つのカードで不具合があっても、他のタブや項目は表示する
@@ -8280,6 +8331,7 @@
   function csvExport(entity){
     var E = CSV_ENTITIES[entity];
     if(!state.isAdmin){ toast("CSV出力は管理者のみ行えます"); return; }
+    if(entity==="projects" && state.projMode!=="full"){ loadAllProjects().then(function(){ csvExport(entity); }); return; }   // 過去の案件も含めて出力する
     var rows = filteredList(entity);
     if(!rows.length){ toast("出力するデータがありません"); return; }
     downloadBlob(E.fileLabel()+"_"+todayISO()+".csv", new Blob([buildCsv(entity, rows)], {type:"text/csv"}));
