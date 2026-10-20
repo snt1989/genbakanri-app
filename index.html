@@ -1411,6 +1411,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
+      {t:"設定の「LINE WORKS」と「freee連携」を「連携」にまとめました", d:"「設定 → 連携」を開き、上の「LINE WORKS」「freee」で切り替えます。"},
       {t:"設定の「管理画面」をタブで見やすくしました", d:"「概要」「メンバー権限」「セキュリティ」「画面の設定」「写真・メール」の5つのタブに分けました（データの状態とバックアップは「バックアップ」に移しました）。"},
       {t:"写真のサイズを管理画面で全員共通に設定できるようにしました", d:"管理者が「設定 → 管理画面」の「写真のサイズ（全員共通）」で、アップロードする写真の大きさ・画質と、「写真を軽量化」の初期設定を決められます。アップロード時にサイズを聞かれることはなくなりました。"},
       {t:"Shiftキーで範囲選択できるようにしました（パソコン）", d:"一括編集や、案件のファイル画面で、Shiftキーを押しながらチェックすると、前に選んだものとの間をまとめて選択できます。"},
@@ -5327,13 +5328,22 @@
     var sections = settingsSections();
     // 「個人情報」は設定のタブには出さず、画面右上の名前から開く
     var tabs = sections.filter(function(x){ return x[0]!=="personal"; });
+    // LINE WORKSとfreeeは「連携」の1つのタブにまとめる
+    var integ = tabs.filter(function(x){ return x[0]==="works" || x[0]==="freee"; }), integIdx = -1;
+    if(integ.length){
+      tabs.forEach(function(x,i){ if(integIdx<0 && (x[0]==="works"||x[0]==="freee")) integIdx = i; });
+      tabs = tabs.filter(function(x){ return x[0]!=="works" && x[0]!=="freee"; });
+      tabs.splice(integIdx, 0, ["integ","連携"]);
+    }
+    var inInteg = state.settingsSeg==="works" || state.settingsSeg==="freee";
     if(state.settingsSeg==="personal" && !state.personalOpen && tabs.length) state.settingsSeg = tabs[0][0];
     if(!sections.some(function(x){return x[0]===state.settingsSeg;})) state.settingsSeg = sections[0][0];
     if(state.settingsSeg!=="admin") state.navDraft = null;
     var html = '<h1 class="pagetitle">'+(state.settingsSeg==="personal"?"個人情報":"設定")+'</h1><div style="height:14px"></div>';
     if(tabs.length && state.settingsSeg!=="personal") html += '<div class="segmented" style="margin-bottom:16px">'+tabs.map(function(x){
-      return '<div class="segopt'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+((x[0]==="company"||x[0]==="admin"||x[0]==="loginlog"||x[0]==="freee"||x[0]==="master"||x[0]==="trash"||x[0]==="backup")?iAdmin():'')+x[1]+'</div>';
+      return '<div class="segopt'+((state.settingsSeg===x[0] || (x[0]==="integ" && inInteg))?" active":"")+'" data-setseg="'+x[0]+'">'+((x[0]==="company"||x[0]==="admin"||x[0]==="integ"||x[0]==="loginlog"||x[0]==="freee"||x[0]==="master"||x[0]==="trash"||x[0]==="backup")?iAdmin():'')+x[1]+'</div>';
     }).join("")+'</div>';
+    if(inInteg && integ.length>1) html += '<div class="admtabs">'+integ.map(function(x){ return '<div class="admtab'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+x[1].replace(/連携$/,"")+'</div>'; }).join("")+'</div>';
     if(state.settingsSeg==="personal") html += renderSettingsPersonal();
     else if(state.settingsSeg==="admin") html += renderSettingsAdmin();
     else if(state.settingsSeg==="loginlog") html += renderSettingsLoginLog();
@@ -9523,7 +9533,12 @@
     bindNavEvents(c);
     bindListDefEvents(c);
     c.querySelectorAll("[data-admtab]").forEach(function(el){ el.addEventListener("click", function(){ state.adminTab = el.getAttribute("data-admtab"); state.navDraft = null; render(); }); });
-    c.querySelectorAll("[data-setseg]").forEach(function(el){ el.addEventListener("click", function(){ state.settingsSeg = el.getAttribute("data-setseg"); render(); }); });
+    c.querySelectorAll("[data-setseg]").forEach(function(el){ el.addEventListener("click", function(){
+      var v = el.getAttribute("data-setseg");
+      if(v==="integ") v = (state.integLast==="works" && worksAvailable()) ? "works" : (state.integLast==="freee" ? "freee" : (worksAvailable() ? "works" : "freee"));
+      if(v==="works" || v==="freee") state.integLast = v;
+      state.settingsSeg = v; render();
+    }); });
 
     var setZip = document.getElementById("set-zip"), setAddr = document.getElementById("set-address");
     if(setZip && setAddr && state.isAdmin){
