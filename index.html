@@ -1411,6 +1411,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
+      {t:"案件の画面から連携アプリを開けるようになりました", d:"案件の詳細画面に「連携アプリ」のボタンを並べました。備品管理・報告写真・黒板・勤怠・社用車管理を、それぞれ直接開けます（報告写真アプリは、その案件を指定して開きます）。"},
       {t:"LINE WORKSでアプリの更新も通知します", d:"アプリが新しくなると、更新内容がLINE WORKSのトークルームに届きます（設定 → 連携 → LINE WORKS の「アプリの更新」でオン・オフできます）。", admin:true},
       {t:"入力すると候補が出るようになりました（オートコンプリート）", d:"案件・担当者などの件数の多いプルダウンは、文字を入力して絞り込めるようになりました。会社名の欄には、登録済みの会社名の候補が出ます。"},
       {t:"設定の「LINE WORKS」と「freee連携」を「連携」にまとめました", d:"「設定 → 連携」を開き、上の「LINE WORKS」「freee」で切り替えます。"},
@@ -3765,6 +3766,15 @@
     var row = function(x){ return '<div style="padding:2px 0;border-top:1px solid var(--border)"><span class="num">'+esc(fmtDateTime(x.at))+'</span> ／ <b style="color:var(--ink)">'+esc(x.by||"不明")+'</b> ／ '+esc(x.a||"編集")+(x.f&&x.f.length?'：'+esc(x.f.join("・")):"")+'</div>'; };
     return '<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:600;color:var(--ink)">変更の履歴（'+h.length+'件）</summary><div style="margin-top:4px;font-size:12px;line-height:1.7">'+h.map(row).join("")+'</div></details>';
   }
+  // 案件の画面から、連携アプリをそれぞれ開くボタン（報告写真アプリは、この案件を指定して開く）
+  function projectAppsHtml(p){
+    var btn = function(a){
+      var st = 'text-decoration:none;display:inline-flex;align-items:center;gap:6px;';
+      if(a.name==="報告写真アプリ") return '<button type="button" class="btn sm outline" data-report-project="'+esc(p.id)+'" title="この案件を指定して報告写真アプリを開きます（作ったPDFはこの案件のファイルに保存できます）">'+a.icon()+' '+esc(a.name)+'</button>';
+      return '<a class="btn sm outline" '+(a.sso?'data-bihin-link="1" ':'')+'href="'+esc(a.url)+'" target="_blank" rel="noopener noreferrer" style="'+st+'">'+a.icon()+' '+esc(a.name)+' ↗</a>';
+    };
+    return '<div class="card" style="padding:10px 14px;margin:0 0 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:12px;font-weight:700;color:var(--ink-soft);margin-right:4px">連携アプリ</span>'+APP_LINKS.map(btn).join("")+'</div>';
+  }
   function renderProjectDetail(){
     var p = state.projects.find(function(x){return x.id===state.viewingProjectId;});
     if(!p) return crumb(state.returnTab==="sales"?"営業案件一覧に戻る":"施工案件一覧に戻る", state.returnTab) + emptyState(iBriefcase,"案件が見つかりません","");
@@ -3776,6 +3786,7 @@
     html += '<div class="detail-head"><h1>'+esc(p.name)+'</h1><div class="updated">最終更新日時：'+fmtDateTime(p.updatedAt||p.createdAt)+'</div>'+
       (worksAvailable() ? (worksLoadStatus(), worksReady() ? '<button class="btn sm outline" data-works-share="'+esc(p.id)+'" style="margin-top:6px">LINE WORKSで共有</button>' : '') : '')+'</div>';
 
+    html += projectAppsHtml(p);
     html += '<div class="detail-grid">';
     html += '<div>';
 
