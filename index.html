@@ -209,6 +209,22 @@
   .side-stat b{font-family:"JetBrains Mono",monospace;font-size:16px;color:var(--ink);}
 
   /* ---- Members ---- */
+  /* 案件の画面の「連携アプリ」ボタン */
+  .pa-card{padding:10px 14px;margin:0 0 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .pa-title{font-size:12px;font-weight:700;color:var(--ink-soft);}
+  .pa-list{display:flex;gap:8px;flex-wrap:wrap;}
+  .pa-btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px;}
+  .pa-ico{display:inline-flex;}
+  .pa-name{display:inline-flex;}
+  @media(max-width:700px){
+    .pa-card{display:block;padding:12px;}
+    .pa-title{margin-bottom:8px;font-size:12.5px;}
+    .pa-list{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+    .pa-btn{flex-direction:column;justify-content:center;gap:4px;padding:10px 4px;min-height:68px;border-radius:12px;text-align:center;line-height:1.25;font-size:11.5px;white-space:normal;}
+    .pa-ico svg{width:22px;height:22px;}
+    .pa-name{flex-direction:column;align-items:center;}
+    .pa-sfx{font-size:10px;font-weight:500;opacity:.75;}
+  }
   /* 管理画面の中のタブ */
   .admtabs{display:flex;gap:2px;border-bottom:2px solid var(--border);margin:2px 0 14px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;position:sticky;top:0;background:var(--bg);z-index:6;padding-top:4px;}
   .admtabs::-webkit-scrollbar{display:none;}
@@ -1411,7 +1427,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
-      {t:"案件の画面から連携アプリを開けるようになりました", d:"案件の詳細画面に「連携アプリ」のボタンを並べました。備品管理・報告写真・黒板・勤怠・社用車管理を、それぞれ直接開けます（報告写真アプリは、その案件を指定して開きます）。"},
+      {t:"案件の画面から連携アプリを開けるようになりました", d:"案件の詳細画面に「連携アプリ」のボタンを並べました（スマホでは見やすいタイル表示です）。備品管理・報告写真・黒板・勤怠・社用車管理を、それぞれ直接開けます（報告写真アプリは、その案件を指定して開きます）。"},
       {t:"LINE WORKSでアプリの更新も通知します", d:"アプリが新しくなると、更新内容がLINE WORKSのトークルームに届きます（設定 → 連携 → LINE WORKS の「アプリの更新」でオン・オフできます）。", admin:true},
       {t:"入力すると候補が出るようになりました（オートコンプリート）", d:"案件・担当者などの件数の多いプルダウンは、文字を入力して絞り込めるようになりました。会社名の欄には、登録済みの会社名の候補が出ます。"},
       {t:"設定の「LINE WORKS」と「freee連携」を「連携」にまとめました", d:"「設定 → 連携」を開き、上の「LINE WORKS」「freee」で切り替えます。"},
@@ -3769,11 +3785,12 @@
   // 案件の画面から、連携アプリをそれぞれ開くボタン（報告写真アプリは、この案件を指定して開く）
   function projectAppsHtml(p){
     var btn = function(a){
-      var st = 'text-decoration:none;display:inline-flex;align-items:center;gap:6px;';
-      if(a.name==="報告写真アプリ") return '<button type="button" class="btn sm outline" data-report-project="'+esc(p.id)+'" title="この案件を指定して報告写真アプリを開きます（作ったPDFはこの案件のファイルに保存できます）">'+a.icon()+' '+esc(a.name)+'</button>';
-      return '<a class="btn sm outline" '+(a.sso?'data-bihin-link="1" ':'')+'href="'+esc(a.url)+'" target="_blank" rel="noopener noreferrer" style="'+st+'">'+a.icon()+' '+esc(a.name)+' ↗</a>';
+      var short = a.name.replace(/アプリ$/,"");
+      var inner = '<span class="pa-ico">'+a.icon()+'</span><span class="pa-name"><span>'+esc(short)+'</span><span class="pa-sfx">アプリ</span></span>';
+      if(a.name==="報告写真アプリ") return '<button type="button" class="btn sm outline pa-btn" data-report-project="'+esc(p.id)+'" title="この案件を指定して報告写真アプリを開きます（作ったPDFはこの案件のファイルに保存できます）">'+inner+'</button>';
+      return '<a class="btn sm outline pa-btn" '+(a.sso?'data-bihin-link="1" ':'')+'href="'+esc(a.url)+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>';
     };
-    return '<div class="card" style="padding:10px 14px;margin:0 0 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:12px;font-weight:700;color:var(--ink-soft);margin-right:4px">連携アプリ</span>'+APP_LINKS.map(btn).join("")+'</div>';
+    return '<div class="card pa-card"><div class="pa-title">連携アプリ</div><div class="pa-list">'+APP_LINKS.map(btn).join("")+'</div></div>';
   }
   function renderProjectDetail(){
     var p = state.projects.find(function(x){return x.id===state.viewingProjectId;});
