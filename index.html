@@ -386,6 +386,19 @@
   .pf-docrow .nm{color:var(--accent);text-decoration:underline;font-size:13.5px;word-break:break-all}
   .pf-docrow .meta{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink-faint);margin-top:4px}
   .pf-docrow .ic{color:var(--accent);display:flex;padding:6px;cursor:pointer}
+  /* スマホ：資料の行・予定の行で文字が重ならないようにする */
+  .card > .pf-docrow:first-child{border-top:none;}
+  .pf-docrow .meta{flex-wrap:wrap;}
+  .pf-docrow .meta > span,.pf-docrow .pf-up{white-space:nowrap;}
+  .pf-docrow .ic,.pf-docrow > span{flex:none;}
+  @media(max-width:700px){
+    .pf-docrow{flex-wrap:wrap;gap:6px 10px;padding:12px 2px;align-items:flex-start;}
+    .pf-docrow > div[style*="flex:1"]{flex:1 1 0;min-width:140px;}
+    .pf-docrow .nm{word-break:break-all;line-height:1.5;}
+    .pf-docrow .meta{gap:2px 10px;}
+    .pf-docrow .ic{padding:8px;}
+  }
+
   .pf-grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(172px,1fr));border-top:1px solid var(--border);border-left:1px solid var(--border);background:var(--surface)}
   .pf-tile{position:relative;min-height:230px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);display:flex;flex-direction:column;padding:8px;min-width:0}
   .pf-tile .pf-main{flex:1;display:flex;align-items:center;justify-content:center;position:relative;min-height:130px;cursor:pointer}
@@ -1428,6 +1441,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
+      {t:"スマホの案件詳細で文字が重なる表示を直しました", d:"資料の行でファイル名・日付・登録者が折り返して重ならないように整え、アイコンの位置もそろえました。"},
       {t:"案件が多くても速く開けるようにしました", d:"案件が3,000件以上あるため、通常は進行中の案件と最近更新した案件だけを読み込むようにしました（読み込み量が大幅に減ります）。清算済・失注の古い案件は、案件一覧の「過去の案件も読み込む」で読み込めます。バックアップとCSV出力は、自動的に全件を対象にします。"},
       {t:"全体の点検と不具合の修正", d:"案件の画面を開いたあとでもバックアップに全案件のファイルが含まれるよう修正し、管理画面の利用状況表示が崩れる場合の保護を入れました。", admin:true},
       {t:"案件の画面から連携アプリを開けるようになりました", d:"案件の詳細画面に「連携アプリ」のボタンを並べました（スマホでは見やすいタイル表示です）。備品管理・報告写真・黒板・勤怠・社用車管理を、それぞれ直接開けます（報告写真アプリは、その案件を指定して開きます）。"},
