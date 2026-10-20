@@ -1428,6 +1428,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
+      {t:"全体の点検と不具合の修正", d:"案件の画面を開いたあとでもバックアップに全案件のファイルが含まれるよう修正し、管理画面の利用状況表示が崩れる場合の保護を入れました。", admin:true},
       {t:"案件の画面から連携アプリを開けるようになりました", d:"案件の詳細画面に「連携アプリ」のボタンを並べました（スマホでは見やすいタイル表示です）。備品管理・報告写真・黒板・勤怠・社用車管理を、それぞれ直接開けます（報告写真アプリは、その案件を指定して開きます）。"},
       {t:"LINE WORKSでアプリの更新も通知します", d:"アプリが新しくなると、更新内容がLINE WORKSのトークルームに届きます（設定 → 連携 → LINE WORKS の「アプリの更新」でオン・オフできます）。", admin:true},
       {t:"入力すると候補が出るようになりました（オートコンプリート）", d:"案件・担当者などの件数の多いプルダウンは、文字を入力して絞り込めるようになりました。会社名の欄には、登録済みの会社名の候補が出ます。"},
@@ -1931,7 +1932,7 @@
   // バックアップ前：未読み込みのコレクションがあれば読み込みを始めて false を返す（欠けたまま保存しない）
   function lazyReady(){
     if(!db) return true;
-    var wait = Object.keys(LAZY_COLS).filter(function(k){ return !(state.lazyOn[k] && state.loaded[k]); });
+    var wait = Object.keys(LAZY_COLS).filter(function(k){ return !(state.lazyOn[k] && state.loaded[k]) || (k==="files" && state.lazyScope.files); });   // 案件ごとの絞り込み読み込み中は、全件の読み込みをやり直す
     if(!wait.length) return true;
     wait.forEach(lazyStart);
     toast("バックアップ用にデータを読み込んでいます。数秒後にもう一度押してください");
@@ -5882,7 +5883,7 @@
         '<div style="height:9px;border-radius:99px;background:var(--surface-2);overflow:hidden;margin-top:5px"><div style="height:100%;width:'+Math.max(pct,0.5)+'%;background:'+col+'"></div></div></div>';
     };
     h += row("読み取り", u.reads, (u.limits||{}).reads)+row("書き込み", u.writes, (u.limits||{}).writes)+row("削除", u.deletes, (u.limits||{}).deletes);
-    h += '<div style="font-size:11.5px;color:var(--ink-soft);line-height:1.8">リセット：'+fmtDateTime(new Date(u.dayEnd).toISOString())+' ごろ（無料枠の1日は太平洋時間の0時区切り）<br>最終更新：'+fmtDateTime(new Date(u.at).toISOString())+(state.usageLoading?'（更新中…）':'')+'</div>';
+    h += '<div style="font-size:11.5px;color:var(--ink-soft);line-height:1.8">リセット：'+(isNaN(new Date(u.dayEnd).getTime()) ? '—' : fmtDateTime(new Date(u.dayEnd).toISOString()))+' ごろ（無料枠の1日は太平洋時間の0時区切り）<br>最終更新：'+fmtDateTime(new Date(u.at).toISOString())+(state.usageLoading?'（更新中…）':'')+'</div>';
     return h;
   }
   function usageLoad(){
