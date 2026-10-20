@@ -209,6 +209,17 @@
   .side-stat b{font-family:"JetBrains Mono",monospace;font-size:16px;color:var(--ink);}
 
   /* ---- Members ---- */
+  /* 管理画面の中のタブ */
+  .admtabs{display:flex;gap:2px;border-bottom:2px solid var(--border);margin:2px 0 14px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;position:sticky;top:0;background:var(--bg);z-index:6;padding-top:4px;}
+  .admtabs::-webkit-scrollbar{display:none;}
+  .admtab{padding:11px 16px;font-size:13.5px;font-weight:700;color:var(--ink-soft);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap;display:flex;gap:7px;align-items:center;flex:0 0 auto;}
+  .admtab:hover{color:var(--ink);}
+  .admtab.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .admdesc{font-size:12.5px;color:var(--ink-soft);margin:0 0 18px;line-height:1.7;}
+  .admbody h2{font-size:14.5px !important;border-left:4px solid var(--accent);padding-left:10px;margin:22px 0 10px !important;}
+  .admbody > h2:first-child{margin-top:4px !important;}
+  .admbody .card{max-width:760px;}
+  @media(max-width:700px){ .admtab{padding:11px 12px;font-size:13px;} }
   .segmented{display:inline-flex;border:1px solid var(--border);border-radius:10px;overflow:hidden;}
   .segopt{padding:9px 20px;font-size:12.5px;font-weight:600;background:var(--surface);color:var(--ink-soft);cursor:pointer;border-right:1px solid var(--border);}
   .segopt:last-child{border-right:none;}
@@ -5875,9 +5886,16 @@
     html += '<div><button class="btn outline" id="admin-backup">'+iAdmin()+'全データをバックアップ（JSON）</button></div>';
     html += '</div>';
     sec.data = html;
-    var AT = [["overview","概要"],["members","メンバー権限"],["security","セキュリティ"],["display","画面の設定"],["photo","写真・メール"],["data","データ"]];
+    var AT = [["overview","📊","概要","メンバー数・データベースの使用量・サーバーの容量など、全体の状況を確認します。"],
+      ["members","👥","メンバー権限","メンバーごとの権限（管理者・一般・外部）の変更と、パスワードの初期化を行います。"],
+      ["security","🔒","セキュリティ","削除用パスワードと、社外秘の初期設定を管理します。"],
+      ["display","🖥️","画面の設定","スマホ下部のメニューと、一覧画面の初期の表示内容を決めます。"],
+      ["photo","📷","写真・メール","アップロードする写真のサイズ（全員共通）と、Gmail連携を設定します。"],
+      ["data","💾","データ","データの接続状態の確認と、全データのバックアップを行います。"]];
     if(!sec[state.adminTab]) state.adminTab = "overview";
-    return '<div class="segmented" style="margin-bottom:16px;flex-wrap:wrap">'+AT.map(function(x){ return '<div class="segopt'+(state.adminTab===x[0]?" active":"")+'" data-admtab="'+x[0]+'">'+x[1]+'</div>'; }).join("")+'</div>'+sec[state.adminTab];
+    var cur = AT.filter(function(x){ return x[0]===state.adminTab; })[0];
+    return '<div class="admtabs">'+AT.map(function(x){ return '<div class="admtab'+(state.adminTab===x[0]?" active":"")+'" data-admtab="'+x[0]+'"><span>'+x[1]+'</span>'+x[2]+'</div>'; }).join("")+'</div>'+
+      '<div class="admdesc">'+esc(cur[3])+'</div><div class="admbody">'+sec[state.adminTab]+'</div>';
   }
 
 /* ============ 報告書 ============ */
