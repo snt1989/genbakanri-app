@@ -1400,6 +1400,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
+      {t:"ボタンで最新版に更新できるようにしました", d:"画面右上の「同期」を開き、「最新版に更新して読み込み直す」を押すと、この端末の古いアプリのキャッシュを消して最新版を読み込みます（ログイン状態やデータは消えません）。"},
       {t:"写真の読み込みを速くしました", d:"新しくアップロードする写真は、見た目をほぼ変えずに今までより小さく（約300KB目安）保存します。すでに保存した写真は、管理者が案件の「ファイル」画面の「写真を軽量化」で、大きさ・画質・対象を選んで軽くできます。"},
       {t:"写真・ファイルをタップするとエラーになる問題を修正（iPhone）", d:"iPhoneのSafariでは、保存データ形式のリンクを新しいタブで開けませんでした。開く前に変換して表示するようにしました。"},
       {t:"写真・ファイルの読み込みを軽くしました", d:"案件の画面では、その案件の写真・ファイルだけを読み込むようにしました（以前は全案件分を一度に読み込んでいました）。読み込みに失敗したときは、原因を画面に表示します。"},
@@ -1900,6 +1901,15 @@
     toast("バックアップ用にデータを読み込んでいます。数秒後にもう一度押してください");
     return false;
   }
+  /* 最新版に更新：この端末の古いアプリのキャッシュだけを消して読み込み直す（ログイン・データは消えない） */
+  function appRefresh(){
+    toast("最新版に更新しています…");
+    var jobs = [];
+    try{ if(navigator.serviceWorker && navigator.serviceWorker.getRegistrations) jobs.push(navigator.serviceWorker.getRegistrations().then(function(rs){ return Promise.all(rs.map(function(r){ return r.unregister(); })); })); }catch(e){}
+    try{ if(window.caches && caches.keys) jobs.push(caches.keys().then(function(ks){ return Promise.all(ks.filter(function(k){ return k!=="genba-badge"; }).map(function(k){ return caches.delete(k); })); })); }catch(e){}
+    var go = function(){ location.replace(location.pathname+"?r="+Date.now()); };
+    Promise.race([Promise.all(jobs), new Promise(function(r){ setTimeout(r, 3000); })]).then(go, go);
+  }
   /* ---- データの同期状況（画面右上の「同期」表示） ---- */
   var SYNC_NAMES = {projects:"案件",customers:"顧客",members:"メンバー",tasks:"タスク",chats:"チャット",reports:"報告書",events:"予定",steps:"工程",files:"ファイル",folders:"フォルダ",cards:"名刺",trash:"ゴミ箱"};
   var syncInfo = {subs:{}, lastServer:0, online:(typeof navigator.onLine==="boolean" ? navigator.onLine : true), timer:0};
@@ -1954,8 +1964,8 @@
       '<div style="font-size:12px;color:var(--ink-soft);line-height:1.9;margin-bottom:8px">通信：<b>'+(syncInfo.online?"オンライン":"オフライン")+'</b>　／　接続先：<b>'+(window.claude?"claude.ai":(state.offlineMode||!db?"なし":"Firebase"))+'</b>　／　サーバーと最後に照合：<b>'+fmtT(syncInfo.lastServer)+'</b>　／　保存方式：<b>'+(localStorage.getItem("gc_memcache")==="1"?"メモリのみ":"端末に保存")+'</b></div>'+
       (rows?'<div style="display:flex;gap:8px;padding:4px 2px;font-size:11px;color:var(--ink-faint)"><span style="width:76px;flex:none">データ</span><span style="flex:1">状態</span><span style="width:44px;text-align:right;flex:none">件数</span><span style="width:60px;text-align:right;flex:none">最終更新</span></div>'+rows:'')+
       '<div style="font-size:11.5px;color:var(--ink-faint);line-height:1.7;margin-top:10px">他の人が変更した内容は自動で反映されます（画面の再読み込みは不要です）。「端末のデータ（照合待ち）」が長く続く場合は、通信状況を確認してください。</div>',
-      '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="sync-reload">最新の状態に読み込み直す</button>');
-    document.getElementById("sync-reload").onclick = function(){ location.reload(); };
+      '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="sync-reload">最新版に更新して読み込み直す</button>');
+    document.getElementById("sync-reload").onclick = appRefresh;
   }
   window.addEventListener("online", function(){ syncInfo.online = true; syncRender(); });
   window.addEventListener("offline", function(){ syncInfo.online = false; syncRender(); });
