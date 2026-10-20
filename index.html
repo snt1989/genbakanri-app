@@ -1400,9 +1400,10 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
+      {t:"写真のサイズを管理画面で全員共通に設定できるようにしました", d:"管理者が「設定 → 管理画面」の「写真のサイズ（全員共通）」で、アップロードする写真の大きさ・画質と、「写真を軽量化」の初期設定を決められます。アップロード時にサイズを聞かれることはなくなりました。"},
       {t:"Shiftキーで範囲選択できるようにしました（パソコン）", d:"一括編集や、案件のファイル画面で、Shiftキーを押しながらチェックすると、前に選んだものとの間をまとめて選択できます。"},
       {t:"ボタンで最新版に更新できるようにしました", d:"画面右上の「同期」を開き、「最新版に更新して読み込み直す」を押すと、この端末の古いアプリのキャッシュを消して最新版を読み込みます（ログイン状態やデータは消えません）。"},
-      {t:"写真の読み込みを速くしました", d:"新しくアップロードする写真は、見た目をほぼ変えずに今までより小さく（約300KB目安）保存します。アップロードのときに写真のサイズ（長辺800〜2000px）を選べます。すでに保存した写真は、管理者が「写真・ファイル」画面や案件の「ファイル」画面の「写真を軽量化」で、大きさ・画質・対象を選んで軽くできます。チェックで選んだ写真だけを軽くすることも、途中で中止することもできます。"},
+      {t:"写真の読み込みを速くしました", d:"新しくアップロードする写真は、見た目をほぼ変えずに今までより小さく（約300KB目安）保存します。アップロードする写真のサイズ（長辺800〜2000px）は、管理者が決めた設定が使われます。すでに保存した写真は、管理者が「写真・ファイル」画面や案件の「ファイル」画面の「写真を軽量化」で、大きさ・画質・対象を選んで軽くできます。チェックで選んだ写真だけを軽くすることも、途中で中止することもできます。"},
       {t:"写真・ファイルの読み込みを軽くしました", d:"案件の画面では、その案件の写真・ファイルだけを読み込むようにしました（以前は全案件分を一度に読み込んでいました）。読み込みに失敗したときは、原因を画面に表示します。"},
       {t:"大きいファイル（PDFなど）がアップロードできない問題を修正", d:"約900KBを超える画像以外のファイルは保存できませんでした。10MBまでのファイルを分割して保存できるようにしました。画像は従来どおり自動で縮小されます。保存が後から失敗した場合も画面にお知らせが出ます。"}
     ]},
@@ -1789,6 +1790,7 @@
     loadFreeeSettings();
     loadMobileNav();
     loadListDefaults();
+    loadPhotoCfg();
   }
 
   // 削除用パスワード: one shared password (set by an admin in 設定 > 管理画面)
@@ -4868,6 +4870,21 @@
   }
 
   /* 保存済みの大きい写真を、見た目をほぼ変えずに軽くする（読み込みが速くなる）。管理者が案件ごとに実行 */
+  function ltSideOpts(v){ return [[2000,"2000px（高精細）"],[1600,"1600px"],[1280,"1280px（標準）"],[1024,"1024px"],[800,"800px（小さめ）"]].map(function(o){ return '<option value="'+o[0]+'"'+(Number(v)===o[0]?" selected":"")+'>'+o[1]+'</option>'; }).join(""); }
+  function ltQOpts(v){ return [[0.85,"高画質"],[0.74,"標準"],[0.6,"軽さ優先"]].map(function(o){ return '<option value="'+o[0]+'"'+(Number(v)===o[0]?" selected":"")+'>'+o[1]+'</option>'; }).join(""); }
+  function ltMinOpts(v){ return [[0,"すべての写真"],[200,"200KBより大きい写真"],[400,"400KBより大きい写真"],[700,"700KBより大きい写真"]].map(function(o){ return '<option value="'+o[0]+'"'+(Number(v)===o[0]?" selected":"")+'>'+o[1]+'</option>'; }).join(""); }
+  function renderPhotoCfgCard(){
+    var c = state.photoCfg;
+    return '<h2 style="font-size:13.5px;margin:4px 0 10px">写真のサイズ（全員共通）</h2>'+
+      '<div class="card" style="padding:16px 18px;max-width:520px;display:flex;flex-direction:column;gap:12px;margin-bottom:18px">'+
+      '<div style="font-size:11.5px;color:var(--ink-faint);line-height:1.6">ここで決めたサイズが、全員のアップロード時に使われます（PDFなど写真以外はそのまま保存）。小さいほど読み込みが速くなり、データ量も減ります。変更しても、すでに保存した写真は変わりません（「写真を軽量化」で軽くできます）。</div>'+
+      field("アップロードする写真のサイズ・画質", '<select id="pc-up">'+UP_SIZES.map(function(o,i){ return '<option value="'+i+'"'+(Number(c.up)===i?" selected":"")+'>'+o.n+'</option>'; }).join("")+'</select>')+
+      '<div style="font-size:12px;font-weight:700;margin-top:4px">「写真を軽量化」の初期設定</div>'+
+      field("大きさ（長いほうの辺）", '<select id="pc-side">'+ltSideOpts(c.side)+'</select>')+
+      field("画質", '<select id="pc-q">'+ltQOpts(c.q)+'</select>')+
+      field("対象", '<select id="pc-min">'+ltMinOpts(c.min)+'</select>')+
+      '<div><button class="btn primary" id="pc-save">'+iAdmin()+'写真の設定を保存する</button></div></div>';
+  }
   function lightenCandidates(projectId, minKB, only){
     return state.files.filter(function(f){ return (!projectId || f.projectId===projectId) && (!only || only[f.id]) && isImageFile(f) && f.url && String(f.url).indexOf("data:image/")===0 && String(f.url).length>minKB*1024 && f.contentType!=="image/gif" && f.contentType!=="image/svg+xml"; });
   }
@@ -4885,9 +4902,9 @@
     openModal("写真を軽量化",
       '<div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px">'+(projectId?"この案件":"すべての案件")+'の写真を縮小して保存し直します。読み込みが速くなります。<b>元の画質には戻せません</b>。途中で中止できます（中止するまでに済んだ分はそのまま軽くなります）。</div>'+
       (sel ? '<label class="field">範囲<select id="lt-scope"><option value="sel" selected>選択した写真の中から（選択中の写真：'+selN+'枚）</option><option value="all">'+(projectId?'この案件':'すべて')+'の写真の中から</option></select></label>' : '')+
-      '<label class="field">大きさ（長いほうの辺）<select id="lt-side"><option value="2000">2000px（高精細）</option><option value="1600">1600px</option><option value="1280" selected>1280px（標準）</option><option value="1024">1024px</option><option value="800">800px（小さめ）</option></select></label>'+
-      '<label class="field">画質<select id="lt-q"><option value="0.85">高画質</option><option value="0.74" selected>標準</option><option value="0.6">軽さ優先</option></select></label>'+
-      '<label class="field">対象<select id="lt-min"><option value="0">すべての写真</option><option value="200">200KBより大きい写真</option><option value="400" selected>400KBより大きい写真</option><option value="700">700KBより大きい写真</option></select></label>'+
+      '<label class="field">大きさ（長いほうの辺）<select id="lt-side">'+ltSideOpts(state.photoCfg.side)+'</select></label>'+
+      '<label class="field">画質<select id="lt-q">'+ltQOpts(state.photoCfg.q)+'</select></label>'+
+      '<label class="field">対象<select id="lt-min">'+ltMinOpts(state.photoCfg.min)+'</select></label>'+
       '<div id="lt-info" style="font-size:12.5px;color:var(--ink-soft)"></div>',
       '<button class="btn" id="lt-cancel">キャンセル</button><button class="btn primary" id="lt-go">軽量化する</button>');
     var only = function(){ var e = document.getElementById("lt-scope"); return (sel && (!e || e.value==="sel")) ? sel : null; };
@@ -4972,26 +4989,22 @@
     {n:"標準（長辺1280px）", side:1280, q:0.74, max:300000},
     {n:"軽め（長辺1024px）", side:1024, q:0.7, max:200000},
     {n:"小さめ（長辺800px）", side:800, q:0.65, max:150000}
-  ], upIdx = 2;
-  try{ var _ui = Number(localStorage.getItem("gc_upsize")); if(_ui>=0 && _ui<UP_SIZES.length && localStorage.getItem("gc_upsize")!==null) upIdx = _ui; }catch(e){}
-  function pickUploadSize(files, cb, cancel){
-    var hasImg = !assetsCap && Array.prototype.some.call(files, isShrinkable);
-    if(!hasImg){ cb(); return; }
-    openModal("写真のサイズ",
-      '<div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px">写真を縮小して保存します。小さいほど読み込みが速く、データ量も減ります。（PDFなど写真以外はそのまま保存します）</div>'+
-      '<label class="field">サイズ・画質<select id="up-size">'+UP_SIZES.map(function(o,i){ return '<option value="'+i+'"'+(i===upIdx?' selected':'')+'>'+o.n+'</option>'; }).join("")+'</select></label>',
-      '<button class="btn" id="up-cancel">キャンセル</button><button class="btn primary" id="up-go">アップロード</button>');
-    document.getElementById("up-cancel").addEventListener("click", function(){ closeModal(); if(cancel) cancel(); });
-    document.getElementById("up-go").addEventListener("click", function(){
-      upIdx = Number(document.getElementById("up-size").value)||0;
-      try{ localStorage.setItem("gc_upsize", String(upIdx)); }catch(e){}
-      closeModal(); cb();
-    });
+  ];
+  /* 写真のサイズは、管理画面で全員共通に設定する（settings/photo）。未設定なら「標準」 */
+  state.photoCfg = {up:2, side:1280, q:0.74, min:400};
+  function upOpt(){ var i = Number(state.photoCfg.up); return UP_SIZES[(i>=0 && i<UP_SIZES.length) ? i : 2]; }
+  function loadPhotoCfg(){
+    if(!db) return;
+    db.doc("settings/photo").get().then(function(snap){
+      var d = snap.exists ? snap.data() : null;
+      if(d){ state.photoCfg = Object.assign({}, state.photoCfg, {up:d.up, side:d.side, q:d.q, min:d.min}); if(state.tab==="settings") render(); }
+    }).catch(function(){});
   }
+  function pickUploadSize(files, cb){ cb(); }   // サイズは管理画面の設定に従う（アップロード時の選択は行わない）
   function uploadBlob(file){
     if(assetsCap) return assetsCap.upload(file);
     var isImg=(file.type||"").indexOf("image/")===0 && file.type!=="image/svg+xml" && file.type!=="image/gif";
-    var p = isImg ? shrinkImage(file, UP_SIZES[upIdx].side, UP_SIZES[upIdx].q, UP_SIZES[upIdx].max) : readAsDataURL(file).then(function(d){ if(d.length>INLINE_MAX) throw new Error("too large"); return d; });
+    var p = isImg ? shrinkImage(file, upOpt().side, upOpt().q, upOpt().max) : readAsDataURL(file).then(function(d){ if(d.length>INLINE_MAX) throw new Error("too large"); return d; });
     return p.then(function(d){ return {id:null, url:d, contentType: isImg?"image/jpeg":file.type, sizeBytes:file.size}; });
   }
   function uploadFail(e){ toast(e && e.message==="too large" ? "ファイルが大きすぎます（画像以外は約650KBまで）" : "アップロードに失敗しました"); }
@@ -5735,7 +5748,7 @@
       return '<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap"><b style="font-size:13px">'+label+'</b><span class="num" style="font-size:13px"><b style="font-size:17px">'+val.toLocaleString()+'</b> ／ '+lim.toLocaleString()+' 件（'+pct.toFixed(1)+'%）</span></div>'+
         '<div style="height:9px;border-radius:99px;background:var(--surface-2);overflow:hidden;margin-top:5px"><div style="height:100%;width:'+Math.max(pct,0.5)+'%;background:'+col+'"></div></div></div>';
     };
-    h += row("読み取り", u.reads, u.limits.reads)+row("書き込み", u.writes, u.limits.writes)+row("削除", u.deletes, u.limits.deletes);
+    h += row("読み取り", u.reads, (u.limits||{}).reads)+row("書き込み", u.writes, (u.limits||{}).writes)+row("削除", u.deletes, (u.limits||{}).deletes);
     h += '<div style="font-size:11.5px;color:var(--ink-soft);line-height:1.8">リセット：'+fmtDateTime(new Date(u.dayEnd).toISOString())+' ごろ（無料枠の1日は太平洋時間の0時区切り）<br>最終更新：'+fmtDateTime(new Date(u.at).toISOString())+(state.usageLoading?'（更新中…）':'')+'</div>';
     return h;
   }
@@ -5808,6 +5821,7 @@
     html += renderQuotaCard();
     html += renderStorageCard();
     html += renderGmailCard();
+    html += renderPhotoCfgCard();
 
     html += '<h2 style="font-size:13.5px;margin:4px 0 10px">メンバー権限・パスワード管理</h2>';
     html += '<div class="tablewrap"><table><thead><tr><th>氏名</th><th>所属会社</th><th>権限</th><th></th></tr></thead><tbody>';
@@ -9571,6 +9585,13 @@
           writeDoc("members", id, {password:"1234"}, m.name+" さんのパスワードを初期化しました");
         };
       });
+    });
+    var pcSave = document.getElementById("pc-save");
+    if(pcSave) pcSave.addEventListener("click", function(){
+      var v = {up:Number(document.getElementById("pc-up").value), side:Number(document.getElementById("pc-side").value), q:Number(document.getElementById("pc-q").value), min:Number(document.getElementById("pc-min").value)};
+      state.photoCfg = Object.assign({}, state.photoCfg, v);
+      if(!db){ toast("保存しました（プレビューのみ）"); return; }
+      db.doc("settings/photo").set(Object.assign({}, v, {updatedAt:new Date().toISOString(), updatedBy:state.myName||""})).then(function(){ toast("写真の設定を保存しました"); }).catch(function(){ toast("保存に失敗しました"); });
     });
     var delPwSave = document.getElementById("del-pw-save");
     if(delPwSave) delPwSave.addEventListener("click", function(){
