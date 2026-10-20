@@ -1411,6 +1411,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
+      {t:"入力すると候補が出るようになりました（オートコンプリート）", d:"案件・担当者などの件数の多いプルダウンは、文字を入力して絞り込めるようになりました。会社名の欄には、登録済みの会社名の候補が出ます。"},
       {t:"設定の「LINE WORKS」と「freee連携」を「連携」にまとめました", d:"「設定 → 連携」を開き、上の「LINE WORKS」「freee」で切り替えます。"},
       {t:"設定の「管理画面」をタブで見やすくしました", d:"「概要」「メンバー権限」「セキュリティ」「画面の設定」「写真・メール」の5つのタブに分けました（データの状態とバックアップは「バックアップ」に移しました）。"},
       {t:"写真のサイズを管理画面で全員共通に設定できるようにしました", d:"管理者が「設定 → 管理画面」の「写真のサイズ（全員共通）」で、アップロードする写真の大きさ・画質と、「写真を軽量化」の初期設定を決められます。アップロード時にサイズを聞かれることはなくなりました。"},
@@ -5066,6 +5067,84 @@
       }, "写真・ファイルを追加しました");
     }).catch(uploadFail);
   }
+
+  /* ============ オートコンプリート（入力すると候補が出る） ============
+     ・件数の多いプルダウン（案件・担当者・都道府県など）は、入力して絞り込める欄に自動で変わる
+     ・会社名の欄には、登録済みの会社名の候補を表示する */
+  var ACNZ = function(x){ return String(x||"").normalize("NFKC").toLowerCase().replace(/[\s\u3000]/g,""); };
+  function acDropdown(inp, getItems, onPick){
+    var wrap = inp.parentNode; if(getComputedStyle(wrap).position==="static") wrap.style.position = "relative";
+    var box = document.createElement("div");
+    box.style.cssText = "display:none;position:absolute;left:0;right:0;top:100%;z-index:80;background:var(--surface,#fff);border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.14);max-height:260px;overflow:auto;margin-top:2px;text-align:left;";
+    wrap.appendChild(box);
+    var cur = -1, shown = [];
+    var hide = function(){ box.style.display = "none"; cur = -1; };
+    var paint = function(){ Array.prototype.forEach.call(box.children, function(el,i){ el.style.background = i===cur ? "var(--surface-2,#eef3f0)" : ""; }); };
+    var show = function(all){
+      var q = all ? "" : ACNZ(inp.value);
+      shown = getItems().filter(function(it){ return !q || ACNZ(it.label).indexOf(q)!==-1; }).slice(0, 60);
+      if(!shown.length){ hide(); return; }
+      box.innerHTML = shown.map(function(it,i){ return '<div data-i="'+i+'" style="padding:8px 10px;cursor:pointer;font-size:13px;border-top:'+(i?'1px solid var(--border)':'none')+'">'+esc(it.label)+'</div>'; }).join("");
+      box.style.display = "block"; cur = -1;
+      Array.prototype.forEach.call(box.children, function(el){ el.addEventListener("mousedown", function(ev){ ev.preventDefault(); pick(Number(el.getAttribute("data-i"))); }); });
+    };
+    var pick = function(i){ var it = shown[i]; if(!it) return; hide(); onPick(it); };
+    inp.addEventListener("input", function(){ show(false); });
+    inp.addEventListener("focus", function(){ show(inp.dataset.acAll==="1"); });
+    inp.addEventListener("click", function(){ if(box.style.display==="none") show(inp.dataset.acAll==="1"); });
+    inp.addEventListener("blur", function(){ setTimeout(hide, 130); });
+    inp.addEventListener("keydown", function(e){
+      if(box.style.display==="none") return;
+      if(e.key==="ArrowDown"){ e.preventDefault(); cur = Math.min(shown.length-1, cur+1); paint(); }
+      else if(e.key==="ArrowUp"){ e.preventDefault(); cur = Math.max(0, cur-1); paint(); }
+      else if(e.key==="Enter"){ if(cur>=0 || shown.length===1){ e.preventDefault(); pick(cur>=0?cur:0); } }
+      else if(e.key==="Escape"){ hide(); }
+    });
+    return {hide:hide};
+  }
+  function acSelect(sel){
+    if(sel.dataset.combo) return; sel.dataset.combo = "1";
+    var wrap = document.createElement("div"); wrap.style.cssText = "position:relative;display:block;width:100%;";
+    sel.parentNode.insertBefore(wrap, sel); wrap.appendChild(sel); sel.style.display = "none";
+    var inp = document.createElement("input"); inp.type = "text"; inp.className = sel.className; inp.autocomplete = "off"; inp.placeholder = "入力して絞り込み"; inp.dataset.acAll = "1";
+    inp.style.cssText = "width:100%;box-sizing:border-box;";
+    wrap.insertBefore(inp, sel);
+    var label = function(){ var o = sel.options[sel.selectedIndex]; return o ? o.text : ""; };
+    inp.value = label();
+    acDropdown(inp, function(){ return Array.prototype.map.call(sel.options, function(o){ return {value:o.value, label:o.text}; }); }, function(it){
+      sel.value = it.value; inp.value = it.label; sel.dispatchEvent(new Event("change", {bubbles:true}));
+    });
+    inp.addEventListener("focus", function(){ try{ inp.select(); }catch(e){} });
+    inp.addEventListener("blur", function(){ setTimeout(function(){ inp.value = label(); }, 150); });
+  }
+  function acCompanies(){
+    var seen = {}, out = [];
+    var add = function(n){ n = String(n||"").trim(); if(n && !seen[n]){ seen[n] = 1; out.push({label:n}); } };
+    add(state.orgSettings && state.orgSettings.companyName);
+    state.members.forEach(function(m){ add(m.company); });
+    state.customers.forEach(function(c){ add(c.name); });
+    (state.cards||[]).forEach(function(c){ add(c.company); });
+    return out.sort(function(a,b){ return a.label.localeCompare(b.label, "ja"); });
+  }
+  var AC_SELECT_IDS = ["f-tproj","f-sproj","f-rproj","f-eproj","tk-project","rp-project","files-flt-project","tk-assignee","f-rauthor"];
+  var AC_COMPANY_IDS = ["f-mcompany","me-company","set-company","iv-company","wi-company","f-ccompany","card-company"];
+  function acEnhance(){
+    try{
+      document.querySelectorAll("select").forEach(function(sel){
+        if(sel.dataset.combo || sel.dataset.nocombo!==undefined || sel.multiple) return;
+        var n = sel.options.length;
+        if((AC_SELECT_IDS.indexOf(sel.id)!==-1 && n>=5) || n>=12) acSelect(sel);
+      });
+      AC_COMPANY_IDS.forEach(function(id){
+        var el = document.getElementById(id);
+        if(el && el.tagName==="INPUT" && !el.dataset.acCo){ el.dataset.acCo = "1"; el.autocomplete = "off"; acDropdown(el, acCompanies, function(it){ el.value = it.label; el.dispatchEvent(new Event("input",{bubbles:true})); el.dispatchEvent(new Event("change",{bubbles:true})); }); }
+      });
+    }catch(e){}
+  }
+  (function(){
+    var t = 0;
+    new MutationObserver(function(){ if(t) return; t = requestAnimationFrame(function(){ t = 0; acEnhance(); }); }).observe(document.body, {childList:true, subtree:true});
+  })();
 
   /* ============ CHAT ============ */
   // チャットのスタンプ（絵文字＋ひとこと。押すとすぐ送信されます）。id は保存されるので、変更・並べ替えはしても id は変えないこと
