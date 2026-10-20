@@ -1402,7 +1402,7 @@
     {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
       {t:"Shiftキーで範囲選択できるようにしました（パソコン）", d:"一括編集や、案件のファイル画面で、Shiftキーを押しながらチェックすると、前に選んだものとの間をまとめて選択できます。"},
       {t:"ボタンで最新版に更新できるようにしました", d:"画面右上の「同期」を開き、「最新版に更新して読み込み直す」を押すと、この端末の古いアプリのキャッシュを消して最新版を読み込みます（ログイン状態やデータは消えません）。"},
-      {t:"写真の読み込みを速くしました", d:"新しくアップロードする写真は、見た目をほぼ変えずに今までより小さく（約300KB目安）保存します。アップロードのときに写真のサイズ（長辺800〜2000px）を選べます。すでに保存した写真は、管理者が「写真・ファイル」画面や案件の「ファイル」画面の「写真を軽量化」で、大きさ・画質・対象を選んで軽くできます。"},
+      {t:"写真の読み込みを速くしました", d:"新しくアップロードする写真は、見た目をほぼ変えずに今までより小さく（約300KB目安）保存します。アップロードのときに写真のサイズ（長辺800〜2000px）を選べます。すでに保存した写真は、管理者が「写真・ファイル」画面や案件の「ファイル」画面の「写真を軽量化」で、大きさ・画質・対象を選んで軽くできます。チェックで選んだ写真だけを軽くすることも、途中で中止することもできます。"},
       {t:"写真・ファイルの読み込みを軽くしました", d:"案件の画面では、その案件の写真・ファイルだけを読み込むようにしました（以前は全案件分を一度に読み込んでいました）。読み込みに失敗したときは、原因を画面に表示します。"},
       {t:"大きいファイル（PDFなど）がアップロードできない問題を修正", d:"約900KBを超える画像以外のファイルは保存できませんでした。10MBまでのファイルを分割して保存できるようにしました。画像は従来どおり自動で縮小されます。保存が後から失敗した場合も画面にお知らせが出ます。"}
     ]},
@@ -4868,34 +4868,52 @@
   }
 
   /* 保存済みの大きい写真を、見た目をほぼ変えずに軽くする（読み込みが速くなる）。管理者が案件ごとに実行 */
-  function lightenCandidates(projectId, minKB){
-    return state.files.filter(function(f){ return (!projectId || f.projectId===projectId) && isImageFile(f) && f.url && String(f.url).indexOf("data:image/")===0 && String(f.url).length>minKB*1024 && f.contentType!=="image/gif" && f.contentType!=="image/svg+xml"; });
+  function lightenCandidates(projectId, minKB, only){
+    return state.files.filter(function(f){ return (!projectId || f.projectId===projectId) && (!only || only[f.id]) && isImageFile(f) && f.url && String(f.url).indexOf("data:image/")===0 && String(f.url).length>minKB*1024 && f.contentType!=="image/gif" && f.contentType!=="image/svg+xml"; });
+  }
+  // いま選択中のファイル（案件のファイル画面のチェック／一括編集の選択）
+  function lightenSelection(){
+    var o = {}, n = 0;
+    if(state.tab==="project-files"){ Object.keys(state.pfSel||{}).forEach(function(k){ if(state.pfSel[k]){ o[k]=true; n++; } }); }
+    else if(state.bulk && state.bulk.on && state.bulk.entity==="files"){ Object.keys(state.bulk.selected||{}).forEach(function(k){ if(state.bulk.selected[k]){ o[k]=true; n++; } }); }
+    return n ? o : null;
   }
   function lightenPhotos(projectId){
     var all = lightenCandidates(projectId, 0);
     if(!all.length){ toast("軽量化できる写真はありません"); return; }
+    var sel = lightenSelection(), selN = sel ? lightenCandidates(projectId, 0, sel).length : 0;
     openModal("写真を軽量化",
-      '<div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px">'+(projectId?"この案件":"すべての案件")+'の写真を縮小して保存し直します。読み込みが速くなります。<b>元の画質には戻せません</b>。</div>'+
+      '<div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px">'+(projectId?"この案件":"すべての案件")+'の写真を縮小して保存し直します。読み込みが速くなります。<b>元の画質には戻せません</b>。途中で中止できます（中止するまでに済んだ分はそのまま軽くなります）。</div>'+
+      (sel ? '<label class="field">範囲<select id="lt-scope"><option value="sel" selected>選択した写真の中から（選択中の写真：'+selN+'枚）</option><option value="all">'+(projectId?'この案件':'すべて')+'の写真の中から</option></select></label>' : '')+
       '<label class="field">大きさ（長いほうの辺）<select id="lt-side"><option value="2000">2000px（高精細）</option><option value="1600">1600px</option><option value="1280" selected>1280px（標準）</option><option value="1024">1024px</option><option value="800">800px（小さめ）</option></select></label>'+
       '<label class="field">画質<select id="lt-q"><option value="0.85">高画質</option><option value="0.74" selected>標準</option><option value="0.6">軽さ優先</option></select></label>'+
       '<label class="field">対象<select id="lt-min"><option value="0">すべての写真</option><option value="200">200KBより大きい写真</option><option value="400" selected>400KBより大きい写真</option><option value="700">700KBより大きい写真</option></select></label>'+
       '<div id="lt-info" style="font-size:12.5px;color:var(--ink-soft)"></div>',
       '<button class="btn" id="lt-cancel">キャンセル</button><button class="btn primary" id="lt-go">軽量化する</button>');
+    var only = function(){ var e = document.getElementById("lt-scope"); return (sel && (!e || e.value==="sel")) ? sel : null; };
     var info = function(){
-      var n = lightenCandidates(projectId, Number(document.getElementById("lt-min").value)).length;
-      document.getElementById("lt-info").textContent = "対象：" + n + "枚（写真は全部で" + all.length + "枚）";
+      var n = lightenCandidates(projectId, Number(document.getElementById("lt-min").value), only()).length;
+      document.getElementById("lt-info").textContent = "対象：" + n + "枚";
     };
-    document.getElementById("lt-min").addEventListener("change", info); info();
+    document.getElementById("lt-min").addEventListener("change", info);
+    var sc = document.getElementById("lt-scope"); if(sc) sc.addEventListener("change", info);
+    info();
     document.getElementById("lt-cancel").addEventListener("click", closeModal);
     document.getElementById("lt-go").addEventListener("click", function(){
       var side = Number(document.getElementById("lt-side").value), q = Number(document.getElementById("lt-q").value), min = Number(document.getElementById("lt-min").value);
-      var list = lightenCandidates(projectId, min);
+      var list = lightenCandidates(projectId, min, only());
       if(!list.length){ toast("対象の写真がありません"); return; }
-      closeModal();
-      var i = 0, saved = 0, done = 0;
+      var stop = false, i = 0, saved = 0, done = 0;
+      openModal("写真を軽量化中", '<div id="lt-prog" style="font-size:14px;padding:6px 0">準備中…</div><div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden;margin-top:8px"><div id="lt-bar" style="height:100%;width:0;background:var(--primary,#175c40)"></div></div>', '<button class="btn" id="lt-stop" style="color:var(--danger)">中止する</button>');
+      document.getElementById("lt-stop").addEventListener("click", function(){ stop = true; this.disabled = true; this.textContent = "中止しています…"; });
+      var finish = function(){
+        closeModal();
+        toast((stop?"中止しました：":"軽量化しました：")+done+"枚（約"+Math.round(saved/1024)+"KB削減）");
+      };
       (function next(){
-        if(i>=list.length){ toast("軽量化しました："+done+"枚（約"+Math.round(saved/1024)+"KB削減）"); return; }
-        var f = list[i++]; toast("軽量化中… "+i+"/"+list.length);
+        if(stop || i>=list.length){ finish(); return; }
+        var f = list[i++], p = document.getElementById("lt-prog"), bar = document.getElementById("lt-bar");
+        if(p) p.textContent = (i)+" / "+list.length+" 枚目を処理中… "+(f.filename||""); if(bar) bar.style.width = Math.round((i-1)/list.length*100)+"%";
         fetch(f.url).then(function(r){ return r.blob(); }).then(function(b){ return shrinkImage(b, side, q, 1e9); }).then(function(out){
           if(out.length < String(f.url).length*0.9){
             saved += String(f.url).length - out.length; done++;
