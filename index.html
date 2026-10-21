@@ -1474,6 +1474,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-21-1", title:"10月21日の更新", items:[
+      {t:"通知の履歴が残るようになりました", d:"ベルのお知らせ画面の「通知の履歴」から、直近30日に届いた通知（チャット・新規案件・案件の進捗・報告書・タスク）を日付順に確認できます。チャットの通知を押すと、そのチャットが開きます。この更新のあとに届く通知から記録されます。"},
       {t:"通知のタイトルに「何のお知らせか」が付きます", d:"アプリの通知（プッシュ通知）の頭に、【案件チャット】【グループチャット】【新規案件】【案件の進捗】【報告書】【タスク】のように種類が付きます。例：【案件チャット】福川様邸 ／ 【報告書】報告書が提出されました。"},
       {t:"報告写真アプリを案件・連携アプリから開くと、ログインが不要になります", d:"現場管理アプリから開いたときは、合い言葉の入力と作成者のログインを省略し、同じ名前の作成者として自動でログインします（作成者マスタに同じ名前がいる場合）。"},
       {t:"報告写真アプリと案件の連動を強化しました", d:"①案件の画面に「報告書PDF（報告写真アプリ）」の一覧を追加し、報告写真アプリで作って保存したPDFをここから開けます。②連携アプリのページから報告写真アプリを開いても、ログイン済みの状態で開き、アプリの中で案件を選べます。③報告写真アプリでは撮影者に自分の名前が自動で入ります。"},
@@ -1592,9 +1593,31 @@
       body += '<div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);margin:10px 0 0">'+GL[g]+'（'+xs.length+'）</div>'+xs.map(function(p){ return row(p[0], p[1], g); }).join("");
     });
     if(setup.length) body += '<div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);margin:14px 0 0">ご案内</div>'+setup.map(function(it,k){ return row(it, items.length+k, ""); }).join("");
-    openModal("お知らせ", body, '<button class="btn" id="rel-history" style="margin-right:auto">更新の履歴</button><button class="btn" data-close-modal>閉じる</button>');
+    openModal("お知らせ", body, '<button class="btn" id="notif-history">通知の履歴</button><button class="btn" id="rel-history" style="margin-right:auto">更新の履歴</button><button class="btn" data-close-modal>閉じる</button>');
     var rh = document.getElementById("rel-history"); if(rh) rh.addEventListener("click", function(){ closeModal(); openReleaseNotes(); });
+    var nh = document.getElementById("notif-history"); if(nh) nh.addEventListener("click", function(){ closeModal(); openNotifHistory(); });
     document.querySelectorAll("#modal-box [data-notice]").forEach(function(el){ el.addEventListener("click", function(){ var f = __noticeFns[+el.getAttribute("data-notice")]; closeModal(); if(f && f.go) f.go(); }); });
+  }
+  /* ---- 通知の履歴（これまでに届いた通知。直近30日・最大100件） ---- */
+  var NOTIF_ICON = {chat:"💬", projectNew:"🏗", projectStatus:"🔄", report:"📝", task:"✓"};
+  function openNotifHistory(){
+    var me = normName(state.myName);
+    openModal("通知の履歴", '<div id="nh-body" style="min-height:80px;font-size:13px;color:var(--ink-faint);padding:14px 4px">読み込み中…</div>', '<button class="btn" id="nh-back" style="margin-right:auto">お知らせに戻る</button><button class="btn" data-close-modal>閉じる</button>');
+    var bk = document.getElementById("nh-back"); if(bk) bk.addEventListener("click", function(){ closeModal(); openNotices(); });
+    var put = function(h){ var el = document.getElementById("nh-body"); if(el){ el.style.color = ""; el.style.padding = "0"; el.innerHTML = h; } };
+    if(!db){ put('<div style="padding:18px 4px;color:var(--ink-faint)">通知の履歴は、Vercelで公開しているアプリ（Firebase接続）でのみ使えます。</div>'); return; }
+    var cutoff = new Date(Date.now()-30*86400000).toISOString();
+    db.collection("notifLog").where("at",">=",cutoff).get().then(function(snap){
+      var list = snap.docs.map(toObj).filter(function(x){ return Array.isArray(x.names) && x.names.indexOf(me)!==-1; }).sort(function(a,b){ return String(b.at||"").localeCompare(String(a.at||"")); }).slice(0,100);
+      if(!list.length){ put('<div style="padding:22px 4px;text-align:center;color:var(--ink-faint)">この30日間に届いた通知はありません</div>'); return; }
+      var lastDay = "";
+      put(list.map(function(x){
+        var d = fmtDateTime(x.at), day = String(d).slice(0,10), head = "";
+        if(day!==lastDay){ lastDay = day; head = '<div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);margin:12px 0 2px">'+esc(day)+'</div>'; }
+        return head+'<div'+(x.chatId?' data-nh-chat="'+esc(x.chatId)+'" style="cursor:pointer;':' style="')+'display:flex;gap:10px;align-items:flex-start;padding:9px 2px;border-bottom:1px solid var(--border)"><span style="flex:none;width:22px;text-align:center">'+(NOTIF_ICON[x.kind]||"🔔")+'</span><span style="flex:1;min-width:0"><b style="display:block;font-size:13px;word-break:break-all">'+esc(x.title||"")+'</b><span style="display:block;font-size:12.5px;color:var(--ink-soft);line-height:1.5;word-break:break-all">'+esc(x.body||"")+'</span></span><span style="flex:none;font-size:11px;color:var(--ink-faint)">'+esc(String(d).slice(11))+'</span></div>';
+      }).join(""));
+      document.querySelectorAll("#modal-box [data-nh-chat]").forEach(function(el){ el.addEventListener("click", function(){ var id = el.getAttribute("data-nh-chat"); closeModal(); state.activeChat = id; state.chatPaneOpen = true; setTab("chat"); }); });
+    }, function(e){ put('<div style="padding:18px 4px;color:var(--danger)">読み込めませんでした'+(e&&e.code==="resource-exhausted"?"（データベースの読み取り上限）":"")+'</div>'); });
   }
   /* ---- 通知オフの人へのお知らせ ---- */
   function pushOffDismissed(){

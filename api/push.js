@@ -38,7 +38,16 @@ var KINDS = ["chat", "projectNew", "projectStatus", "report", "task"];
 var KIND_LABEL = {chat: "チャット", projectNew: "新規案件", projectStatus: "案件の進捗", report: "報告書", task: "タスク"};
 function labeled(kind, title){ return "【" + (KIND_LABEL[kind] || "お知らせ") + "】" + title; }
 function cleanPrefs(p){ var o = {}; KINDS.forEach(function(k){ o[k] = !(p && p[k] === false); }); return o; }
-async function deliver(want, kind, payload){
+// 通知の履歴（アプリの「お知らせ → 通知の履歴」で見られる）。誰宛ての通知かを正規化した名前で残す
+async function logNotif(want, kind, payload, by){
+  try{
+    var p = JSON.parse(payload), names = Object.keys(want).map(function(k){ return k.toLowerCase(); });
+    if(!names.length) return;
+    await W.createDoc("notifLog", {at: new Date().toISOString(), kind: kind, title: String(p.title || ""), body: String(p.body || ""), chatId: String(p.chatId || ""), by: String(by || ""), names: names});
+  }catch(e){}
+}
+async function deliver(want, kind, payload, by){
+  await logNotif(want, kind, payload, by);
   var doc = await W.getDoc("settings/push");
   var vapid = {publicKey: F.env("VAPID_PUBLIC_KEY"), privateKey: F.env("VAPID_PRIVATE_KEY"), subject: "mailto:" + (F.env("VAPID_SUBJECT") || "admin@example.com")};
   var sent = 0, dead = [];
@@ -102,7 +111,7 @@ module.exports = async function handler(req, res){
         if(kind !== "task"){ (await W.listDocs("members")).forEach(function(m){ if(F.isAdminMember(m)) want2[norm(m.name)] = 1; }); }
         delete want2[norm(me.name)];
         var payload2 = JSON.stringify({title: labeled(kind, String(b.title || "現場管理").slice(0, 60)), kind: kind, body: String(b.text || "").replace(/\s+/g, " ").slice(0, 100) + "（" + me.name + "）", tag: kind + "-" + Date.now()});
-        return res.status(200).json({sent: await deliver(want2, kind, payload2)});
+        return res.status(200).json({sent: await deliver(want2, kind, payload2, me.name)});
       }
       case "unsubscribe": {
         if(b.endpoint) await W.patchDoc("settings/push", {}, [keyOf(b.endpoint)]);
@@ -118,7 +127,7 @@ module.exports = async function handler(req, res){
         delete want[norm(me.name)];
         var text = String(b.text || "").replace(/\s+/g, " ").slice(0, 80) || "新しいメッセージ";
         var payload = JSON.stringify({title: "【" + (r.chat.kind === "project" ? "案件チャット" : "グループチャット") + "】" + (r.chat.name || "チャット"), kind: "chat", body: me.name + "：" + text, chatId: chatId, tag: "chat-" + chatId});
-        return res.status(200).json({sent: await deliver(want, "chat", payload)});
+        return res.status(200).json({sent: await deliver(want, "chat", payload, me.name)});
       }
       default:
         return res.status(400).json({error: "unknown action"});
