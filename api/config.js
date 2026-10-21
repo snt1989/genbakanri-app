@@ -120,9 +120,23 @@ function readTicket(t, secret){
   }catch(e){ return null; }
 }
 function makeReportTicket(me, project, secret){
-  var payload = b64u(JSON.stringify({k: "r", n: me.name, p: project.id, pn: project.name || "", c: project.customerName || "", ad: project.address || "", exp: Date.now() + 12 * 3600000, j: crypto.randomBytes(6).toString("hex")}));
+  project = project || {};
+  var payload = b64u(JSON.stringify({k: "r", n: me.name, a: F.isAdminMember(me) ? 1 : 0, p: project.id || "", pn: project.name || "", c: project.customerName || "", ad: project.address || "", exp: Date.now() + 12 * 3600000, j: crypto.randomBytes(6).toString("hex")}));
   return payload + "." + b64u(crypto.createHmac("sha256", secret).update(payload).digest());
 }
+// 報告写真アプリの「案件を選ぶ」用：読み取り量を抑えるため、清算済・失注を除く案件だけを取得し、90秒キャッシュする
+var __activeCache = {at: 0, list: []};
+async function activeProjects(){
+  if(Date.now() - __activeCache.at < 90000 && __activeCache.list.length) return __activeCache.list;
+  var body = {structuredQuery: {from: [{collectionId: "projects"}], where: {fieldFilter: {field: {fieldPath: "status"}, op: "NOT_IN", value: {arrayValue: {values: [{stringValue: "清算済"}, {stringValue: "失注"}]}}}}, limit: 1500}};
+  var r = await fetch(W.fsBase() + ":runQuery?" + W.keyQ(), {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  if(!r.ok) throw W.httpErr(502, r.status === 429 ? "Firestoreの無料枠（1日の読み取り上限）を超えています" : "firestore " + r.status);
+  var j = await r.json();
+  var list = (Array.isArray(j) ? j : []).filter(function(x){ return x && x.document; }).map(function(x){ return W.decDoc(x.document); });
+  __activeCache = {at: Date.now(), list: list};
+  return list;
+}
+function projectBrief(p){ return {id: p.id, name: p.name || "", customer: p.customerName || "", address: p.address || "", status: p.status || ""}; }
 async function reportHandler(req, res, b){
   setCors(res);
   try{
@@ -132,13 +146,31 @@ async function reportHandler(req, res, b){
       var a = b.auth || {};
       var me = await F.verifyMember(a.name, a.password);
       if(!me) return res.status(403).json({error: "認証に失敗しました"});
+      if(!b.projectId) return res.status(200).json({url: reportOrigin() + "/?gk=" + makeReportTicket(me, null, secret)});   // 案件を決めずに開く（アプリの中で案件を選ぶ）
       var p = await W.getDoc("projects/" + encodeURIComponent(String(b.projectId || "")));
       if(!p || !p.id || !W.visibleProjects([p], me).length) return res.status(403).json({error: "この案件は利用できません"});
       return res.status(200).json({url: reportOrigin() + "/?gk=" + makeReportTicket(me, p, secret)});
     }
+    // 報告写真アプリの中で案件を選ぶ（チケットで認証。見られる案件だけ返す）
+    if(b.action === "report-projects" || b.action === "report-switch"){
+      var tk = readTicket(b.ticket, secret);
+      if(!tk) return res.status(403).json({error: "チケットの有効期限が切れました。現場管理アプリの案件から開き直してください"});
+      var who = {name: tk.n, permission: tk.a ? "admin" : "member"};
+      if(b.action === "report-projects"){
+        var q = W.strip(b.q || "");
+        var vis = W.visibleProjects(await activeProjects(), who);
+        if(q) vis = vis.filter(function(p){ return W.strip([p.name, p.customerName, p.address].join(" ")).indexOf(q) !== -1; });
+        vis.sort(function(x, y){ return String(y.updatedAt || y.createdAt || "").localeCompare(String(x.updatedAt || x.createdAt || "")); });
+        return res.status(200).json({projects: vis.slice(0, 60).map(projectBrief), total: vis.length});
+      }
+      var sp = await W.getDoc("projects/" + encodeURIComponent(String(b.projectId || "")));
+      if(!sp || !sp.id || !W.visibleProjects([sp], who).length) return res.status(403).json({error: "この案件は利用できません"});
+      return res.status(200).json({ticket: makeReportTicket(who, sp, secret), project: projectBrief(sp)});
+    }
     // 以下は報告写真アプリからの呼び出し（チケットが認証）
     var t = readTicket(b.ticket, secret);
     if(!t) return res.status(403).json({error: "チケットの有効期限が切れました。現場管理アプリの案件から開き直してください"});
+    if(!t.p) return res.status(400).json({error: "案件が選ばれていません。報告写真アプリで案件を選んでください"});
     var up = String(b.uploadId || "");
     if(!/^[A-Za-z0-9]{10,40}$/.test(up)) return res.status(400).json({error: "bad uploadId"});
     var total = Number(b.total);

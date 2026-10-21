@@ -1474,6 +1474,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-21-1", title:"10月21日の更新", items:[
+      {t:"報告写真アプリと案件の連動を強化しました", d:"①案件の画面に「報告書PDF（報告写真アプリ）」の一覧を追加し、報告写真アプリで作って保存したPDFをここから開けます。②連携アプリのページから報告写真アプリを開いても、ログイン済みの状態で開き、アプリの中で案件を選べます。③報告写真アプリでは撮影者に自分の名前が自動で入ります。"},
       {t:"清算済・失注の案件のチャットは見えなくなります", d:"案件のステータスが「清算済」または「失注」になると、その案件のチャットは一覧に表示されず、未読のお知らせも出なくなります（管理者の「すべて表示」でも同じです）。ステータスを戻すと、また表示されます。データは消えません。"},
       {t:"動画をアップロードできるようになりました", d:"案件の「ファイル」画面から動画（mp4・movなど）を追加できます。1本あたり30MBまでです。動画は「写真・動画」に入り、押すと新しいタブで再生されます。長い動画は、短く分けるか画質を下げて撮影してください。"},
       {t:"メニューの「写真・ファイル」にも「写真／書類」の切り替えを付けました", d:"すべて・案件別・事業部別・担当者別のどの表示でも、「すべて／写真／書類」で絞り込めます。案件別などで絞ったまま案件を開くと、その種類だけが表示されます。"},
@@ -2456,17 +2457,18 @@
   /* ============ shell ============ */
   // 備品管理アプリを開く。サーバーが使えるときは、同じ氏名の借受者としてログイン済みの状態で開く（SSO.md）
   // 案件から報告写真アプリを開く（案件つきの署名付きチケットを発行 → 新しいタブ。作ったPDFはその案件の「写真・ファイル」に保存できる）
-  function openReportApp(projectId){
+  function openReportApp(projectId, plainUrl){
     var me = myMember();
-    if(!db || window.claude || !me){ toast("この機能はVercel版（本番）でログイン中のみ使えます"); return; }
+    if(!db || window.claude || !me){ if(plainUrl){ window.open(plainUrl, "_blank", "noopener"); return; } toast("この機能はVercel版（本番）でログイン中のみ使えます"); return; }
     var w = window.open("", "_blank");
     fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({action:"report-ticket", projectId:projectId, auth:{name:me.name, password:me.password||""}})})
       .then(function(r){ return r.json(); })
       .then(function(j){
         if(j && j.url){ if(w){ try{ w.opener = null; }catch(e){} w.location.href = j.url; } else location.href = j.url; return; }
         if(w) w.close();
+        if(plainUrl){ window.open(plainUrl, "_blank", "noopener"); return; }
         toast(j && j.error==="notconfigured" ? "管理者の設定が必要です（Vercelの環境変数 SSO_SECRET）" : ((j && j.error) || "開けませんでした"));
-      }, function(){ if(w) w.close(); toast("通信に失敗しました"); });
+      }, function(){ if(w) w.close(); if(plainUrl){ window.open(plainUrl, "_blank", "noopener"); return; } toast("通信に失敗しました"); });
   }
   function openBihinApp(ev){
     var plain = "https://bihinkanriapp.vercel.app/", me = myMember();
@@ -2494,7 +2496,7 @@
     return '<div style="max-width:780px"><div style="margin-bottom:12px"><h1 style="font-size:22px;margin:0">連携アプリ</h1><div style="font-size:12.5px;color:var(--ink-soft);margin-top:2px">社内の関連アプリを新しいタブで開きます。</div></div>'+
       '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">'+
       APP_LINKS.map(function(a){
-        return '<a class="card" '+(a.sso?'data-bihin-link="1" ':'')+'href="'+esc(a.url)+'" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:inherit;display:block;padding:16px">'+
+        return '<a class="card" '+(a.sso?'data-bihin-link="1" ':'')+(a.name==="報告写真アプリ"?'data-report-open="1" ':'')+'href="'+esc(a.url)+'" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:inherit;display:block;padding:16px">'+
           '<div style="display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px">'+a.icon()+'<span>'+esc(a.name)+' ↗</span></div>'+
           '<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.6;margin-top:8px">'+esc(a.desc)+'</div>'+
           '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px;word-break:break-all">'+esc(a.url.replace(/^https:\/\//,""))+'</div></a>';
@@ -2626,6 +2628,7 @@
     else if(state.tab==="project-files") c.innerHTML = banner+renderProjectFiles();
     else if(state.tab==="member-form") c.innerHTML = banner+renderMemberForm();
     bindEvents();
+    c.querySelectorAll("[data-report-open]").forEach(function(a){ a.addEventListener("click", function(ev){ if(!db || window.claude || !myMember()) return; ev.preventDefault(); openReportApp("", a.getAttribute("href")); }); });   // 連携アプリのページから開くときも、ログイン情報つきで開く（アプリの中で案件を選べる）
     c.querySelectorAll("[data-report-project]").forEach(function(el){ el.addEventListener("click", function(){ openReportApp(el.getAttribute("data-report-project")); }); });
     var ur = document.getElementById("usage-refresh"); if(ur) ur.addEventListener("click", function(){ usageLoad(); });
     c.querySelectorAll("[data-bihin-link]").forEach(function(a){ a.addEventListener("click", function(ev){ openBihinApp(ev); }); });
@@ -3952,6 +3955,14 @@
       html += '<div style="font-size:12px;color:var(--ink-faint);padding:10px 0;border-top:1px solid var(--border)">資料はまだありません。「ファイル」ページからアップロードできます</div>';
     }
     html += '</div>';
+
+    // 報告写真アプリで作って、この案件に保存した報告書PDF
+    var rpdfs = pfiles.filter(function(f){ return f.source==="報告写真アプリ"; }).slice().sort(function(x,y){ return String(y.uploadedAt||"").localeCompare(String(x.uploadedAt||"")); });
+    html += '<div class="form-section-title"><span>報告書PDF（報告写真アプリ）</span><span><button class="btn sm primary" data-report-project="'+esc(p.id)+'">'+iImage()+' 報告写真アプリで作成</button></span></div>';
+    html += '<div class="card" style="padding:6px 18px">'+(rpdfs.length ? rpdfs.slice(0,8).map(function(f){
+      return '<div class="pf-docrow"><span style="flex:none;display:flex">'+iFileKind(f)+'</span><div style="flex:1;min-width:0"><a class="nm" href="'+esc(fileUrl(f))+'" target="_blank" rel="noopener">'+esc(f.filename||"報告書.pdf")+'</a><div class="meta"><span>'+esc(fileDate(f))+'</span>'+(f.size?'<span>'+fmtSize(f.size)+'</span>':'')+uploaderHtml(f.uploadedBy)+'</div></div>'+
+        '<a class="ic" href="'+esc(fileUrl(f))+'" download="'+esc(f.filename||"file")+'" title="ダウンロード">'+iDl2()+'</a></div>';
+    }).join("")+(rpdfs.length>8?'<div style="font-size:11.5px;color:var(--ink-faint);padding:8px 0;border-top:1px solid var(--border)">ほか '+(rpdfs.length-8)+'件は「ファイル」ページにあります</div>':'') : '<div style="font-size:12px;color:var(--ink-faint);padding:12px 0">まだありません。「報告写真アプリで作成」から報告書を作り、「案件に保存」を押すとここに並びます。</div>')+'</div>';
 
     html += projectWorkSection(p);
 

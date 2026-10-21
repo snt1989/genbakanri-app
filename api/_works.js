@@ -155,5 +155,5 @@ function visibleProjects(projects, member){
   return projects.filter(function(p){ return assigneeNames(p).some(function(n){ return strip(n) === strip(member.name); }); });
 }
 
-module.exports = {listUsers: listUsers, configured: configured, httpErr: httpErr, sendChannel: sendChannel, sendUser: sendUser, getDoc: getDoc, listDocs: listDocs, patchDoc: patchDoc, createDoc: createDoc,
+module.exports = {listUsers: listUsers, configured: configured, httpErr: httpErr, sendChannel: sendChannel, sendUser: sendUser, getDoc: getDoc, listDocs: listDocs, decDoc: decDoc, fsBase: fsBase, keyQ: keyQ, patchDoc: patchDoc, createDoc: createDoc,
   getSettings: getSettings, userKey: userKey, linkedName: linkedName, jstToday: jstToday, assigneeNames: assigneeNames, strip: strip, visibleProjects: visibleProjects, env: env};
