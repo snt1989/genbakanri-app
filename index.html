@@ -804,6 +804,8 @@
     .chat-input-row textarea{min-width:0;width:100%;box-sizing:border-box;}
     .chat-send{flex:none;padding:12px 14px;}
     .chat-hint{display:none;}
+    /* iPhoneは16px未満の入力欄を押すと画面が勝手に拡大されてずれるため、16pxにする */
+    input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),textarea,select{font-size:16px!important;}
     .chat-pop{left:10px;max-width:calc(100vw - 20px);}
     .chat-replybar span{max-width:calc(100vw - 90px);}
     /* login */
@@ -1468,6 +1470,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-21-1", title:"10月21日の更新", items:[
+      {t:"スマホで入力しようとすると画面が拡大してずれる問題を直しました", d:"iPhoneで入力欄を押すと画面が自動で拡大されていたため、入力欄の文字の大きさを調整しました。"},
       {t:"スマホで文字を入力するとき、下のメニューバーが崩れる表示を直しました", d:"入力中はキーボードの上に出ていたメニューバーを隠し、入力が終わると元に戻ります。"},
       {t:"スマホのチャットで画面の幅がずれる表示を直しました", d:"メッセージや入力欄が画面の右にはみ出していたのを、画面の幅に収まるように整えました。長い文字列や長いURLも折り返されます。"}
     ]},
