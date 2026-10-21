@@ -411,6 +411,10 @@
   .pf-tile .pf-edit{position:absolute;top:6px;right:6px;opacity:0;z-index:2;border:1.5px solid var(--accent);color:var(--accent);background:#fff;border-radius:999px;font-size:11px;font-weight:700;padding:2px 9px;cursor:pointer;display:flex;align-items:center;gap:3px}
   .pf-tile:hover .pf-chk,.pf-tile:hover .pf-edit,.pf-tile .pf-chk:checked,.pf-grid2.sel .pf-chk{opacity:1}
   .pf-tile.on{background:var(--accent-soft)}
+  .pf-kind{display:flex;gap:8px;margin:16px 0 0;flex-wrap:wrap}
+  .pf-kind button{border:1.5px solid var(--border);background:var(--surface);color:var(--ink-soft);border-radius:999px;padding:8px 18px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit}
+  .pf-kind button i{font-style:normal;font-weight:600;opacity:.75;margin-left:6px;font-size:12px}
+  .pf-kind button.on{background:var(--accent);border-color:var(--accent);color:#fff}
   .pf-bar{display:flex;gap:16px;align-items:center;justify-content:flex-end;flex-wrap:wrap;margin:16px 0 12px;font-size:12.5px}
   .pf-bar label{display:flex;align-items:center;gap:6px;cursor:pointer}
   .pf-bar select{width:auto;min-width:170px}
@@ -1470,6 +1474,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-21-1", title:"10月21日の更新", items:[
+      {t:"案件のファイルを「写真」と「書類」に分けて見られます", d:"案件の「ファイル」画面の上に「すべて／写真／書類」の切り替えを付けました。写真・書類を選ぶと、フォルダの中のものもまとめて表示します。案件の画面の「写真をすべて見る」「書類をすべて見る」からも開けます。"},
       {t:"案件から備品管理アプリを開くと、その現場名と紐づきます", d:"案件の「連携アプリ」の備品管理を押すと、現場名が自動で入った状態で備品管理アプリが開きます。備品の持出時にその現場名が入り、備品管理アプリの上部には、その現場で使用中の備品が表示されます。"},
       {t:"スマホで入力しようとすると画面が拡大してずれる問題を直しました", d:"iPhoneで入力欄を押すと画面が自動で拡大されていたため、入力欄の文字の大きさを調整しました。"},
       {t:"スマホで文字を入力するとき、下のメニューバーが崩れる表示を直しました", d:"入力中はキーボードの上に出ていたメニューバーを隠し、入力が終わると元に戻ります。"},
@@ -2519,7 +2524,7 @@
   function goProjectForm(mode, project){ state.formMode=mode||state.returnTab; state.editingProject=project||null; state.tab="project-form"; render(); }
   function goProjectDetail(id){ state.viewingProjectId=id; state.tab="project-detail"; render(); ensureProject(id, function(){ if(state.viewingProjectId===id) render(); }); }
   // 案件別ファイル管理ページ. from: "detail" (案件詳細) or "files" (写真・ファイル一覧)
-  function goProjectFiles(id, from){ bulkReset(); state.filesProjectId=id; state.filesBack=from||"detail"; state.projectFilesKind="all"; state.pfFolder=""; state.pfSel={}; state.pfMine=false; state.tab="project-files"; render(); }
+  function goProjectFiles(id, from, kind){ bulkReset(); state.filesProjectId=id; state.filesBack=from||"detail"; state.projectFilesKind=(kind==="photo"||kind==="doc")?kind:"all"; state.pfFolder=""; state.pfSel={}; state.pfMine=false; state.tab="project-files"; render(); }
   function goMemberForm(ext){
     if(!state.isAdmin){ toast("メンバーの追加は管理者のみ行えます"); return; }
     state.editingMember=null; state.newMemberExt = (ext===true);
@@ -3916,7 +3921,7 @@
     var recentDocs = pfiles.filter(function(f){return !isImageFile(f);}).slice().reverse().slice(0,5);
     var pfFolders = foldersForProject(p.id);
     html += '<div class="card" style="padding:20px 22px">';
-    html += '<h3 style="font-size:14px">最近追加された写真</h3>';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><h3 style="font-size:14px;margin:0">最近追加された写真</h3><a href="#" data-open-files="'+p.id+'" data-files-kind="photo" style="font-size:12.5px">写真をすべて見る</a></div>';
     if(recentImgs.length){
       html += '<div class="pf-recent">'+recentImgs.map(function(f){
         return '<a href="'+esc(fileUrl(f))+'" target="_blank" rel="noopener"><img src="'+esc(fileUrl(f))+'" loading="lazy"><div class="d">'+esc(fileDate(f))+(f.size?' ・ '+fmtSize(f.size):'')+'</div>'+uploaderHtml(f.uploadedBy)+'</a>';
@@ -3925,7 +3930,7 @@
       html += '<div style="font-size:12px;color:var(--ink-faint);margin:10px 0 14px">写真はまだありません</div>';
     }
     html += '<div style="text-align:center;margin-bottom:22px"><button class="btn primary" style="border-radius:999px;padding:9px 26px" data-open-files="'+p.id+'">'+iUpload()+' ファイル</button></div>';
-    html += '<h3 style="font-size:14px;margin-bottom:6px">最近追加された資料</h3>';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px"><h3 style="font-size:14px;margin:0">最近追加された資料</h3><a href="#" data-open-files="'+p.id+'" data-files-kind="doc" style="font-size:12.5px">書類をすべて見る</a></div>';
     if(recentDocs.length){
       html += recentDocs.map(function(f){
         var g = pfFolders.find(function(x){return x.id===f.folderId;});
@@ -4953,7 +4958,11 @@
     var cur = fid ? folders.find(function(x){return x.id===fid;}) : null;
     if(fid && !cur) fid = state.pfFolder = "";
     var inRoot = function(x){ return !x.folderId || !folders.some(function(g){return g.id===x.folderId;}); };
-    var list = all.filter(function(x){ return cur ? x.folderId===cur.id : inRoot(x); });
+    var kind = state.projectFilesKind||"all";
+    var kindOf = function(x){ return isImageFile(x) ? "photo" : "doc"; };
+    var nPhoto = all.filter(function(x){return kindOf(x)==="photo";}).length, nDoc = all.length-nPhoto;
+    // 「写真」「書類」で絞るときは、フォルダの中身も含めて種類ごとにまとめて表示する
+    var list = all.filter(function(x){ return kind!=="all" ? (kindOf(x)===kind && (!cur || x.folderId===cur.id)) : (cur ? x.folderId===cur.id : inRoot(x)); });
     if(state.pfMine) list = list.filter(function(x){ return x.uploadedBy===state.myName; });
     var sort = state.pfSort;
     list = list.slice().sort(function(a,b){
@@ -4975,6 +4984,7 @@
       (state.isAdmin ? '<button class="btn outline" id="pf-lighten" style="border-radius:999px;padding:10px 22px">'+iAdmin()+' 写真を軽量化</button>' : '')+
       (state.isAdmin ? '<button class="btn outline" id="pf-backup" style="border-radius:999px;padding:10px 22px">'+iAdmin()+' この案件のファイルをバックアップ</button>' : '')+
     '</div>';
+    html += '<div class="pf-kind" role="tablist">'+[["all","すべて",all.length],["photo","写真",nPhoto],["doc","書類",nDoc]].map(function(k){ return '<button type="button" data-pf-kind="'+k[0]+'" class="'+(kind===k[0]?'on':'')+'">'+k[1]+'<i>'+k[2]+'</i></button>'; }).join("")+'</div>';
     html += '<div class="pf-bar">'+
       '<label><input type="checkbox" id="pf-selall"'+(list.length && list.every(function(x){return state.pfSel[x.id];})?" checked":"")+'> ファイル一括選択</label>'+
       '<label><input type="checkbox" id="pf-mine"'+(state.pfMine?" checked":"")+'> 自分のファイルのみ表示</label>'+
@@ -4987,7 +4997,7 @@
         '<button class="btn sm" id="pf-bulk-dl">'+iDownload()+' ダウンロード</button><button class="btn sm" id="pf-bulk-del" style="color:var(--danger)">'+iTrash()+' 削除</button><button class="btn sm" id="pf-bulk-clear">選択解除</button></div>';
     }
     var tiles = "", rowsHtml = "";
-    if(!cur){
+    if(!cur && kind==="all"){
       folders.forEach(function(g){
         var n = all.filter(function(x){return x.folderId===g.id;}).length;
         tiles += '<div class="pf-tile"><button class="pf-edit" data-pf-edit-folder="'+esc(g.id)+'">'+iEdit()+'編集</button><span class="cnt">'+(g.secret?iLock()+' ':'')+n+'</span>'+
@@ -5006,9 +5016,9 @@
         '<td style="white-space:nowrap"><button class="btn sm" data-pf-dl="'+esc(f.id)+'" title="ダウンロード">'+iDownload()+'</button> <button class="btn sm" data-pf-edit-file="'+esc(f.id)+'">'+iEdit()+' 編集</button></td></tr>';
     });
     if(!tiles){
-      html += emptyState(iImage, cur?"このフォルダは空です":"写真・ファイルがありません", "「ファイルをアップロード」から追加できます");
+      html += emptyState(iImage, kind==="photo"?"写真がありません":kind==="doc"?"書類がありません":(cur?"このフォルダは空です":"写真・ファイルがありません"), "「ファイルをアップロード」から追加できます");
     }else if(state.pfView==="list"){
-      var frows = cur ? "" : folders.map(function(g){ var n=all.filter(function(x){return x.folderId===g.id;}).length;
+      var frows = (cur || kind!=="all") ? "" : folders.map(function(g){ var n=all.filter(function(x){return x.folderId===g.id;}).length;
         return '<tr class="rowhover"><td></td><td><div style="display:flex;align-items:center;gap:10px">'+iFolderSm()+'<a href="#" class="pf-name" style="text-align:left;margin:0" data-pf-folder="'+esc(g.id)+'">'+esc(g.name)+'</a>'+(g.secret?iLock():'')+'</div></td><td></td><td></td><td class="num">'+n+'件</td><td><button class="btn sm" data-pf-edit-folder="'+esc(g.id)+'">'+iEdit()+' 編集</button></td></tr>'; }).join("");
       html += '<div class="tablewrap"><table><thead><tr><th></th><th>名前</th><th>アップロード日</th><th>アップロード者</th><th>サイズ</th><th></th></tr></thead><tbody>'+frows+rowsHtml+'</tbody></table></div>';
     }else{
@@ -9321,7 +9331,7 @@
     [["data-pd-event","events",function(x){ openEventModal(x); }],["data-pd-step","steps",function(x){ openStepModal(x); }],["data-pd-report","reports",function(x){ openReportView(x); }]].forEach(function(t){
       c.querySelectorAll("["+t[0]+"]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var x=state[t[1]].find(function(y){return y.id===el.getAttribute(t[0]);}); if(x) t[2](x); }); });
     });
-    c.querySelectorAll("[data-open-files]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); goProjectFiles(el.getAttribute("data-open-files"), el.getAttribute("data-files-from")||"detail"); }); });
+    c.querySelectorAll("[data-open-files]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); goProjectFiles(el.getAttribute("data-open-files"), el.getAttribute("data-files-from")||"detail", el.getAttribute("data-files-kind")||"all"); }); });
     c.querySelectorAll("[data-fbp-sort]").forEach(function(el){ el.addEventListener("click", function(){
       var k = el.getAttribute("data-fbp-sort"), cur = state.fbpSort || {k:"created", dir:"desc"};
       state.fbpSort = (cur.k===k) ? {k:k, dir:(cur.dir==="asc"?"desc":"asc")} : {k:k, dir:el.getAttribute("data-fbp-dir")||"asc"}; render(); }); });
@@ -9379,6 +9389,7 @@
       var ids = Array.prototype.map.call(c.querySelectorAll("[data-pf-chk]"), function(x){ return x.getAttribute("data-pf-chk"); });
       ids.forEach(function(id){ if(pfSelAll.checked) state.pfSel[id]=true; else delete state.pfSel[id]; }); render();
     });
+    c.querySelectorAll("[data-pf-kind]").forEach(function(b){ b.addEventListener("click", function(){ state.projectFilesKind = b.getAttribute("data-pf-kind"); state.pfSel = {}; render(); }); });
     var pfMine = document.getElementById("pf-mine");
     if(pfMine) pfMine.addEventListener("change", function(){ state.pfMine = pfMine.checked; render(); });
     var pfSort = document.getElementById("pf-sort");
