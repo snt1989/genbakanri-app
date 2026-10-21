@@ -34,6 +34,9 @@ async function recipients(chatId){
 }
 
 var KINDS = ["chat", "projectNew", "projectStatus", "report", "task"];
+// 通知のタイトルの頭に付ける、何のお知らせかを示す名前
+var KIND_LABEL = {chat: "チャット", projectNew: "新規案件", projectStatus: "案件の進捗", report: "報告書", task: "タスク"};
+function labeled(kind, title){ return "【" + (KIND_LABEL[kind] || "お知らせ") + "】" + title; }
 function cleanPrefs(p){ var o = {}; KINDS.forEach(function(k){ o[k] = !(p && p[k] === false); }); return o; }
 async function deliver(want, kind, payload){
   var doc = await W.getDoc("settings/push");
@@ -98,7 +101,7 @@ module.exports = async function handler(req, res){
         (Array.isArray(b.names) ? b.names : []).forEach(function(n){ want2[norm(n)] = 1; });
         if(kind !== "task"){ (await W.listDocs("members")).forEach(function(m){ if(F.isAdminMember(m)) want2[norm(m.name)] = 1; }); }
         delete want2[norm(me.name)];
-        var payload2 = JSON.stringify({title: String(b.title || "現場管理").slice(0, 60), body: String(b.text || "").replace(/\s+/g, " ").slice(0, 100) + "（" + me.name + "）", tag: kind + "-" + Date.now()});
+        var payload2 = JSON.stringify({title: labeled(kind, String(b.title || "現場管理").slice(0, 60)), kind: kind, body: String(b.text || "").replace(/\s+/g, " ").slice(0, 100) + "（" + me.name + "）", tag: kind + "-" + Date.now()});
         return res.status(200).json({sent: await deliver(want2, kind, payload2)});
       }
       case "unsubscribe": {
@@ -114,7 +117,7 @@ module.exports = async function handler(req, res){
         var want = {}; r.names.forEach(function(n){ want[norm(n)] = 1; });
         delete want[norm(me.name)];
         var text = String(b.text || "").replace(/\s+/g, " ").slice(0, 80) || "新しいメッセージ";
-        var payload = JSON.stringify({title: (r.chat.name || "チャット"), body: me.name + "：" + text, chatId: chatId, tag: "chat-" + chatId});
+        var payload = JSON.stringify({title: "【" + (r.chat.kind === "project" ? "案件チャット" : "グループチャット") + "】" + (r.chat.name || "チャット"), kind: "chat", body: me.name + "：" + text, chatId: chatId, tag: "chat-" + chatId});
         return res.status(200).json({sent: await deliver(want, "chat", payload)});
       }
       default:
