@@ -1474,6 +1474,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-21-1", title:"10月21日の更新", items:[
+      {t:"清算済・失注の案件のチャットは見えなくなります", d:"案件のステータスが「清算済」または「失注」になると、その案件のチャットは一覧に表示されず、未読のお知らせも出なくなります（管理者の「すべて表示」でも同じです）。ステータスを戻すと、また表示されます。データは消えません。"},
       {t:"動画をアップロードできるようになりました", d:"案件の「ファイル」画面から動画（mp4・movなど）を追加できます。1本あたり30MBまでです。動画は「写真・動画」に入り、押すと新しいタブで再生されます。長い動画は、短く分けるか画質を下げて撮影してください。"},
       {t:"メニューの「写真・ファイル」にも「写真／書類」の切り替えを付けました", d:"すべて・案件別・事業部別・担当者別のどの表示でも、「すべて／写真／書類」で絞り込めます。案件別などで絞ったまま案件を開くと、その種類だけが表示されます。"},
       {t:"案件のファイルを「写真」と「書類」に分けて見られます", d:"案件の「ファイル」画面の上に「すべて／写真／書類」の切り替えを付けました。写真・書類を選ぶと、フォルダの中のものもまとめて表示します。案件の画面の「写真をすべて見る」「書類をすべて見る」からも開けます。"},
@@ -5408,7 +5409,17 @@
   }
   // 自分が参加しているチャットだけを表示する（サーバーの通知宛先 api/push.js と同じ判定）
   //   案件チャット … 案件の担当者／グループ … メンバーに選ばれた人（メンバー未設定の古いグループは全員）
+  // 案件が「清算済」「失注」になったら、その案件のチャットは見えなくする（案件を進行中などに戻せば、また表示される）
+  //   一部の案件だけ読み込んでいる間は、読み込まれていない案件＝過去（清算済・失注）の案件として扱う
+  function chatArchived(c){
+    if(!c || c.kind!=="project") return false;
+    var p = c.projectId ? rawStore.projects.find(function(x){ return x.id===c.projectId; }) : null;
+    if(!p && c.name) p = rawStore.projects.find(function(x){ return x.name===c.name; });
+    if(p) return PROJ_ARCHIVED.indexOf(p.status)!==-1;
+    return state.projMode!=="full" && !!state.loaded.projects && !!(c.projectId || c.name);
+  }
   function chatJoined(c){
+    if(chatArchived(c)) return false;
     var me = state.myName; if(!me) return true;
     if(c.kind==="project"){
       var p = c.projectId ? rawStore.projects.find(function(x){ return x.id===c.projectId; }) : null;
@@ -5425,7 +5436,7 @@
     if(state.chatAll===undefined){ try{ state.chatAll = localStorage.getItem("gc_chat_all")==="1"; }catch(e){ state.chatAll = false; } }
     return !!state.chatAll;
   }
-  function chatSeen(c){ return chatShowAll() || chatJoined(c); }
+  function chatSeen(c){ return !chatArchived(c) && (chatShowAll() || chatJoined(c)); }
   function chatScopeBar(){
     if(!seesAllProjects()) return "";
     var all = chatShowAll(), b = function(v, label){ var on = all===v; return '<button data-chat-scope="'+(v?"all":"mine")+'" style="flex:1;border:1px solid var(--border);background:'+(on?'var(--accent)':'var(--surface)')+';color:'+(on?'#fff':'var(--ink-soft)')+';font-weight:700;font-size:11.5px;padding:6px 4px;cursor:pointer;'+(v?'border-radius:0 8px 8px 0;border-left:0':'border-radius:8px 0 0 8px')+'">'+label+'</button>'; };
