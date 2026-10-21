@@ -609,6 +609,7 @@
   .flt-more[open]>summary::before{content:'▾ ';}
 
   #bottomnav{display:none;}
+  html.kbd #bottomnav{display:none!important;}
   html{-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%;}
   @media (max-width:900px){
     #bottomnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:25;background:var(--surface);border-top:1px solid var(--border);padding:4px 4px calc(4px + env(safe-area-inset-bottom,0px));box-shadow:0 -4px 16px -8px rgba(0,0,0,.18);}
@@ -1335,6 +1336,13 @@
     setAppH(); window.addEventListener("resize", setAppH); window.addEventListener("orientationchange", function(){ setTimeout(setAppH, 200); });
     try{ if(window.visualViewport) window.visualViewport.addEventListener("resize", setAppH); }catch(e){}
   })();
+  // 入力中（キーボード表示中）は下のメニューバーを隠す（iOSでキーボードの上に浮いて崩れるため）
+  (function(){
+    var t=null, de=document.documentElement;
+    function isIn(e){ return e && /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName) && !/^(checkbox|radio|button|submit|file|range|color)$/i.test(e.type||""); }
+    document.addEventListener("focusin", function(e){ if(isIn(e.target)){ clearTimeout(t); de.classList.add("kbd"); } });
+    document.addEventListener("focusout", function(){ clearTimeout(t); t=setTimeout(function(){ if(!isIn(document.activeElement)) de.classList.remove("kbd"); }, 150); });
+  })();
   function bindLoginAndTopbarEvents(){
     var bellEl = document.getElementById("bell-icon");
     if(bellEl && !bellEl.__bound){ bellEl.__bound = true; bellEl.style.cursor = "pointer"; bellEl.setAttribute("role","button"); bellEl.setAttribute("aria-label","お知らせ"); bellEl.addEventListener("click", openNotices); }
@@ -1460,6 +1468,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-21-1", title:"10月21日の更新", items:[
+      {t:"スマホで文字を入力するとき、下のメニューバーが崩れる表示を直しました", d:"入力中はキーボードの上に出ていたメニューバーを隠し、入力が終わると元に戻ります。"},
       {t:"スマホのチャットで画面の幅がずれる表示を直しました", d:"メッセージや入力欄が画面の右にはみ出していたのを、画面の幅に収まるように整えました。長い文字列や長いURLも折り返されます。"}
     ]},
     {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
