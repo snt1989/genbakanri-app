@@ -786,6 +786,25 @@
     .chat-shell.show-pane .chat-pane{display:flex;min-height:calc(100dvh - 120px);}
     .chat-backbar{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--surface-2);font-weight:700;font-size:14px;}
     .chat-back{display:inline-flex;}
+    /* スマホ：チャットの幅が画面からはみ出さないようにする */
+    .chat-page,.chat-shell,.chat-pane,.chat-msgs,.chat-input-wrap{width:100%;max-width:100%;min-width:0;box-sizing:border-box;}
+    .chat-msgs{overflow-x:hidden;max-height:none;padding:12px 10px 8px;}
+    .cm{min-width:0;max-width:100%;gap:8px;}
+    .cm .cav{width:36px;height:36px;font-size:13px;}
+    .cm .cbody{max-width:calc(100% - 46px);min-width:0;}
+    .cm.me .cbody{max-width:100%;}
+    .cm .crow{min-width:0;gap:6px;}
+    .cm .cbub{min-width:0;overflow-wrap:anywhere;word-break:break-word;}
+    .cm .cact{flex:none;}
+    .cm .cquote,.cm .cbub img.catt{max-width:100%;}
+    .chat-input-wrap{padding:10px 12px 8px;}
+    .chat-tools{flex-wrap:wrap;gap:12px;}
+    .chat-input-row{gap:8px;min-width:0;}
+    .chat-input-row textarea{min-width:0;width:100%;box-sizing:border-box;}
+    .chat-send{flex:none;padding:12px 14px;}
+    .chat-hint{display:none;}
+    .chat-pop{left:10px;max-width:calc(100vw - 20px);}
+    .chat-replybar span{max-width:calc(100vw - 90px);}
     /* login */
     .login-card{padding:24px 20px;}
   }
@@ -1440,6 +1459,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-10-21-1", title:"10月21日の更新", items:[
+      {t:"スマホのチャットで画面の幅がずれる表示を直しました", d:"メッセージや入力欄が画面の右にはみ出していたのを、画面の幅に収まるように整えました。長い文字列や長いURLも折り返されます。"}
+    ]},
     {id:"2026-10-20-2", title:"10月20日の更新（2）", items:[
       {t:"スマホの案件詳細で文字が重なる表示を直しました", d:"資料の行でファイル名・日付・登録者が折り返して重ならないように整え、アイコンの位置もそろえました。"},
       {t:"案件が多くても速く開けるようにしました", d:"案件が3,000件以上あるため、通常は進行中の案件と最近更新した案件だけを読み込むようにしました（読み込み量が大幅に減ります）。清算済・失注の古い案件は、案件一覧の「過去の案件も読み込む」で読み込めます。バックアップとCSV出力は、自動的に全件を対象にします。"},
