@@ -1474,6 +1474,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-21-1", title:"10月21日の更新", items:[
+      {t:"メニューの「写真・ファイル」にも「写真／書類」の切り替えを付けました", d:"すべて・案件別・事業部別・担当者別のどの表示でも、「すべて／写真／書類」で絞り込めます。案件別などで絞ったまま案件を開くと、その種類だけが表示されます。"},
       {t:"案件のファイルを「写真」と「書類」に分けて見られます", d:"案件の「ファイル」画面の上に「すべて／写真／書類」の切り替えを付けました。写真・書類を選ぶと、フォルダの中のものもまとめて表示します。案件の画面の「写真をすべて見る」「書類をすべて見る」からも開けます。"},
       {t:"案件から備品管理アプリを開くと、その現場名と紐づきます", d:"案件の「連携アプリ」の備品管理を押すと、現場名が自動で入った状態で備品管理アプリが開きます。備品の持出時にその現場名が入り、備品管理アプリの上部には、その現場で使用中の備品が表示されます。"},
       {t:"スマホで入力しようとすると画面が拡大してずれる問題を直しました", d:"iPhoneで入力欄を押すと画面が自動で拡大されていたため、入力欄の文字の大きさを調整しました。"},
@@ -4793,6 +4794,9 @@
       '<div class="segopt'+(fv==="project"?' active':'')+'" data-files-view="project">案件別</div>'+
       '<div class="segopt'+(fv==="division"?' active':'')+'" data-files-view="division">事業部別</div>'+
       '<div class="segopt'+(fv==="assignee"?' active':'')+'" data-files-view="assignee">担当者別</div></div>';
+    var cntI = 0, cntO = 0;
+    state.files.forEach(function(x){ if(!fileVisible(x) || !projectVisibleId(x.projectId)) return; if(isImageFile(x)) cntI++; else cntO++; });
+    html += '<div class="pf-kind" role="tablist" style="margin:0 0 14px">'+[["all","すべて",cntI+cntO],["image","写真",cntI],["other","書類",cntO]].map(function(k){ return '<button type="button" data-files-kind-sw="'+k[0]+'" class="'+(f.kind===k[0]?'on':'')+'">'+k[1]+'<i>'+k[2]+'</i></button>'; }).join("")+'</div>';
     if(byProject) return html + renderFilesByProject(fv);
 
     html += '<div class="card filter-card"><div class="filter-line">'+
@@ -4800,11 +4804,6 @@
         state.projects.slice().sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");}).map(function(p){
           return '<option value="'+p.id+'"'+(f.project===p.id?" selected":"")+'>'+esc(p.name)+'</option>';
         }).join("")+
-      '</select></div>'+
-      '<div class="fitem"><span>種類</span><select id="files-flt-kind">'+
-        '<option value="all"'+(f.kind==="all"?" selected":"")+'>すべて</option>'+
-        '<option value="image"'+(f.kind==="image"?" selected":"")+'>写真</option>'+
-        '<option value="other"'+(f.kind==="other"?" selected":"")+'>その他ファイル</option>'+
       '</select></div>'+
     '</div></div>';
 
@@ -4889,7 +4888,7 @@
       var fl = filesForProject(p.id), imgs = fl.filter(isImageFile).length;
       var last = fl.reduce(function(m,f){ return (f.uploadedAt||"")>m ? (f.uploadedAt||"") : m; }, "");
       return {p:p, imgs:imgs, other:fl.length-imgs, last:last, n:fl.length, bytes:fl.reduce(function(a,f){ return a+(Number(f.size)||0); },0)};
-    }).filter(function(r){ return r.n>0; });   // ファイルがない案件は表示しない
+    }).filter(function(r){ var k = state.filesFilter.kind; return k==="image" ? r.imgs>0 : k==="other" ? r.other>0 : r.n>0; });   // ファイルがない案件は表示しない（写真/書類で絞るときは、その種類がある案件だけ）
     if(rows.length===0) return emptyState(iImage,"ファイルのある案件がありません","案件詳細ページ、またはこのページから写真・ファイルを追加してください");
     var val = function(r){
       switch(so.k){
@@ -4914,12 +4913,13 @@
     var html = '<div class="summary-line" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><span>案件 <b>'+rows.length+'</b>件</span><label style="font-size:12px;color:var(--ink-soft)">並び替え '+
       '<select id="fbp-sort-sel" style="margin-left:4px">'+(cur===-1?'<option selected>—</option>':'')+FBP_SORTS.map(function(o,n){ return '<option value="'+n+'"'+(n===cur?" selected":"")+'>'+o[1]+'</option>'; }).join("")+'</select></label></div>';
     html += '<div class="tablewrap"><table><thead><tr>'+th("案件名","name","asc")+th("進捗","status","asc")+th("写真","imgs","desc")+th("その他","other","desc")+th("容量","bytes","desc")+th("最終追加","last","desc")+'<th></th></tr></thead><tbody>';
+    var kindAttr = state.filesFilter.kind==="image" ? "photo" : state.filesFilter.kind==="other" ? "doc" : "all";
     var rowHtml = function(r){
       var p = r.p;
-      return '<tr class="rowhover"><td><div class="cell-name"><a href="#" data-open-files="'+esc(p.id)+'" data-files-from="files">'+esc(p.name)+'</a></div><div class="cell-sub">'+esc(propertyAddressOf(p).full)+'</div></td>'+
+      return '<tr class="rowhover"><td><div class="cell-name"><a href="#" data-open-files="'+esc(p.id)+'" data-files-from="files" data-files-kind="'+kindAttr+'">'+esc(p.name)+'</a></div><div class="cell-sub">'+esc(propertyAddressOf(p).full)+'</div></td>'+
         '<td><span class="badge stc" style="'+statusColorStyle(p.status)+'">'+esc(p.status||"未入力")+'</span></td>'+
         '<td class="num" data-label="写真">'+r.imgs+'</td><td class="num" data-label="その他">'+r.other+'</td><td class="num" data-label="容量">'+fmtSize(r.bytes)+'</td><td class="num" data-label="最終追加">'+(r.last?fmtDateTime(r.last):"—")+'</td>'+
-        '<td style="white-space:nowrap"><button class="btn sm" data-open-files="'+esc(p.id)+'" data-files-from="files">ファイル管理を開く</button></td></tr>';
+        '<td style="white-space:nowrap"><button class="btn sm" data-open-files="'+esc(p.id)+'" data-files-from="files" data-files-kind="'+kindAttr+'">ファイル管理を開く</button></td></tr>';
     };
     if(group==="division" || group==="assignee"){
       // グループ分け（並び替えはグループの中で効きます）
@@ -9389,6 +9389,7 @@
       var ids = Array.prototype.map.call(c.querySelectorAll("[data-pf-chk]"), function(x){ return x.getAttribute("data-pf-chk"); });
       ids.forEach(function(id){ if(pfSelAll.checked) state.pfSel[id]=true; else delete state.pfSel[id]; }); render();
     });
+    c.querySelectorAll("[data-files-kind-sw]").forEach(function(b){ b.addEventListener("click", function(){ state.filesFilter.kind = b.getAttribute("data-files-kind-sw"); render(); }); });
     c.querySelectorAll("[data-pf-kind]").forEach(function(b){ b.addEventListener("click", function(){ state.projectFilesKind = b.getAttribute("data-pf-kind"); state.pfSel = {}; render(); }); });
     var pfMine = document.getElementById("pf-mine");
     if(pfMine) pfMine.addEventListener("change", function(){ state.pfMine = pfMine.checked; render(); });
@@ -9520,8 +9521,7 @@
     if(state.tab==="files"){
       var fp = document.getElementById("files-flt-project");
       if(fp) fp.addEventListener("change", function(){ state.filesFilter.project = fp.value; render(); });
-      var fk = document.getElementById("files-flt-kind");
-      if(fk) fk.addEventListener("change", function(){ state.filesFilter.kind = fk.value; render(); });
+      
       var lightenBtn = document.getElementById("files-lighten-btn"); if(lightenBtn) lightenBtn.addEventListener("click", function(){ lightenPhotos(null); });
       var uploadBtn = document.getElementById("files-upload-btn");
       if(uploadBtn) uploadBtn.addEventListener("click", openFilesUploadModal);
