@@ -1474,6 +1474,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-21-1", title:"10月21日の更新", items:[
+      {t:"動画をアップロードできるようになりました", d:"案件の「ファイル」画面から動画（mp4・movなど）を追加できます。1本あたり30MBまでです。動画は「写真・動画」に入り、押すと新しいタブで再生されます。長い動画は、短く分けるか画質を下げて撮影してください。"},
       {t:"メニューの「写真・ファイル」にも「写真／書類」の切り替えを付けました", d:"すべて・案件別・事業部別・担当者別のどの表示でも、「すべて／写真／書類」で絞り込めます。案件別などで絞ったまま案件を開くと、その種類だけが表示されます。"},
       {t:"案件のファイルを「写真」と「書類」に分けて見られます", d:"案件の「ファイル」画面の上に「すべて／写真／書類」の切り替えを付けました。写真・書類を選ぶと、フォルダの中のものもまとめて表示します。案件の画面の「写真をすべて見る」「書類をすべて見る」からも開けます。"},
       {t:"案件から備品管理アプリを開くと、その現場名と紐づきます", d:"案件の「連携アプリ」の備品管理を押すと、現場名が自動で入った状態で備品管理アプリが開きます。備品の持出時にその現場名が入り、備品管理アプリの上部には、その現場で使用中の備品が表示されます。"},
@@ -2184,6 +2185,11 @@
   function avaColor(name){ var h=0; for(var i=0;i<(name||"").length;i++) h=(h*31+name.charCodeAt(i))%AVA_COLORS.length; return AVA_COLORS[h]; }
   function memberByName(name){ return state.members.find(function(x){return x.name===name;}); }
   function isImageFile(f){ return (f.contentType||"").indexOf("image/")===0; }
+  /* 動画：種類(contentType)が空でも拡張子で判定する */
+  var VIDEO_EXT = /\.(mp4|mov|m4v|webm|avi|3gp|mkv|mpg|mpeg|wmv)$/i;
+  function isVideoFile(f){ return (f.contentType||"").indexOf("video/")===0 || (!(f.contentType||"").length && VIDEO_EXT.test(f.filename||f.name||"")); }
+  function isMediaFile(f){ return isImageFile(f) || isVideoFile(f); }
+  function videoType(file){ var t = file.type||""; if(t.indexOf("video/")===0) return t; var e = ((file.name||"").split(".").pop()||"").toLowerCase(); return ({mov:"video/quicktime", mp4:"video/mp4", m4v:"video/mp4", webm:"video/webm", avi:"video/x-msvideo", "3gp":"video/3gpp", mkv:"video/x-matroska", mpg:"video/mpeg", mpeg:"video/mpeg", wmv:"video/x-ms-wmv"})[e] || t; }
   function fileUrl(f){ return f.chunked ? ("#fc-"+f.id) : (f.url || ("/_blob/"+f.assetId)); }
   /* ---- 分割保存されたファイル（報告写真アプリのPDFなど）：クリック時に分割データを結合して開く ---- */
   function chunkBlob(f){
@@ -2195,7 +2201,7 @@
         var d = sn && sn.exists ? sn.data() : null; if(!d || !d.data) throw new Error("missing");
         var bin = atob(d.data), u8 = new Uint8Array(bin.length); for(var k=0;k<bin.length;k++) u8[k]=bin.charCodeAt(k); return u8;
       });
-      return new Blob(parts, {type:f.contentType||"application/pdf"});
+      return new Blob(parts, {type:f.contentType||(isVideoFile(f)?"video/mp4":"application/pdf")});
     });
   }
   function fileBlob(f){
@@ -2303,6 +2309,7 @@
   function iFolderBig(){ return '<svg width="64" height="54" viewBox="0 0 64 54" fill="#dce9fb" stroke="#9fbbe8" stroke-width="2.2" stroke-linejoin="round"><path d="M4 8a3 3 0 0 1 3-3h16l6 7h28a3 3 0 0 1 3 3v29a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3z"/><path d="M4 18h56" fill="none"/></svg>'; }
   function iFolderSm(){ return '<svg width="32" height="26" viewBox="0 0 64 54" fill="#dce9fb" stroke="#9fbbe8" stroke-width="3" stroke-linejoin="round"><path d="M4 8a3 3 0 0 1 3-3h16l6 7h28a3 3 0 0 1 3 3v29a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3z"/><path d="M4 18h56" fill="none"/></svg>'; }
   function iFileKind(f){
+    if(isVideoFile(f)) return '<svg width="40" height="46" viewBox="0 0 40 46" fill="none"><rect x="3" y="7" width="34" height="32" rx="5" fill="#fff" stroke="#7a5cc8" stroke-width="2.4"/><path d="M16 17.5v13l11-6.5z" fill="#7a5cc8"/><text x="20" y="45" text-anchor="middle" font-size="0"> </text></svg>';
     var n=(f.filename||"").toLowerCase(), ext=(n.split(".").pop()||"").slice(0,4).toUpperCase();
     var isPdf = ext==="PDF"; var col = isPdf?"#ee6b6b":(/XLS|CSV/.test(ext)?"#3f9d63":(/DOC/.test(ext)?"#4a78c8":"#8a94a3"));
     return '<svg width="40" height="46" viewBox="0 0 40 46" fill="none"><path d="M6 2h20l10 10v30a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" fill="#fff" stroke="'+col+'" stroke-width="2.4"/><path d="M26 2v10h10" stroke="'+col+'" stroke-width="2.4"/><rect x="2" y="24" width="26" height="12" rx="2" fill="'+col+'"/><text x="15" y="33.2" text-anchor="middle" font-size="8.5" font-weight="700" fill="#fff" font-family="sans-serif">'+esc(ext||"FILE")+'</text></svg>';
@@ -4768,8 +4775,8 @@
     var list = state.files.filter(function(x){
       if(!fileVisible(x) || !projectVisibleId(x.projectId)) return false;
       if(f.project!=="all" && x.projectId!==f.project) return false;
-      if(f.kind==="image" && !isImageFile(x)) return false;
-      if(f.kind==="other" && isImageFile(x)) return false;
+      if(f.kind==="image" && !isMediaFile(x)) return false;
+      if(f.kind==="other" && isMediaFile(x)) return false;
       return true;
     });
     var fso = state.filesSort || "date_desc";
@@ -4795,8 +4802,8 @@
       '<div class="segopt'+(fv==="division"?' active':'')+'" data-files-view="division">事業部別</div>'+
       '<div class="segopt'+(fv==="assignee"?' active':'')+'" data-files-view="assignee">担当者別</div></div>';
     var cntI = 0, cntO = 0;
-    state.files.forEach(function(x){ if(!fileVisible(x) || !projectVisibleId(x.projectId)) return; if(isImageFile(x)) cntI++; else cntO++; });
-    html += '<div class="pf-kind" role="tablist" style="margin:0 0 14px">'+[["all","すべて",cntI+cntO],["image","写真",cntI],["other","書類",cntO]].map(function(k){ return '<button type="button" data-files-kind-sw="'+k[0]+'" class="'+(f.kind===k[0]?'on':'')+'">'+k[1]+'<i>'+k[2]+'</i></button>'; }).join("")+'</div>';
+    state.files.forEach(function(x){ if(!fileVisible(x) || !projectVisibleId(x.projectId)) return; if(isMediaFile(x)) cntI++; else cntO++; });
+    html += '<div class="pf-kind" role="tablist" style="margin:0 0 14px">'+[["all","すべて",cntI+cntO],["image","写真・動画",cntI],["other","書類",cntO]].map(function(k){ return '<button type="button" data-files-kind-sw="'+k[0]+'" class="'+(f.kind===k[0]?'on':'')+'">'+k[1]+'<i>'+k[2]+'</i></button>'; }).join("")+'</div>';
     if(byProject) return html + renderFilesByProject(fv);
 
     html += '<div class="card filter-card"><div class="filter-line">'+
@@ -4885,7 +4892,7 @@
     var projects = state.projects.slice();
     var so = state.fbpSort || {k:"created", dir:"desc"};
     var rows = projects.map(function(p){
-      var fl = filesForProject(p.id), imgs = fl.filter(isImageFile).length;
+      var fl = filesForProject(p.id), imgs = fl.filter(isMediaFile).length;
       var last = fl.reduce(function(m,f){ return (f.uploadedAt||"")>m ? (f.uploadedAt||"") : m; }, "");
       return {p:p, imgs:imgs, other:fl.length-imgs, last:last, n:fl.length, bytes:fl.reduce(function(a,f){ return a+(Number(f.size)||0); },0)};
     }).filter(function(r){ var k = state.filesFilter.kind; return k==="image" ? r.imgs>0 : k==="other" ? r.other>0 : r.n>0; });   // ファイルがない案件は表示しない（写真/書類で絞るときは、その種類がある案件だけ）
@@ -4959,7 +4966,7 @@
     if(fid && !cur) fid = state.pfFolder = "";
     var inRoot = function(x){ return !x.folderId || !folders.some(function(g){return g.id===x.folderId;}); };
     var kind = state.projectFilesKind||"all";
-    var kindOf = function(x){ return isImageFile(x) ? "photo" : "doc"; };
+    var kindOf = function(x){ return isMediaFile(x) ? "photo" : "doc"; };
     var nPhoto = all.filter(function(x){return kindOf(x)==="photo";}).length, nDoc = all.length-nPhoto;
     // 「写真」「書類」で絞るときは、フォルダの中身も含めて種類ごとにまとめて表示する
     var list = all.filter(function(x){ return kind!=="all" ? (kindOf(x)===kind && (!cur || x.folderId===cur.id)) : (cur ? x.folderId===cur.id : inRoot(x)); });
@@ -4984,7 +4991,7 @@
       (state.isAdmin ? '<button class="btn outline" id="pf-lighten" style="border-radius:999px;padding:10px 22px">'+iAdmin()+' 写真を軽量化</button>' : '')+
       (state.isAdmin ? '<button class="btn outline" id="pf-backup" style="border-radius:999px;padding:10px 22px">'+iAdmin()+' この案件のファイルをバックアップ</button>' : '')+
     '</div>';
-    html += '<div class="pf-kind" role="tablist">'+[["all","すべて",all.length],["photo","写真",nPhoto],["doc","書類",nDoc]].map(function(k){ return '<button type="button" data-pf-kind="'+k[0]+'" class="'+(kind===k[0]?'on':'')+'">'+k[1]+'<i>'+k[2]+'</i></button>'; }).join("")+'</div>';
+    html += '<div class="pf-kind" role="tablist">'+[["all","すべて",all.length],["photo","写真・動画",nPhoto],["doc","書類",nDoc]].map(function(k){ return '<button type="button" data-pf-kind="'+k[0]+'" class="'+(kind===k[0]?'on':'')+'">'+k[1]+'<i>'+k[2]+'</i></button>'; }).join("")+'</div>';
     html += '<div class="pf-bar">'+
       '<label><input type="checkbox" id="pf-selall"'+(list.length && list.every(function(x){return state.pfSel[x.id];})?" checked":"")+'> ファイル一括選択</label>'+
       '<label><input type="checkbox" id="pf-mine"'+(state.pfMine?" checked":"")+'> 自分のファイルのみ表示</label>'+
@@ -5016,7 +5023,7 @@
         '<td style="white-space:nowrap"><button class="btn sm" data-pf-dl="'+esc(f.id)+'" title="ダウンロード">'+iDownload()+'</button> <button class="btn sm" data-pf-edit-file="'+esc(f.id)+'">'+iEdit()+' 編集</button></td></tr>';
     });
     if(!tiles){
-      html += emptyState(iImage, kind==="photo"?"写真がありません":kind==="doc"?"書類がありません":(cur?"このフォルダは空です":"写真・ファイルがありません"), "「ファイルをアップロード」から追加できます");
+      html += emptyState(iImage, kind==="photo"?"写真・動画がありません":kind==="doc"?"書類がありません":(cur?"このフォルダは空です":"写真・ファイルがありません"), "「ファイルをアップロード」から追加できます");
     }else if(state.pfView==="list"){
       var frows = (cur || kind!=="all") ? "" : folders.map(function(g){ var n=all.filter(function(x){return x.folderId===g.id;}).length;
         return '<tr class="rowhover"><td></td><td><div style="display:flex;align-items:center;gap:10px">'+iFolderSm()+'<a href="#" class="pf-name" style="text-align:left;margin:0" data-pf-folder="'+esc(g.id)+'">'+esc(g.name)+'</a>'+(g.secret?iLock():'')+'</div></td><td></td><td></td><td class="num">'+n+'件</td><td><button class="btn sm" data-pf-edit-folder="'+esc(g.id)+'">'+iEdit()+' 編集</button></td></tr>'; }).join("");
@@ -5168,11 +5175,12 @@
   function uploadFail(e){ toast(e && e.message==="too large" ? "ファイルが大きすぎます（画像以外は約650KBまで）" : "アップロードに失敗しました"); }
 
   /* 大きいファイル(PDF等)：claude.ai の assets が無い環境では、約600KBずつに分けて fileChunks に保存する */
-  var CHUNK_RAW = 600*1024, CHUNK_FILE_MAX = 10*1024*1024;
+  var CHUNK_RAW = 600*1024, CHUNK_FILE_MAX = 10*1024*1024, VIDEO_FILE_MAX = 30*1024*1024;
   function isShrinkable(file){ var t=file.type||""; return t.indexOf("image/")===0 && t!=="image/svg+xml" && t!=="image/gif"; }
   function uploadChunked(projectId, file, folderId){
     var p = state.projects.find(function(x){return x.id===projectId;});
-    if(file.size>CHUNK_FILE_MAX){ toast("ファイルが大きすぎます（10MBまで）"); return; }
+    var vid = isVideoFile({contentType:file.type, filename:file.name});
+    if(file.size>(vid?VIDEO_FILE_MAX:CHUNK_FILE_MAX)){ toast("ファイルが大きすぎます（"+(vid?"動画は30MB":"10MB")+"まで。動画は短く撮るか、画質を下げて撮影してください）"); return; }
     var id = uid(), n = Math.ceil(file.size/CHUNK_RAW), done = 0;
     toast("アップロード中… 0/"+n);
     var chain = Promise.resolve();
@@ -5185,8 +5193,8 @@
     })(i);
     chain.then(function(){
       return db.collection("files").doc(id).set({projectId:projectId, projectName:p?p.name:"", folderId:folderId||null, chunked:true, chunks:n,
-        filename:file.name||"ファイル", contentType:file.type||"application/octet-stream", size:file.size||0, uploadedAt:new Date().toISOString(), uploadedBy:state.myName||""});
-    }).then(function(){ toast("写真・ファイルを追加しました"); }).catch(function(e){
+        filename:file.name||"ファイル", contentType:(vid?videoType(file):file.type)||"application/octet-stream", size:file.size||0, uploadedAt:new Date().toISOString(), uploadedBy:state.myName||""});
+    }).then(function(){ toast((vid?"動画":"写真・ファイル")+"を追加しました"); }).catch(function(e){
       for(var i=0;i<n;i++) db.doc("fileChunks/"+id+"_"+i).delete().catch(function(){});
       toast("アップロードに失敗しました"+(e&&e.code==="resource-exhausted"?"（データベースの上限）":""));
     });
@@ -5194,7 +5202,7 @@
   window.__writeFail = function(e){ try{ toast("保存が反映されませんでした"+(e&&e.code?"（"+e.code+"）":"")); }catch(x){} };
   function uploadProjectFile(projectId, file, folderId){
     var p = state.projects.find(function(x){return x.id===projectId;});
-    if(!assetsCap && db && !isShrinkable(file) && file.size>600000){ uploadChunked(projectId, file, folderId); return; }
+    if(!assetsCap && db && !isShrinkable(file) && (file.size>600000 || isVideoFile({contentType:file.type, filename:file.name}))){ uploadChunked(projectId, file, folderId); return; }
     toast("アップロード中…");
     uploadBlob(file).then(function(res){
       writeDoc("files", null, {
