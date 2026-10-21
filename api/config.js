@@ -170,6 +170,7 @@ async function reportHandler(req, res, b){
     // 以下は報告写真アプリからの呼び出し（チケットが認証）
     var t = readTicket(b.ticket, secret);
     if(!t) return res.status(403).json({error: "チケットの有効期限が切れました。現場管理アプリの案件から開き直してください"});
+    if(b.action === "report-verify") return res.status(200).json({ok: true, name: t.n});   // 報告写真アプリが、案件から開かれたこと（ログイン済みであること）を確認する
     if(!t.p) return res.status(400).json({error: "案件が選ばれていません。報告写真アプリで案件を選んでください"});
     var up = String(b.uploadId || "");
     if(!/^[A-Za-z0-9]{10,40}$/.test(up)) return res.status(400).json({error: "bad uploadId"});
