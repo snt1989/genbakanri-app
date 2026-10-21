@@ -1470,6 +1470,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-21-1", title:"10月21日の更新", items:[
+      {t:"案件から備品管理アプリを開くと、その現場名と紐づきます", d:"案件の「連携アプリ」の備品管理を押すと、現場名が自動で入った状態で備品管理アプリが開きます。備品の持出時にその現場名が入り、備品管理アプリの上部には、その現場で使用中の備品が表示されます。"},
       {t:"スマホで入力しようとすると画面が拡大してずれる問題を直しました", d:"iPhoneで入力欄を押すと画面が自動で拡大されていたため、入力欄の文字の大きさを調整しました。"},
       {t:"スマホで文字を入力するとき、下のメニューバーが崩れる表示を直しました", d:"入力中はキーボードの上に出ていたメニューバーを隠し、入力が終わると元に戻ります。"},
       {t:"スマホのチャットで画面の幅がずれる表示を直しました", d:"メッセージや入力欄が画面の右にはみ出していたのを、画面の幅に収まるように整えました。長い文字列や長いURLも折り返されます。"}
@@ -2455,11 +2456,15 @@
   }
   function openBihinApp(ev){
     var plain = "https://bihinkanriapp.vercel.app/", me = myMember();
+    // 案件の画面から開くときは、その案件（現場名）を指定して開く → 備品管理アプリで現場名が自動で入る
+    var pid = ev && ev.currentTarget && ev.currentTarget.getAttribute ? ev.currentTarget.getAttribute("data-bihin-project") : "";
+    var pj = pid ? state.projects.find(function(x){ return x.id===pid; }) : null;
+    if(pj) plain += "?site=" + encodeURIComponent(pj.name || "");
     if(!db || window.claude || !me) return;   // 通常のリンクとして開く
     ev.preventDefault();
     var w = window.open("", "_blank");        // ポップアップ制限を避けるため、先に空のタブを開く
     var go = function(u){ if(w){ try{ w.opener = null; }catch(e){} w.location.href = u; } else { location.href = u; } };
-    fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({auth:{name:me.name, password:me.password||""}})})
+    fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({auth:{name:me.name, password:me.password||""}, projectId: pid || undefined})})
       .then(function(r){ return r.json(); })
       .then(function(j){ go(j && j.url ? j.url : plain); }, function(){ go(plain); });
   }
@@ -3887,7 +3892,7 @@
       var short = a.name.replace(/アプリ$/,"");
       var inner = '<span class="pa-ico">'+a.icon()+'</span><span class="pa-name"><span>'+esc(short)+'</span><span class="pa-sfx">アプリ</span></span>';
       if(a.name==="報告写真アプリ") return '<button type="button" class="btn sm outline pa-btn" data-report-project="'+esc(p.id)+'" title="この案件を指定して報告写真アプリを開きます（作ったPDFはこの案件のファイルに保存できます）">'+inner+'</button>';
-      return '<a class="btn sm outline pa-btn" '+(a.sso?'data-bihin-link="1" ':'')+'href="'+esc(a.url)+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>';
+      return '<a class="btn sm outline pa-btn" '+(a.sso?'data-bihin-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を指定して備品管理アプリを開きます（持出時の現場名が自動で入ります）" ':'')+'href="'+esc(a.url+(a.sso?"?site="+encodeURIComponent(p.name||""):""))+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>';
     };
     return '<div class="card pa-card"><div class="pa-title">連携アプリ</div><div class="pa-list">'+APP_LINKS.map(btn).join("")+'</div></div>';
   }

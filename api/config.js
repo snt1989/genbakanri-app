@@ -28,8 +28,10 @@ function readBody(req){
   try{ return JSON.parse(req.body || "{}"); }catch(e){ return {}; }
 }
 function b64u(buf){ return Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
-function makeTicket(name, secret){
-  var payload = b64u(JSON.stringify({n: name, exp: Date.now() + 60000, j: crypto.randomBytes(6).toString("hex")}));
+function makeTicket(name, secret, project){
+  var o = {n: name, exp: Date.now() + 60000, j: crypto.randomBytes(6).toString("hex")};
+  if(project && project.id){ o.p = String(project.id); o.pn = String(project.name || "").slice(0, 80); }   // 案件を指定して備品管理アプリを開く（現場名の紐づけ用）
+  var payload = b64u(JSON.stringify(o));
   var sig = b64u(crypto.createHmac("sha256", secret).update(payload).digest());
   return payload + "." + sig;
 }
@@ -177,7 +179,13 @@ async function ssoHandler(req, res){
     var me = await F.verifyMember(a.name, a.password);
     if(!me) return res.status(403).json({error: "認証に失敗しました"});
     var base = (F.env("BIHIN_URL") || "https://bihinkanriapp.vercel.app").replace(/\/+$/, "");
-    return res.status(200).json({url: base + "/?sso=" + makeTicket(me.name, secret)});
+    var proj = null;
+    if(b.projectId){
+      var pd = await W.getDoc("projects/" + encodeURIComponent(String(b.projectId)));
+      if(!pd || !pd.id || !W.visibleProjects([pd], me).length) return res.status(403).json({error: "この案件は利用できません"});
+      proj = pd;
+    }
+    return res.status(200).json({url: base + "/?sso=" + makeTicket(me.name, secret, proj)});
   }catch(e){
     return res.status(e.status || 500).json({error: "server", detail: String(e.message || e).slice(0, 200)});
   }
