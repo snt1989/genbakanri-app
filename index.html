@@ -979,13 +979,19 @@
       }
       // 書き込みは端末に即反映され、サーバーへの送信は裏で続く。通信が遅い・切れている時に「保存中」のまま固まらないよう、
       // 1.5秒たっても確認が来なければ先に進む（失敗したら後から画面に知らせる）
+      // サーバーに本当に保存できたかは、返す Promise の __ack で確認できる（通知などは __ack のあとに送る）。送信待ちの件数は window.__pend
+      function pendDelta(n){ window.__pend = Math.max(0,(window.__pend||0)+n); try{ if(window.__pendUi) window.__pendUi(); }catch(x){} }
       function ackRace(p){
-        return new Promise(function(res, rej){
+        pendDelta(1);
+        var server = p.then(function(v){ pendDelta(-1); return v; }, function(e){ pendDelta(-1); throw e; });
+        var early = new Promise(function(res, rej){
           var done = false, t = setTimeout(function(){ if(!done){ done = true; res(); } }, 1500);
-          p.then(function(v){ if(!done){ done = true; clearTimeout(t); res(v); } }, function(e){
+          server.then(function(v){ if(!done){ done = true; clearTimeout(t); res(v); } }, function(e){
             if(!done){ done = true; clearTimeout(t); rej(e); } else { try{ if(window.__writeFail) window.__writeFail(e); }catch(x){} }
           });
         });
+        early.__ack = server;
+        return early;
       }
       function makeCollectionRef(path){
         var orderField = null, orderDir = "asc", limitN = null, whereC = [];
@@ -999,7 +1005,9 @@
           doc: function(id){ return makeDocRef(path+"/"+id); },
           add: function(data){
             var nref = fsMod.doc(fsMod.collection(fs, path));   // IDは端末で先に決まる
-            return ackRace(fsMod.setDoc(nref, data)).then(function(){ return { id: nref.id }; });
+            var ar = ackRace(fsMod.setDoc(nref, data)), out = ar.then(function(){ return { id: nref.id }; });
+            out.__ack = ar.__ack.then(function(){ return { id: nref.id }; });
+            return out;
           },
           orderBy: function(f, dir){ orderField = f; orderDir = dir==="desc" ? "desc" : "asc"; return api; },
           get: function(){ return fsMod.getDocs(buildQ()).then(wrapSnap); },
@@ -1473,6 +1481,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-10-22-1", title:"10月22日の更新", items:[
+      {t:"保存できていない変更を見逃さないようにしました", d:"案件の進捗などを変更したとき、サーバーに本当に保存できたことを確認してから、LINE WORKS・アプリの通知を送ります。保存に時間がかかっている間は「サーバーに保存中」と表示し、保存できなかった場合は赤い帯でお知らせします。保存中に画面を閉じようとすると確認が出ます。"}
+    ]},
     {id:"2026-10-21-1", title:"10月21日の更新", items:[
       {t:"通知の履歴が残るようになりました", d:"ベルのお知らせ画面の「通知の履歴」から、直近30日に届いた通知（チャット・新規案件・案件の進捗・報告書・タスク）を日付順に確認できます。チャットの通知を押すと、そのチャットが開きます。この更新のあとに届く通知から記録されます。"},
       {t:"通知のタイトルに「何のお知らせか」が付きます", d:"アプリの通知（プッシュ通知）の頭に、【案件チャット】【グループチャット】【新規案件】【案件の進捗】【報告書】【タスク】のように種類が付きます。例：【案件チャット】福川様邸 ／ 【報告書】報告書が提出されました。"},
@@ -1972,7 +1983,7 @@
   state.projMode = "partial";
   function projMerge(){
     var m = {};
-    ["A","B","X"].forEach(function(k){ Object.keys(projSets[k]).forEach(function(id){ m[id] = projSets[k][id]; }); });
+    ["X","A","B"].forEach(function(k){ Object.keys(projSets[k]).forEach(function(id){ m[id] = projSets[k][id]; }); });
     state.projects = Object.keys(m).map(function(id){ return m[id]; });
   }
   function projUnsubAll(){ projUnsub.forEach(function(u){ try{ if(typeof u==="function") u(); }catch(e){} }); projUnsub = []; }
@@ -5236,7 +5247,25 @@
       toast("アップロードに失敗しました"+(e&&e.code==="resource-exhausted"?"（データベースの上限）":""));
     });
   }
-  window.__writeFail = function(e){ try{ toast("保存が反映されませんでした"+(e&&e.code?"（"+e.code+"）":"")); }catch(x){} };
+  // 保存できなかった変更は、消えない赤い帯で知らせる（そのまま画面を閉じない）／送信待ちのあいだは「保存中」を表示する
+  window.__writeFail = function(e){
+    try{
+      toast("保存が反映されませんでした"+(e&&e.code?"（"+e.code+"）":""));
+      var b = document.getElementById("save-problem");
+      if(!b){ b = document.createElement("div"); b.id = "save-problem"; b.style.cssText = "position:fixed;left:0;right:0;top:0;z-index:99999;background:#c0392b;color:#fff;padding:10px 14px;font-size:13px;line-height:1.6;display:flex;gap:10px;align-items:flex-start"; document.body.appendChild(b); }
+      b.innerHTML = '<span style="flex:1">⚠ サーバーに保存できなかった変更があります'+(e&&e.code?'（'+esc(e.code)+'）':'')+'。画面の表示が元に戻ることがあります。通信状況を確認して、もう一度操作してください。</span><button type="button" style="flex:none;background:#fff;color:#c0392b;border:0;border-radius:6px;padding:4px 10px;font-weight:700" onclick="this.parentNode.remove()">閉じる</button>';
+    }catch(x){}
+  };
+  (function(){
+    var chip = null, tm = null;
+    window.__pendUi = function(){
+      var n = window.__pend||0;
+      if(n<=0){ clearTimeout(tm); tm = null; if(chip){ chip.remove(); chip = null; } return; }
+      if(chip || tm) { if(chip) chip.textContent = "サーバーに保存中… ("+n+"件)"; return; }
+      tm = setTimeout(function(){ tm = null; if((window.__pend||0)<=0) return; chip = document.createElement("div"); chip.style.cssText = "position:fixed;right:12px;bottom:84px;z-index:99998;background:#7a5a00;color:#fff;border-radius:999px;padding:7px 14px;font-size:12.5px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.25)"; chip.textContent = "サーバーに保存中… ("+window.__pend+"件)"; document.body.appendChild(chip); }, 2000);
+    };
+    window.addEventListener("beforeunload", function(e){ if((window.__pend||0)>0){ e.preventDefault(); e.returnValue = ""; } });
+  })();
   function uploadProjectFile(projectId, file, folderId){
     var p = state.projects.find(function(x){return x.id===projectId;});
     if(!assetsCap && db && !isShrinkable(file) && (file.size>600000 || isVideoFile({contentType:file.type, filename:file.name}))){ uploadChunked(projectId, file, folderId); return; }
@@ -7925,7 +7954,12 @@
       closeModal(); toast(msg+"（プレビューのみ）"); render(); try{ worksNotifyAfterWrite(col, id||data.id, data, oldRec); }catch(e){} if(after) after(id||data.id); return;
     }
     var p = id ? db.collection(col).doc(id).update(data) : db.collection(col).add(Object.assign({createdAt:new Date().toISOString()},data));
-    p.then(function(ref){ closeModal(); toast(msg); try{ worksNotifyAfterWrite(col, id||(ref&&ref.id), data, oldRec); }catch(e){} if(after) after(id||(ref&&ref.id)); }).catch(function(e){ toast("保存に失敗しました"); });
+    p.then(function(ref){
+      closeModal(); toast(msg);
+      // LINE WORKS・アプリの通知は、サーバーに保存できたことを確認してから送る（保存できなかった変更を知らせないため）
+      (p.__ack || p).then(function(){ try{ worksNotifyAfterWrite(col, id||(ref&&ref.id), data, oldRec); }catch(e){} }, function(){});
+      if(after) after(id||(ref&&ref.id));
+    }).catch(function(e){ toast("保存に失敗しました"); });
   }
   // ---- ゴミ箱: 削除したデータは trash コレクションに控えを残し、管理画面から復元できる ----
   var TRASH_TYPES = {reports:"報告書",projects:"案件",customers:"顧客",members:"メンバー",tasks:"タスク",files:"ファイル",events:"予定",steps:"工程",folders:"フォルダ",cards:"名刺"};
