@@ -28,8 +28,9 @@ function readBody(req){
   try{ return JSON.parse(req.body || "{}"); }catch(e){ return {}; }
 }
 function b64u(buf){ return Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
-function makeTicket(name, secret, project){
+function makeTicket(name, secret, project, kind){
   var o = {n: name, exp: Date.now() + 60000, j: crypto.randomBytes(6).toString("hex")};
+  if(kind) o.k = kind;   // 発行先の種類（"s" = 社用車管理）。受け取る側が、他のアプリ向けのチケットを使い回されないように確認する
   if(project && project.id){ o.p = String(project.id); o.pn = String(project.name || "").slice(0, 80); }   // 案件を指定して備品管理アプリを開く（現場名の紐づけ用）
   var payload = b64u(JSON.stringify(o));
   var sig = b64u(crypto.createHmac("sha256", secret).update(payload).digest());
@@ -211,14 +212,15 @@ async function ssoHandler(req, res){
     var a = b.auth || {};
     var me = await F.verifyMember(a.name, a.password);
     if(!me) return res.status(403).json({error: "認証に失敗しました"});
-    var base = (F.env("BIHIN_URL") || "https://bihinkanriapp.vercel.app").replace(/\/+$/, "");
+    var toShayosha = b.app === "shayosha";   // 社用車管理アプリへ（ログイン引き継ぎ＋行先に現場名）
+    var base = toShayosha ? (F.env("SHAYOSHA_URL") || "https://shayosha-kanri.vercel.app").replace(/\/+$/, "") : (F.env("BIHIN_URL") || "https://bihinkanriapp.vercel.app").replace(/\/+$/, "");
     var proj = null;
     if(b.projectId){
       var pd = await W.getDoc("projects/" + encodeURIComponent(String(b.projectId)));
       if(!pd || !pd.id || !W.visibleProjects([pd], me).length) return res.status(403).json({error: "この案件は利用できません"});
       proj = pd;
     }
-    return res.status(200).json({url: base + "/?sso=" + makeTicket(me.name, secret, proj)});
+    return res.status(200).json({url: base + "/?sso=" + makeTicket(me.name, secret, proj, toShayosha ? "s" : "")});
   }catch(e){
     return res.status(e.status || 500).json({error: "server", detail: String(e.message || e).slice(0, 200)});
   }
