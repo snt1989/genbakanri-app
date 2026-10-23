@@ -3236,12 +3236,30 @@
       '<div class="cell-sub" style="margin-bottom:10px">「'+esc((p&&p.name)||x.projectName||"")+'」。お客様のお名前・詳しい住所が入っていないか、必ず確認してください。</div>'+
       ((state.sns.accounts||[]).length>1 ? '<label class="field" style="margin-bottom:10px">投稿先のInstagramアカウント<select id="sns-e-acct"'+(ro?' disabled':'')+'><option value="">自動（案件の事業部で決める）：'+esc((function(){ var a = snsAcctFor(Object.assign({}, x, {igAccount:""})); return a ? a.name : "—"; })())+'</option>'+state.sns.accounts.map(function(a){ return '<option value="'+esc(a.id)+'"'+(x.igAccount===a.id?' selected':'')+'>'+esc(a.name)+(a.division?'（'+esc(a.division)+'）':'')+'</option>'; }).join("")+'</select></label>' : "")+
       '<label class="field">投稿文<textarea id="sns-e-cap" rows="13" style="font-size:16px"'+(ro?' readonly':'')+'>'+esc(x.caption||"")+'</textarea></label>'+
-      '<div style="font-size:12.5px;font-weight:700;margin:12px 0 4px">投稿する写真（最大10枚・上から順に投稿されます）</div>'+
+      '<div style="font-size:12.5px;font-weight:700;margin:12px 0 4px">投稿する写真（最大10枚）</div><div class="cell-sub" style="margin-bottom:6px">チェックを入れた写真が、青い番号の順に投稿されます。写真の下の「◀」「▶」で、順番を入れ替えられます。1枚目が、最初に表示されます。</div>'+
       '<div id="sns-e-ph" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px">'+
-      (order.length ? order.map(function(f){ return '<label style="position:relative;display:block;cursor:pointer"><img src="'+esc(f.url)+'" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block"><input type="checkbox" class="sns-e-p" value="'+esc(f.id)+'"'+(sel.indexOf(f.id)!==-1?' checked':'')+(ro?' disabled':'')+' style="position:absolute;top:5px;left:5px;width:20px;height:20px"></label>'; }).join("")
+      (order.length ? order.map(function(f){ return '<label class="sns-e-it" style="position:relative;display:block;cursor:pointer"><img src="'+esc(f.url)+'" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block"><input type="checkbox" class="sns-e-p" value="'+esc(f.id)+'"'+(sel.indexOf(f.id)!==-1?' checked':'')+(ro?' disabled':'')+' style="position:absolute;top:5px;left:5px;width:20px;height:20px"><span class="sns-e-no" style="position:absolute;top:4px;right:5px;min-width:22px;height:22px;border-radius:11px;background:#0095f6;color:#fff;font-size:12px;font-weight:700;display:none;align-items:center;justify-content:center;padding:0 5px"></span>'+(ro?'':'<span style="position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;padding:4px"><button type="button" class="sns-e-mv" data-d="-1" style="border:0;border-radius:6px;background:rgba(0,0,0,.65);color:#fff;font-size:14px;padding:3px 10px;cursor:pointer" aria-label="前へ">◀</button><button type="button" class="sns-e-mv" data-d="1" style="border:0;border-radius:6px;background:rgba(0,0,0,.65);color:#fff;font-size:14px;padding:3px 10px;cursor:pointer" aria-label="後ろへ">▶</button></span>')+'</label>'; }).join("")
         : '<div class="cell-sub">この案件にJPEGの写真がありません。</div>')+'</div>',
       '<button class="btn" data-close-modal>閉じる</button>'+(ro?'':'<button class="btn" id="sns-e-ai">AIで書き直す</button><button class="btn" id="sns-e-next">定型文にする</button><button class="btn" id="sns-e-prev">プレビュー</button><button class="btn primary" id="sns-e-save">保存する</button>'));
+    var renum = function(){
+      var n = 0;
+      Array.prototype.forEach.call(document.querySelectorAll("#sns-e-ph .sns-e-it"), function(it){
+        var c = it.querySelector(".sns-e-p"), b = it.querySelector(".sns-e-no");
+        if(c.checked){ n++; b.textContent = n; b.style.display = "flex"; } else b.style.display = "none";
+      });
+    };
+    renum();
     if(ro) return;
+    var phBox = document.getElementById("sns-e-ph");
+    phBox.addEventListener("change", renum);
+    phBox.addEventListener("click", function(ev){
+      var btn = ev.target.closest ? ev.target.closest(".sns-e-mv") : null; if(!btn) return;
+      ev.preventDefault(); ev.stopPropagation();
+      var it = btn.closest(".sns-e-it"), d = parseInt(btn.getAttribute("data-d"), 10);
+      if(d < 0 && it.previousElementSibling) phBox.insertBefore(it, it.previousElementSibling);
+      else if(d > 0 && it.nextElementSibling) phBox.insertBefore(it.nextElementSibling, it);
+      renum();
+    });
     document.getElementById("sns-e-prev").addEventListener("click", function(){
       var ids = Array.prototype.map.call(document.querySelectorAll(".sns-e-p:checked"), function(c){ return c.value; });
       var ac = document.getElementById("sns-e-acct");
