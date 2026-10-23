@@ -284,7 +284,7 @@ async function igGraph(path, method, params){
   return j;
 }
 async function igWait(id){
-  for(var i = 0; i < 12; i++){
+  for(var i = 0; i < 25; i++){
     var j = await igGraph(id, "GET", {fields: "status_code"});
     if(j.status_code === "FINISHED" || !j.status_code) return;
     if(j.status_code === "ERROR" || j.status_code === "EXPIRED") throw Object.assign(new Error("Instagram側で画像を処理できませんでした（JPEG画像のみ投稿できます）"), {status: 502});
@@ -319,7 +319,7 @@ async function igHandler(req, res, b){
       creation = (await igGraph(uid + "/media", "POST", {image_url: urls[0], caption: caption})).id;
     }else{
       var kids = [];
-      for(var k = 0; k < urls.length; k++){ var c = await igGraph(uid + "/media", "POST", {image_url: urls[k], is_carousel_item: "true"}); await igWait(c.id); kids.push(c.id); }
+      kids = await Promise.all(urls.map(function(u){ return igGraph(uid + "/media", "POST", {image_url: u, is_carousel_item: "true"}).then(function(c){ return igWait(c.id).then(function(){ return c.id; }); }); }));
       creation = (await igGraph(uid + "/media", "POST", {media_type: "CAROUSEL", children: kids.join(","), caption: caption})).id;
     }
     await igWait(creation);
@@ -376,7 +376,7 @@ async function igPublishScheduled(host, pd, ids, caption){
     creation = (await igGraph(uid + "/media", "POST", {image_url: urls[0], caption: caption})).id;
   }else{
     var kids = [];
-    for(var k = 0; k < urls.length; k++){ var c = await igGraph(uid + "/media", "POST", {image_url: urls[k], is_carousel_item: "true"}); await igWait(c.id); kids.push(c.id); }
+    kids = await Promise.all(urls.map(function(u){ return igGraph(uid + "/media", "POST", {image_url: u, is_carousel_item: "true"}).then(function(c){ return igWait(c.id).then(function(){ return c.id; }); }); }));
     creation = (await igGraph(uid + "/media", "POST", {media_type: "CAROUSEL", children: kids.join(","), caption: caption})).id;
   }
   await igWait(creation);
@@ -405,7 +405,7 @@ async function snsCronHandler(req, res){
     var due = docs.filter(function(x){ return x.status === "scheduled" && x.scheduledAt && Date.parse(x.scheduledAt) <= now - 10 * 60000; })
       .sort(function(a, b){ return String(a.scheduledAt).localeCompare(String(b.scheduledAt)); });
     for(var i = 0; i < due.length && i < 3; i++){
-      if(Date.now() - t0 > 12000) break;   // 実行時間の上限（30秒）に余裕を持たせる。残りは次回
+      if(Date.now() - t0 > 20000) break;   // 実行時間の上限（60秒）に余裕を持たせる。残りは次回
       var x = due[i];
       await W.patchDoc("snsPosts/" + x.id, {status: "posting", error: "", updatedAt: iso()});
       try{

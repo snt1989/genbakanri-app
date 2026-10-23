@@ -11,7 +11,7 @@
   ],
   "functions": {
     "api/config.js": {
-      "maxDuration": 30
+      "maxDuration": 60
     }
   }
 }
