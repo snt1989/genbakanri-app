@@ -16,3 +16,8 @@
   写真のURLは `APP_HOST`（なければ `VERCEL_PROJECT_PRODUCTION_URL`）のドメインで作ります。
 - Vercel の Hobby プランは定期実行が1日1回までです。もっと細かくしたい場合は Pro プランにして
   `vercel.json` のスケジュールを増やしてください（例：`*/15 * * * *`）。
+
+## Instagramログイン方式（Facebookページ不要）
+環境変数 `IG_API_HOST=graph.instagram.com` を追加すると、Instagram API with Instagram Login で動作します。
+`IG_USER_ID`＝Instagramアカウントのユーザー ID、`IG_ACCESS_TOKEN`＝Metaアプリ画面で生成した長期トークン（60日）。
+毎日のcronでトークンを自動延長し、`settings/igToken`（Firestore）に保存します（security rulesでクライアントから読めないようにしてください）。

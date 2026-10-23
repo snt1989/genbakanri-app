@@ -253,9 +253,31 @@ async function igImageHandler(req, res){
   res.setHeader("Content-Type", "image/jpeg"); res.setHeader("Cache-Control", "no-store");
   return res.status(200).end(Buffer.from(m[2], "base64"));
 }
+// IG_API_HOST=graph.instagram.com にすると「Instagramログイン」方式（Facebookページ不要）で動く。既定は graph.facebook.com
+function igHost(){ return F.env("IG_API_HOST") || "graph.facebook.com"; }
+var _igTok = null;
+async function igToken(){
+  if(igHost() !== "graph.instagram.com") return F.env("IG_ACCESS_TOKEN");
+  if(_igTok && Date.now() - _igTok.at < 60000) return _igTok.v;
+  var v = F.env("IG_ACCESS_TOKEN");
+  try{ var d = await W.getDoc("settings/igToken"); if(d && d.token && Date.parse(d.baseUpdatedAt || 0) >= 0 && d.base === F.env("IG_ACCESS_TOKEN").slice(-12)) v = d.token; }catch(e){}
+  _igTok = {v: v, at: Date.now()};
+  return v;
+}
+// Instagramログイン方式のトークン（60日）を、毎日のcronで延長して Firestore に保存する
+async function igRefreshToken(){
+  if(igHost() !== "graph.instagram.com") return "n/a";
+  var cur = await igToken();
+  var r = await fetch("https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=" + encodeURIComponent(cur));
+  var j = await r.json().catch(function(){ return {}; });
+  if(!r.ok || !j.access_token) return "refresh failed: " + ((j.error && j.error.message) || r.status);
+  await W.patchDoc("settings/igToken", {token: j.access_token, base: F.env("IG_ACCESS_TOKEN").slice(-12), baseUpdatedAt: new Date().toISOString(), expiresIn: j.expires_in || 0});
+  _igTok = {v: j.access_token, at: Date.now()};
+  return "refreshed";
+}
 async function igGraph(path, method, params){
-  var base = "https://graph.facebook.com/" + (F.env("IG_API_VERSION") || "v21.0") + "/" + path;
-  var p = new URLSearchParams(Object.assign({access_token: F.env("IG_ACCESS_TOKEN")}, params || {}));
+  var base = "https://" + igHost() + "/" + (F.env("IG_API_VERSION") || "v21.0") + "/" + path;
+  var p = new URLSearchParams(Object.assign({access_token: await igToken()}, params || {}));
   var r = method === "GET" ? await fetch(base + "?" + p.toString()) : await fetch(base, {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: p.toString()});
   var j = await r.json().catch(function(){ return {}; });
   if(!r.ok || j.error){ var e = new Error((j.error && j.error.message) || ("instagram " + r.status)); e.status = 502; throw e; }
@@ -373,6 +395,7 @@ async function snsCronHandler(req, res){
     var host = F.env("APP_HOST") || F.env("VERCEL_PROJECT_PRODUCTION_URL") || String(req.headers["x-forwarded-host"] || req.headers.host || "");
     if(!host) return res.status(200).json({skipped: "host"});
     var t0 = Date.now(), now = Date.now(), iso = function(){ return new Date().toISOString(); };
+    var tokenState = ""; try{ tokenState = await igRefreshToken(); }catch(e){ tokenState = "refresh error"; }
     var docs = await W.listDocs("snsPosts"), posted = 0, failed = 0;
     // 投稿中のまま15分以上たったもの：結果が分からないので、二重投稿を避けて「要確認」にする
     var stuck = docs.filter(function(x){ return x.status === "posting" && now - Date.parse(x.updatedAt || 0) > 15 * 60000; });
@@ -399,7 +422,7 @@ async function snsCronHandler(req, res){
         await W.patchDoc("snsPosts/" + x.id, {status: "failed", error: String(e.message || e).slice(0, 300), updatedAt: iso()}).catch(function(){});
       }
     }
-    return res.status(200).json({posted: posted, failed: failed, waiting: Math.max(0, due.length - posted - failed)});
+    return res.status(200).json({token: tokenState, posted: posted, failed: failed, waiting: Math.max(0, due.length - posted - failed)});
   }catch(e){
     console.error("sns cron", e.message);
     return res.status(500).json({error: e.message});
