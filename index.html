@@ -3059,11 +3059,11 @@
     meta.push("写真 "+ids.length+"枚"); meta.push("作成 "+snsFmt(x.createdAt)+(x.source==="auto"?"（自動）":""));
     var B = function(act, label, cls){ return '<button class="btn sm'+(cls?' '+cls:'')+'" data-sns-act="'+act+'" data-sns-id="'+esc(x.id)+'">'+label+'</button>'; };
     var acts = [];
-    if(x.status==="draft") acts = [B("edit","確認・編集"), B("now","承認して今すぐ投稿","primary"), B("sched","承認して予約"), B("skip","見送る")];
-    else if(x.status==="scheduled") acts = [B("edit","確認・編集"), B("now","今すぐ投稿","primary"), B("unsched","予約を取り消す")];
-    else if(x.status==="failed") acts = [B("edit","確認・編集"), B("now","再投稿","primary"), B("restore","下書きに戻す")];
+    if(x.status==="draft") acts = [B("edit","確認・編集"), B("now","プレビューして投稿","primary"), B("sched","承認して予約"), B("skip","見送る")];
+    else if(x.status==="scheduled") acts = [B("edit","確認・編集"), B("now","プレビューして投稿","primary"), B("unsched","予約を取り消す")];
+    else if(x.status==="failed") acts = [B("edit","確認・編集"), B("now","プレビューして再投稿","primary"), B("restore","下書きに戻す")];
     else if(x.status==="skipped") acts = [B("restore","下書きに戻す")];
-    else if(x.status==="posted") acts = [x.permalink ? '<a class="btn sm" href="'+esc(x.permalink)+'" target="_blank" rel="noopener">Instagramで見る</a>' : "", B("edit","内容を見る")];
+    else if(x.status==="posted") acts = [x.permalink ? '<a class="btn sm" href="'+esc(x.permalink)+'" target="_blank" rel="noopener">Instagramで見る</a>' : "", B("edit","内容を見る"), B("prev","プレビュー")];
     return '<div class="card" style="padding:14px 16px;margin-bottom:12px"><div style="display:flex;gap:14px;flex-wrap:wrap">'+
       '<div style="display:flex;gap:6px;flex:none;align-content:flex-start;flex-wrap:wrap;max-width:260px">'+thumbs+more+'</div>'+
       '<div style="flex:1;min-width:220px"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:14px">'+esc((p&&p.name)||x.projectName||"（案件なし）")+'</b>'+
@@ -3084,15 +3084,12 @@
     var x = snsGet(id); if(!x || !state.canWrite) return;
     var go = function(patch, msg){ snsSet(id, patch).then(function(){ if(msg) toast(msg); }).catch(function(){ toast("保存に失敗しました"); }); };
     if(act==="edit") return openSnsEdit(x);
+    if(act==="prev") return openSnsPreview(x, null);
     if(act==="skip") return go({status:"skipped"}, "見送りにしました");
     if(act==="restore") return go({status:"draft", error:"", scheduledAt:""}, "下書きに戻しました");
     if(act==="unsched") return go({status:"draft", scheduledAt:""}, "予約を取り消しました");
     if(act==="sched") return openSnsSchedule(x);
-    if(act==="now"){
-      var warn = x.status==="failed" && /通信エラー|確認できませんでした/.test(x.error||"") ? "\n\n※前回は結果が確認できていません。すでに投稿されていないか、Instagramで確認しましたか？" : "";
-      if(!window.confirm("Instagramに投稿します。\n写真"+(x.fileIds||[]).length+"枚と、投稿文が公開されます。よろしいですか？"+warn)) return;
-      snsPostNow(x);
-    }
+    if(act==="now") return openSnsPreview(x, null);
   }
   function openSnsSchedule(x){
     openModal("承認して予約する",
@@ -3105,6 +3102,48 @@
       if(!d || isNaN(d)){ toast("日時を入力してください"); return; }
       if(d.getTime() < Date.now()){ toast("過去の日時は指定できません"); return; }
       snsSet(x.id, {status:"scheduled", scheduledAt:d.toISOString(), error:""}).then(function(){ closeModal(); toast(snsFmt(d.toISOString())+" に投稿を予約しました"); }).catch(function(){ toast("保存に失敗しました"); });
+    });
+  }
+  // Instagram風プレビュー＋最終チェック。投稿はチェックをすべて入れてから押せる。ov に編集中の内容（保存前）を渡せる
+  function openSnsPreview(x, ov){
+    var cap = String((ov && ov.caption!=null) ? ov.caption : (x.caption||"")), ids = ((ov && ov.fileIds) ? ov.fileIds : (x.fileIds||[])).slice(0,10);
+    var p = state.projects.filter(function(q){ return q.id===x.projectId; })[0], cfg = snsCfg();
+    var name = (cfg.company || "あなたのアカウント"), imgs = ids.map(function(id){ return snsPhotoById(id); }).filter(Boolean);
+    var canPost = x.status==="draft" || x.status==="scheduled" || x.status==="failed";
+    var tag = function(t){ return esc(t).replace(/(#[^\s#]+)/g, '<span style="color:#00376b">$1</span>'); };
+    var short = cap.length > 90 ? cap.slice(0, 90).replace(/\s+$/,"") : "";
+    var warn = x.status==="failed" && /通信エラー|確認できませんでした/.test(x.error||"") ? '<div style="margin-top:10px;padding:8px 10px;border-radius:8px;background:#fff4e5;color:#8a4b00;font-size:12px">前回は結果が確認できていません。すでに投稿されていないか、Instagramで確認してください。</div>' : "";
+    var ig = '<div style="max-width:380px;margin:0 auto;background:#fff;color:#262626;border:1px solid #dbdbdb;border-radius:10px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,sans-serif">'+
+      '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px"><div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(45deg,#f9ce34,#ee2a7b,#6228d7);display:flex;align-items:center;justify-content:center"><div style="width:28px;height:28px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">'+esc(name.charAt(0))+'</div></div><div style="font-size:13.5px;font-weight:700">'+esc(name)+'</div><div style="margin-left:auto;font-size:18px;letter-spacing:1px">…</div></div>'+
+      (imgs.length ? '<div style="position:relative"><div id="sns-pv-sc" style="display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none">'+imgs.map(function(f){ return '<img src="'+esc(f.url)+'" style="flex:none;width:100%;aspect-ratio:1/1;object-fit:cover;scroll-snap-align:center;display:block">'; }).join("")+'</div>'+
+        (imgs.length>1 ? '<div id="sns-pv-n" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.65);color:#fff;font-size:12px;padding:2px 9px;border-radius:12px">1/'+imgs.length+'</div>' : '')+'</div>'+
+        (imgs.length>1 ? '<div id="sns-pv-dots" style="display:flex;justify-content:center;gap:4px;padding:8px 0 0">'+imgs.map(function(_,i){ return '<span style="width:6px;height:6px;border-radius:50%;background:'+(i===0?'#0095f6':'#c7c7c7')+'"></span>'; }).join("")+'</div>' : '')
+        : '<div style="aspect-ratio:1/1;background:#efefef;display:flex;align-items:center;justify-content:center;font-size:13px;color:#8e8e8e">写真が選ばれていません</div>')+
+      '<div style="display:flex;gap:14px;padding:10px 12px 4px;font-size:20px"><span>♡</span><span>💬</span><span>➤</span><span style="margin-left:auto">🔖</span></div>'+
+      '<div id="sns-pv-cap" style="padding:2px 12px 12px;font-size:13.5px;line-height:1.55;word-break:break-word"><b>'+esc(name)+'</b> <span id="sns-pv-txt">'+(short ? tag(short)+'… <a href="#" id="sns-pv-more" style="color:#8e8e8e;text-decoration:none">もっと見る</a>' : tag(cap).replace(/\n/g,"<br>"))+'</span></div></div>';
+    var checks = canPost ? '<div style="margin-top:14px;font-size:12.5px;font-weight:700">最終チェック（すべてチェックすると投稿できます）</div>'+
+      ['写真に、お客様の顔・車のナンバー・表札・書類などが写っていない','投稿文に、お客様のお名前・詳しい住所・電話番号・金額が入っていない','写真の順番と、投稿文の内容に間違いがない'].map(function(t,i){ return '<label class="checkopt" style="margin-top:6px"><input type="checkbox" class="sns-pv-ck">'+esc(t)+'</label>'; }).join("") : "";
+    openModal("Instagramでの見え方（プレビュー）",
+      '<div class="cell-sub" style="margin-bottom:10px">実際の画面とは、少し違って見える場合があります。写真は、正方形で表示しています。</div>'+ig+warn+checks,
+      '<button class="btn" id="sns-pv-back">'+(canPost?'編集に戻る':'閉じる')+'</button>'+(canPost?'<button class="btn" id="sns-pv-sched">予約にする</button><button class="btn primary" id="sns-pv-go" disabled>この内容で今すぐ投稿</button>':''));
+    var sc = document.getElementById("sns-pv-sc");
+    if(sc && imgs.length>1) sc.addEventListener("scroll", function(){
+      var i = Math.max(0, Math.min(imgs.length-1, Math.round(sc.scrollLeft / sc.clientWidth)));
+      document.getElementById("sns-pv-n").textContent = (i+1)+"/"+imgs.length;
+      Array.prototype.forEach.call(document.querySelectorAll("#sns-pv-dots span"), function(d, k){ d.style.background = k===i ? "#0095f6" : "#c7c7c7"; });
+    });
+    var more = document.getElementById("sns-pv-more");
+    if(more) more.addEventListener("click", function(e){ e.preventDefault(); document.getElementById("sns-pv-txt").innerHTML = tag(cap).replace(/\n/g,"<br>"); });
+    document.getElementById("sns-pv-back").addEventListener("click", function(){ if(canPost) openSnsEdit(Object.assign({}, x, {caption:cap, fileIds:ids})); else closeModal(); });
+    if(!canPost) return;
+    var go = document.getElementById("sns-pv-go"), cks = document.querySelectorAll(".sns-pv-ck");
+    var upd = function(){ go.disabled = !Array.prototype.every.call(cks, function(c){ return c.checked; }); };
+    Array.prototype.forEach.call(cks, function(c){ c.addEventListener("change", upd); });
+    var saveFirst = function(){ return (cap!==(x.caption||"") || ids.join(",")!==(x.fileIds||[]).join(",")) ? snsSet(x.id, {caption:cap, fileIds:ids}) : Promise.resolve(); };
+    document.getElementById("sns-pv-sched").addEventListener("click", function(){ saveFirst().then(function(){ openSnsSchedule(Object.assign({}, x, {caption:cap, fileIds:ids})); }).catch(function(){ toast("保存に失敗しました"); }); });
+    go.addEventListener("click", function(){
+      if(go.disabled) return; go.disabled = true; go.textContent = "投稿中…（最大1分ほどかかります）";
+      saveFirst().then(function(){ return snsPostNow(Object.assign({}, x, {caption:cap, fileIds:ids})); }).then(function(ok){ closeModal(); }).catch(function(){ closeModal(); });
     });
   }
   function openSnsEdit(x){
@@ -3120,8 +3159,12 @@
       '<div id="sns-e-ph" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px">'+
       (order.length ? order.map(function(f){ return '<label style="position:relative;display:block;cursor:pointer"><img src="'+esc(f.url)+'" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block"><input type="checkbox" class="sns-e-p" value="'+esc(f.id)+'"'+(sel.indexOf(f.id)!==-1?' checked':'')+(ro?' disabled':'')+' style="position:absolute;top:5px;left:5px;width:20px;height:20px"></label>'; }).join("")
         : '<div class="cell-sub">この案件にJPEGの写真がありません。</div>')+'</div>',
-      '<button class="btn" data-close-modal>閉じる</button>'+(ro?'':'<button class="btn" id="sns-e-next">別の文面にする</button><button class="btn primary" id="sns-e-save">保存する</button>'));
+      '<button class="btn" data-close-modal>閉じる</button>'+(ro?'':'<button class="btn" id="sns-e-next">別の文面にする</button><button class="btn" id="sns-e-prev">プレビュー</button><button class="btn primary" id="sns-e-save">保存する</button>'));
     if(ro) return;
+    document.getElementById("sns-e-prev").addEventListener("click", function(){
+      var ids = Array.prototype.map.call(document.querySelectorAll(".sns-e-p:checked"), function(c){ return c.value; });
+      openSnsPreview(x, {caption:document.getElementById("sns-e-cap").value, fileIds:ids});
+    });
     document.getElementById("sns-e-next").addEventListener("click", function(){
       if(!p) return; st.v++;
       document.getElementById("sns-e-cap").value = snsBuildCaption(p, state.snsPosts.length + st.v);
