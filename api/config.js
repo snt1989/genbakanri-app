@@ -282,6 +282,7 @@ async function igAccounts(force){
   if(igEnabled()) out.push({id: "main", name: F.env("IG_ACCOUNT_NAME") || "", division: F.env("IG_ACCOUNT_DIVISION") || "", userId: F.env("IG_USER_ID"), main: true});
   try{
     (await W.listDocs("igAccounts")).forEach(function(d){
+      if(d.id === "main"){ var m0 = out.filter(function(o){ return o.main; })[0]; if(m0){ if(d.name) m0.name = d.name; if(d.division != null) m0.division = d.division; } return; }   // 既定アカウントの表示名・担当事業部の上書き
       if(d.disabled || !d.userId || !d.tokenEnc) return;
       out.push({id: d.id, name: d.name || "", division: d.division || "", userId: String(d.userId), tokenEnc: d.tokenEnc, username: d.username || ""});
     });
@@ -346,6 +347,12 @@ async function igHandler(req, res, b){
     // アカウントの追加・変更・削除（トークンは暗号化して保存）
     if(op === "acct-save"){
       if(!(F.env("SSO_SECRET") || F.env("CRON_SECRET"))) return res.status(200).json({error: "ig", detail: "SSO_SECRET が未設定のため、トークンを安全に保存できません"});
+      if(String(b.id || "") === "main"){
+        if(!igEnabled()) return res.status(400).json({error: "既定のアカウントがありません"});
+        await W.patchDoc("igAccounts/main", {name: String(b.name || "").trim().slice(0, 40), division: String(b.division || "").trim().slice(0, 40), disabled: false, updatedAt: new Date().toISOString()});
+        await igAccounts(true);
+        return res.status(200).json({ok: true});
+      }
       var uid0 = String(b.userId || "").trim(), tok0 = String(b.token || "").trim(), id0 = String(b.id || "");
       if(!/^[0-9]{5,25}$/.test(uid0)) return res.status(200).json({error: "ig", detail: "ユーザーIDは数字だけで入力してください"});
       var old = id0 && id0 !== "main" && /^[A-Za-z0-9_-]{4,64}$/.test(id0) ? await W.getDoc("igAccounts/" + id0) : null;

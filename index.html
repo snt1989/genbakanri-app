@@ -3188,14 +3188,15 @@
       var rows = list.length ? list.map(function(a){
         return '<div style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)"><div style="flex:1;min-width:0"><b style="font-size:13.5px">'+esc(a.name)+'</b>'+(a.main?' <span class="badge">既定</span>':'')+
           '<div class="cell-sub">'+(a.division?'事業部：'+esc(a.division):'事業部の指定なし（他の事業部の案件も、ここに投稿）')+'　ID：'+esc(a.userId)+'</div></div>'+
-          (a.main?'':'<button class="btn sm" data-ac-edit="'+esc(a.id)+'">編集</button><button class="btn sm" data-ac-del="'+esc(a.id)+'">削除</button>')+'</div>';
+          ('<button class="btn sm" data-ac-edit="'+esc(a.id)+'">編集</button>')+(a.main?'':'<button class="btn sm" data-ac-del="'+esc(a.id)+'">削除</button>')+'</div>';
       }).join("") : '<div class="cell-sub" style="padding:8px 0">まだアカウントがありません。</div>';
       var e = editing || {};
       var form = '<div style="margin-top:14px;font-size:13px;font-weight:700">'+(e.id?'アカウントを編集':'アカウントを追加')+'</div>'+
         '<label class="field" style="margin-top:6px">表示名（アプリ内での名前）<input type="text" id="ac-name" value="'+esc(e.name||"")+'" placeholder="例：緑化事業部"></label>'+
         '<label class="field" style="margin-top:8px">担当の事業部（この事業部の案件は、このアカウントに投稿）<input type="text" id="ac-div" list="ac-divs" value="'+esc(e.division||"")+'" placeholder="空のままにすると、事業部を限定しません"><datalist id="ac-divs">'+divs.map(function(d){ return '<option value="'+esc(d)+'">'; }).join("")+'</datalist></label>'+
+        (e.main ? '<div class="cell-sub" style="margin-top:8px">このアカウントの連携（ID・トークン）は、サーバーの設定で管理されています。表示名と担当事業部だけ変更できます。</div><input type="hidden" id="ac-uid" value="'+esc(e.userId||"")+'"><input type="hidden" id="ac-tok" value="">' :
         '<label class="field" style="margin-top:8px">InstagramのユーザーID（数字）<input type="text" id="ac-uid" inputmode="numeric" value="'+esc(e.userId||"")+'" placeholder="例：17841400000000000"></label>'+
-        '<label class="field" style="margin-top:8px">アクセストークン'+(e.id?'（変えないときは空のまま）':'')+'<input type="password" id="ac-tok" autocomplete="off" placeholder="Metaの画面で生成した、長い文字列"></label>'+
+        '<label class="field" style="margin-top:8px">アクセストークン'+(e.id?'（変えないときは空のまま）':'')+'<input type="password" id="ac-tok" autocomplete="off" placeholder="Metaの画面で生成した、長い文字列"></label>')+
         '<div class="cell-sub" style="margin-top:8px;line-height:1.7">トークンは暗号化して保存され、画面には再表示されません。取得の手順：<br>① Metaアプリ「現場管理」の「アプリの役割」→「ロール」で、追加したいInstagramアカウントを「Instagramテスター」に追加し、Instagram側で承認する。<br>② 「InstagramログインによるAPI設定」の「アカウントを追加」でそのアカウントにログインし、「トークンを生成」を押す。<br>③ 表示されたIDとトークンを、ここに入力する。</div>';
       var body = '<div class="cell-sub" style="margin-bottom:6px">事業部ごとのInstagramアカウントを登録します。投稿のたびに、投稿先を確認できます。</div>'+rows+form;
       openModal("Instagramアカウント", body, '<button class="btn" data-close-modal>閉じる</button>'+(e.id?'<button class="btn" id="ac-cancel">編集をやめる</button>':'')+'<button class="btn primary" id="ac-save">'+(e.id?'更新する':'追加する')+'</button>');
@@ -3208,7 +3209,7 @@
       var cn = document.getElementById("ac-cancel"); if(cn) cn.addEventListener("click", function(){ draw(list, null); });
       document.getElementById("ac-save").addEventListener("click", function(){
         var btn = this, g = function(id){ return document.getElementById(id).value.trim(); };
-        if(!/^[0-9]{5,25}$/.test(g("ac-uid"))){ toast("ユーザーIDは数字だけで入力してください"); return; }
+        if(!e.main && !/^[0-9]{5,25}$/.test(g("ac-uid"))){ toast("ユーザーIDは数字だけで入力してください"); return; }
         if(!e.id && !g("ac-tok")){ toast("アクセストークンを入力してください"); return; }
         btn.disabled = true; btn.textContent = "確認中…";
         snsIgCall({op:"acct-save", id:e.id||"", name:g("ac-name"), division:g("ac-div"), userId:g("ac-uid"), token:g("ac-tok")}).then(function(j){
