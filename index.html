@@ -73,6 +73,12 @@
   .side-foot{flex:none;}
   .navbtn{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:8px;border:none;background:transparent;color:var(--sidebar-ink-dim);font-size:13px;font-weight:500;cursor:pointer;text-align:left;width:100%;}
   .navbtn svg{flex:none;width:17px;height:17px;}
+  .navbtn .admin-tag{margin-left:auto;display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;line-height:1;padding:3px 6px;border-radius:999px;background:rgba(255,200,87,.18);color:#ffd27a;white-space:nowrap;}
+  .navbtn .admin-tag svg{width:11px;height:11px;}
+  #bottomnav .bn{position:relative;}
+  #bottomnav .bn .admin-dot{position:absolute;top:3px;right:calc(50% - 20px);width:14px;height:14px;border-radius:50%;background:#f5a524;color:#fff;display:flex;align-items:center;justify-content:center;}
+  #bottomnav .bn .admin-dot svg{width:9px;height:9px;}
+  .admin-chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:var(--surface-2);color:var(--accent);vertical-align:middle;margin-left:8px;}
   .navbtn:hover{background:rgba(255,255,255,.06);color:#fff;}
   .navbtn.active{background:var(--sidebar-active);color:#fff;font-weight:700;}
   .side-foot{padding:12px 16px 16px;}
@@ -1131,7 +1137,7 @@
     {id:"apps", label:"連携アプリ", icon:iBox},
     {id:"members", label:"メンバー管理", icon:iUsers},
     {id:"customers", label:"顧客管理", icon:iBriefcase2},
-    {id:"cards", label:"名刺管理", icon:iCardIcon, adminOnly:true},
+    {id:"cards", label:"名刺管理", icon:iCardIcon, adminOnly:true, adminLabel:"限定", adminNote:"管理者と、管理者が許可したメンバーだけが使えます"},
     {id:"files", label:"写真・ファイル", icon:iImage},
     {id:"sns", label:"SNS投稿", icon:iShare, adminOnly:true},
     {id:"settings", label:"設定", icon:iBox}
@@ -2622,7 +2628,7 @@
         '<button class="btn sm" data-nav-del="'+id+'"'+(draft.length<=1?' disabled':'')+'>外す</button></div>';
     }).join("");
     var avail = TABS.filter(function(t){ return draft.indexOf(t.id)===-1 && tabVisible(t); }).map(function(t){
-      return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--border)"><span style="flex:1;font-size:12.5px;color:var(--ink-soft)">'+esc(t.label)+'</span><button class="btn sm outline" data-nav-add="'+t.id+'"'+(full?' disabled':'')+'>追加</button></div>';
+      return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--border)"><span style="flex:1;font-size:12.5px;color:var(--ink-soft)">'+esc(t.label)+(t.adminOnly?' <span class="admin-chip" style="margin-left:4px">'+esc(t.id==="cards"?"管理者・許可メンバーのみ":"管理者専用")+'</span>':'')+'</span><button class="btn sm outline" data-nav-add="'+t.id+'"'+(full?' disabled':'')+'>追加</button></div>';
     }).join("");
     return '<h2 style="font-size:13.5px;margin:4px 0 10px">スマホ版のメニューバー</h2>'+
       '<div class="card" style="padding:16px 18px;max-width:520px;display:flex;flex-direction:column;gap:10px;margin-bottom:18px">'+
@@ -2752,14 +2758,14 @@
     // 設定 is now open to everyone (it holds each person's own 個人情報);
     // only the 会社情報 editing and the 管理画面 section inside it are admin-only.
     nav.innerHTML = TABS.filter(tabVisible).map(function(t){
-      return "" +'<button class="navbtn'+(highlight===t.id?" active":"")+'" data-tab="'+t.id+'">'+t.icon()+'<span>'+t.label+'</span></button>';
+      return "" +'<button class="navbtn'+(highlight===t.id?" active":"")+'" data-tab="'+t.id+'">'+t.icon()+'<span>'+t.label+'</span>'+(t.adminOnly?'<span class="admin-tag" title="'+esc(t.adminNote||"管理者専用のメニューです")+'">'+svgIcon('<path d="M12 3 5 6v5.5c0 4.3 2.9 7.6 7 9.5 4.1-1.9 7-5.2 7-9.5V6z"/>',11)+esc(t.adminLabel||"管理者")+'</span>':'')+'</button>';
     }).join("");
     var bn = document.getElementById("bottomnav");
     if(bn){
-      var BN = mobileNavTabs().filter(function(id){ var t = TABS.find(function(x){ return x.id===id; }); return t && tabVisible(t); }).map(function(id){ var t = TABS.find(function(x){ return x.id===id; }); return [id, BN_SHORT[id]||t.label, t.icon]; });
+      var BN = mobileNavTabs().filter(function(id){ var t = TABS.find(function(x){ return x.id===id; }); return t && tabVisible(t); }).map(function(id){ var t = TABS.find(function(x){ return x.id===id; }); return [id, BN_SHORT[id]||t.label, t.icon, !!t.adminOnly]; });
       var inBn = BN.some(function(x){ return x[0]===highlight; });
       bn.innerHTML = BN.map(function(x){
-        return '<button class="bn'+(highlight===x[0]?" on":"")+'" data-tab="'+x[0]+'">'+x[2]()+'<span>'+esc(x[1])+'</span></button>';
+        return '<button class="bn'+(highlight===x[0]?" on":"")+'" data-tab="'+x[0]+'">'+x[2]()+(x[3]?'<span class="admin-dot" title="管理者専用">'+svgIcon('<path d="m6 12.5 4 4 8-9"/>',9)+'</span>':'')+'<span>'+esc(x[1])+'</span></button>';
       }).join("")+'<button class="bn'+((!inBn||state.sidebarOpen)?" on":"")+'" id="bn-menu">'+iMenu()+'<span>メニュー</span></button>';
     }
     (function(){ var n = noticeCount(); if(db && !window.claude) syncAppBadge(n); document.getElementById("bell-icon").innerHTML = iBell()+(n? '<span class="bell-dot">'+(n>99?"99+":n)+'</span>':''); })();
@@ -3049,7 +3055,7 @@
       : S.ig==="checking" ? 'Instagram連携を確認中…'
       : (window.claude ? '<span style="color:var(--warning);font-weight:700">プレビュー表示です（実際の投稿はVercel版のみ）</span>'
         : '<span style="color:var(--danger);font-weight:700">Instagram連携が未設定です。「Instagramアカウント」から追加してください</span>');
-    var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><div><h1 class="pagetitle">SNS投稿</h1>'+
+    var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><div><h1 class="pagetitle">SNS投稿<span class="admin-chip">'+iAdmin()+'管理者専用</span></h1>'+
       '<div class="cell-sub" style="margin-top:4px">施工完了の案件から投稿の下書きを自動で作ります。承認すると、今すぐまたは予約した時刻にInstagramへ投稿されます。</div></div>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="sns-scan">候補を探す</button><button class="btn" id="sns-accts">Instagramアカウント</button><button class="btn" id="sns-rules">投稿ルール</button></div></div>'+
       '<div class="cell-sub" style="margin:8px 0 14px;font-size:12px">'+igLine+(snsCfg().autoDraft?'':' ／ 自動下書き：オフ')+'</div>';
@@ -5004,7 +5010,7 @@
     if(!cardsAllowed()) return emptyState(iUsers,"この画面を使える権限がありません","管理者に「名刺管理」の利用を許可してもらってください");
     if(db && !state.loaded.cards) return skeleton();
     var list = cardList(), all = state.cards||[];
-    var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">名刺管理</h1>'+
+    var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">名刺管理<span class="admin-chip">'+iAdmin()+'管理者・許可メンバーのみ</span></h1>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-card-new>'+iPlus()+' 名刺を登録</button><button class="btn" data-card-csv>'+iDownload()+' CSV出力</button>'+(state.isAdmin?'<button class="btn" data-card-access>'+iUsers()+' 利用メンバーの設定</button>':'')+'</div></div><div style="height:14px"></div>';
     html += '<div class="card filter-card"><div class="filter-line">'+
       '<div class="fitem" style="min-width:260px"><span>氏名・会社名・電話・メールなど</span><input type="text" id="card-search" value="'+esc(state.cardQuery||"")+'"></div>'+
