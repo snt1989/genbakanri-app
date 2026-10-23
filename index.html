@@ -2956,6 +2956,18 @@
       return p.status===cfg.trigger && !have[p.id] && ((p.endDate||p.updatedAt||p.createdAt||"").slice(0,10) >= cutoff) && snsPick(p, cfg.maxPhotos||10).length>0;
     });
   }
+  // AIで「集客につながる」投稿文を作る。案件の施工内容・工程・報告・メモ（個人情報は除去）を材料にする。失敗したら null を返し、定型文のままにする
+  function snsAiCall(extra){
+    var me = myMember();
+    return fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(Object.assign({action:"sns-ai", auth:{name:me.name, password:me.password||""}}, extra))}).then(function(r){ return r.json(); });
+  }
+  function snsAiCaption(p, v){
+    if(!db || window.claude || !myMember()) return Promise.resolve(null);
+    var cfg = snsCfg(), a = snsArea(p), o = {memo:"", company:cfg.company, extraTags:cfg.tags, area:!!cfg.area};
+    return snsAiCall({facts:{type:p.type||"", division:p.division||"", place: cfg.area ? (a.pref+a.city) : "", period:snsPeriod(p), memo: cfg.useReport ? snsAutoMemo(p) : "", company:cfg.company, tags:snsTags(p, o),
+      material:snsMaterial(p, {instr:true, steps:true, reports:true, memo:true}), style:["丁寧","元気","落ち着いた"][(v||0)%3]}})
+      .then(function(j){ return (j && j.text) ? String(j.text) : null; }).catch(function(){ return null; });
+  }
   function snsAutoScan(manual){
     var S = state.sns;
     if(S.scanning || !db || !state.isAdmin || !state.canWrite) return 0;
@@ -2970,7 +2982,18 @@
         projectId:p.id, projectName:p.name||"", caption:snsBuildCaption(p, n+i), fileIds:snsPick(p, cfg.maxPhotos||10),
         status:"draft", source:"auto", scheduledAt:"", createdAt:t, updatedAt:t, createdBy:state.myName||""
       });
-    })).then(function(){ toast("SNS投稿の下書きを"+list.length+"件作成しました。内容を確認して承認してください"); })
+    })).then(function(){
+      toast("SNS投稿の下書きを"+list.length+"件作成しました。AIで、集客向けの文章に書き直しています…");
+      // 先に定型文で下書きを作り、あとからAIの文章に差し替える（失敗したら定型文のまま）
+      list.forEach(function(p, i){
+        var base = snsBuildCaption(p, n+i);
+        snsAiCaption(p, n+i).then(function(txt){
+          if(!txt) return;
+          var cur = snsGet("auto_"+p.id);
+          if(cur && cur.status==="draft" && cur.caption===base) snsSet("auto_"+p.id, {caption:txt, aiWritten:true}).catch(function(){});
+        });
+      });
+    })
       .catch(function(){ toast("SNS投稿の下書きを作れませんでした"); })
       .then(function(){ S.scanning = false; });
     return list.length;
@@ -3159,11 +3182,19 @@
       '<div id="sns-e-ph" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px">'+
       (order.length ? order.map(function(f){ return '<label style="position:relative;display:block;cursor:pointer"><img src="'+esc(f.url)+'" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block"><input type="checkbox" class="sns-e-p" value="'+esc(f.id)+'"'+(sel.indexOf(f.id)!==-1?' checked':'')+(ro?' disabled':'')+' style="position:absolute;top:5px;left:5px;width:20px;height:20px"></label>'; }).join("")
         : '<div class="cell-sub">この案件にJPEGの写真がありません。</div>')+'</div>',
-      '<button class="btn" data-close-modal>閉じる</button>'+(ro?'':'<button class="btn" id="sns-e-next">別の文面にする</button><button class="btn" id="sns-e-prev">プレビュー</button><button class="btn primary" id="sns-e-save">保存する</button>'));
+      '<button class="btn" data-close-modal>閉じる</button>'+(ro?'':'<button class="btn" id="sns-e-ai">AIで書き直す</button><button class="btn" id="sns-e-next">定型文にする</button><button class="btn" id="sns-e-prev">プレビュー</button><button class="btn primary" id="sns-e-save">保存する</button>'));
     if(ro) return;
     document.getElementById("sns-e-prev").addEventListener("click", function(){
       var ids = Array.prototype.map.call(document.querySelectorAll(".sns-e-p:checked"), function(c){ return c.value; });
       openSnsPreview(x, {caption:document.getElementById("sns-e-cap").value, fileIds:ids});
+    });
+    document.getElementById("sns-e-ai").addEventListener("click", function(){
+      if(!p) return; var b = this, ta = document.getElementById("sns-e-cap");
+      if(ta.value.trim() && x.caption && ta.value!==x.caption && !window.confirm("いま編集している文章は、AIの文章に置き換わります。よろしいですか？")) return;
+      st.v++; b.disabled = true; b.textContent = "作成中…（10秒ほど）";
+      snsAiCaption(p, state.snsPosts.length + st.v).then(function(txt){
+        if(txt){ ta.value = txt; toast("AIで作成しました。内容を確認してください"); } else toast("AIでの作成に失敗しました。もう一度お試しください");
+      }).then(function(){ b.disabled = false; b.textContent = "AIで書き直す"; });
     });
     document.getElementById("sns-e-next").addEventListener("click", function(){
       if(!p) return; st.v++;
