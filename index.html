@@ -1499,6 +1499,7 @@
       {t:"案件から社用車管理アプリを開くと、行先に現場名が入ります", d:"案件の詳細画面の「連携アプリ」で「社用車管理」を押すと、出発登録が開き、行先にその案件の現場名が、事業部が同じ名前で登録されていれば事業部も自動で入ります（運転者としてログインしていない場合は、ログイン後に開きます）。社用車管理アプリ側では、行先の入力は必須ではなくなりました。同じ氏名の運転者が社用車管理アプリにいれば、ログインも引き継ぎます（SSO.md の設定が必要です）。"}
     ]},
     {id:"2026-10-22-1", title:"10月22日の更新", items:[
+      {t:"案件一覧の担当者の絞り込みを、管理者とその他に分けました", d:"営業案件一覧・施工案件一覧の「進捗・担当者で絞り込み」で、メンバーが「管理者」と「その他」の2つに分かれて表示されます。それぞれ「この区分をまとめて選択」で一括して絞り込めます。"},
       {t:"依頼したタスクを、相手が完了したか確認できます", d:"他の人を担当者にしてタスクを作ると、タスク管理の「自分が依頼」で一覧を見られ、担当者の欄に「未完了（相手の対応待ち）」または「相手が完了（日時）」が出ます。相手が完了すると、依頼した人のベルのお知らせとスマホ通知に「依頼したタスクが完了しました」が届きます。この更新のあとに作ったタスクから対象になります。"},
       {t:"タスクのお知らせは、自分が担当のものだけになりました", d:"ベルのお知らせとアプリのバッジに出るタスクが、管理者でも自分が担当のものだけになります（これまでは管理者に全員分が出ていました）。スマホ通知は、もともと担当者本人にだけ届きます。"},
       {t:"保存できていない変更を見逃さないようにしました", d:"案件の進捗などを変更したとき、サーバーに本当に保存できたことを確認してから、LINE WORKS・アプリの通知を送ります。保存に時間がかかっている間は「サーバーに保存中」と表示し、保存できなかった場合は赤い帯でお知らせします。保存中に画面を閉じようとすると確認が出ます。"}
@@ -3407,9 +3408,13 @@
     html += '<div class="fitem"><span>案件の進捗</span><div class="checkgroup">'+STATUS_LIST.map(function(s){
       return '<label class="checkopt"><input type="checkbox" class="flt-status" value="'+esc(s)+'"'+(f.status.indexOf(s)!==-1?" checked":"")+'>'+esc(s)+'</label>';
     }).join("")+'</div></div>';
-    html += '<div class="fitem"><span>担当者で絞り込み</span><div style="display:flex;gap:6px;margin:2px 0 6px"><button type="button" class="btn sm" data-assignee-me>自分の案件のみ</button><button type="button" class="btn sm" data-assignee-all>全員を表示</button></div><div class="checkgroup">'+state.members.map(function(m){
-      return '<span class="chip-toggle'+(f.assignees.indexOf(m.name)!==-1?" on":"")+'" data-assignee-chip="'+esc(m.name)+'">'+esc(m.name)+'</span>';
-    }).join("")+'</div></div>';
+    html += '<div class="fitem"><span>担当者で絞り込み</span><div style="display:flex;gap:6px;margin:2px 0 6px"><button type="button" class="btn sm" data-assignee-me>自分の案件のみ</button><button type="button" class="btn sm" data-assignee-all>全員を表示</button></div>'+(function(){
+      var chip=function(m){ return '<span class="chip-toggle'+(f.assignees.indexOf(m.name)!==-1?" on":"")+'" data-assignee-chip="'+esc(m.name)+'">'+esc(m.name)+'</span>'; };
+      var isAd=function(m){ return m.permission==="admin" || m.isAdmin===true; };
+      var ad=state.members.filter(isAd), ot=state.members.filter(function(m){ return !isAd(m); });
+      var grp=function(label,list,key){ return list.length ? '<div style="margin-top:6px"><div style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--ink-soft);margin-bottom:4px">'+label+'（'+list.length+'）<button type="button" class="btn sm" data-assignee-grp="'+key+'">この区分をまとめて選択</button></div><div class="checkgroup">'+list.map(chip).join("")+'</div></div>' : ""; };
+      return grp("管理者",ad,"admin")+grp("その他",ot,"other");
+    })()+'</div>';
     html += '</div></details>';
     html += '</div>';
 
@@ -9670,6 +9675,11 @@
       });
       c.querySelectorAll("[data-assignee-me]").forEach(function(b){ b.addEventListener("click", function(){ f.assignees = state.myName ? [state.myName] : []; f.page = 1; render(); }); });
       c.querySelectorAll("[data-assignee-all]").forEach(function(b){ b.addEventListener("click", function(){ f.assignees = []; f.page = 1; render(); }); });
+      c.querySelectorAll("[data-assignee-grp]").forEach(function(btn){ btn.addEventListener("click", function(){
+        var want = btn.getAttribute("data-assignee-grp")==="admin";
+        f.assignees = state.members.filter(function(m){ return (m.permission==="admin"||m.isAdmin===true)===want; }).map(function(m){ return m.name; });
+        f.page = 1; render();
+      }); });
       c.querySelectorAll("[data-assignee-chip]").forEach(function(chip){
         chip.addEventListener("click", function(){
           var name = chip.getAttribute("data-assignee-chip");
