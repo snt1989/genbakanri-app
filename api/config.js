@@ -338,9 +338,78 @@ async function ssoHandler(req, res){
   }
 }
 
+// ---- 予約投稿の定期実行（Vercel Cron が GET /api/config?snscron=1 を呼ぶ。vercel.json）----
+// 管理者がアプリを開いている間は画面側が時刻どおりに投稿する。閉じている間の分を、ここで拾って投稿する。
+// 画面側が先に処理できるよう、予約時刻から10分以上たった投稿だけを対象にする。
+async function igPublishScheduled(host, pd, ids, caption){
+  var exp = String(Date.now() + 30 * 60000), urls = [];
+  for(var i = 0; i < ids.length; i++){
+    if(!/^[A-Za-z0-9_-]{4,64}$/.test(ids[i])) throw new Error("写真の指定が正しくありません");
+    var fd = await W.getDoc("files/" + ids[i]);
+    if(!fd || fd.projectId !== pd.id || !/^data:image\/jpeg;base64,/.test(String(fd.url || ""))) throw new Error("JPEG形式のこの案件の写真だけ投稿できます");
+    urls.push("https://" + host + "/api/config?igimg=" + ids[i] + "&exp=" + exp + "&sig=" + igSig(ids[i], exp));
+  }
+  var uid = F.env("IG_USER_ID"), creation;
+  if(urls.length === 1){
+    creation = (await igGraph(uid + "/media", "POST", {image_url: urls[0], caption: caption})).id;
+  }else{
+    var kids = [];
+    for(var k = 0; k < urls.length; k++){ var c = await igGraph(uid + "/media", "POST", {image_url: urls[k], is_carousel_item: "true"}); await igWait(c.id); kids.push(c.id); }
+    creation = (await igGraph(uid + "/media", "POST", {media_type: "CAROUSEL", children: kids.join(","), caption: caption})).id;
+  }
+  await igWait(creation);
+  var pub = await igGraph(uid + "/media_publish", "POST", {creation_id: creation});
+  var link = "";
+  try{ link = (await igGraph(pub.id, "GET", {fields: "permalink"})).permalink || ""; }catch(e){}
+  return link;
+}
+async function snsCronHandler(req, res){
+  res.setHeader("Cache-Control", "no-store");
+  var secret = F.env("CRON_SECRET");
+  if(!secret) return res.status(503).json({error: "CRON_SECRET が未設定です"});
+  if(!F.safeEq(req.headers.authorization || "", "Bearer " + secret)) return res.status(401).json({error: "unauthorized"});
+  try{
+    if(!igEnabled()) return res.status(200).json({skipped: "instagram not configured"});
+    var host = F.env("APP_HOST") || F.env("VERCEL_PROJECT_PRODUCTION_URL") || String(req.headers["x-forwarded-host"] || req.headers.host || "");
+    if(!host) return res.status(200).json({skipped: "host"});
+    var t0 = Date.now(), now = Date.now(), iso = function(){ return new Date().toISOString(); };
+    var docs = await W.listDocs("snsPosts"), posted = 0, failed = 0;
+    // 投稿中のまま15分以上たったもの：結果が分からないので、二重投稿を避けて「要確認」にする
+    var stuck = docs.filter(function(x){ return x.status === "posting" && now - Date.parse(x.updatedAt || 0) > 15 * 60000; });
+    for(var s = 0; s < stuck.length; s++){
+      await W.patchDoc("snsPosts/" + stuck[s].id, {status: "failed", error: "投稿の結果が確認できませんでした。Instagramで確認してから再投稿してください", updatedAt: iso()});
+    }
+    var due = docs.filter(function(x){ return x.status === "scheduled" && x.scheduledAt && Date.parse(x.scheduledAt) <= now - 10 * 60000; })
+      .sort(function(a, b){ return String(a.scheduledAt).localeCompare(String(b.scheduledAt)); });
+    for(var i = 0; i < due.length && i < 3; i++){
+      if(Date.now() - t0 > 12000) break;   // 実行時間の上限（30秒）に余裕を持たせる。残りは次回
+      var x = due[i];
+      await W.patchDoc("snsPosts/" + x.id, {status: "posting", error: "", updatedAt: iso()});
+      try{
+        var ids = (Array.isArray(x.fileIds) ? x.fileIds : []).map(String).slice(0, 10);
+        var caption = String(x.caption || "").slice(0, 2200);
+        if(!ids.length || !caption.trim()) throw new Error("写真または投稿文がありません");
+        var pd = await W.getDoc("projects/" + encodeURIComponent(String(x.projectId || "")));
+        if(!pd || !pd.id) throw new Error("案件が見つかりません");
+        var link = await igPublishScheduled(host, pd, ids, caption);
+        await W.patchDoc("snsPosts/" + x.id, {status: "posted", postedAt: iso(), permalink: link, error: "", updatedAt: iso()});
+        posted++;
+      }catch(e){
+        failed++;
+        await W.patchDoc("snsPosts/" + x.id, {status: "failed", error: String(e.message || e).slice(0, 300), updatedAt: iso()}).catch(function(){});
+      }
+    }
+    return res.status(200).json({posted: posted, failed: failed, waiting: Math.max(0, due.length - posted - failed)});
+  }catch(e){
+    console.error("sns cron", e.message);
+    return res.status(500).json({error: e.message});
+  }
+}
+
 module.exports = async function handler(req, res) {
   if(req.method === "OPTIONS"){ setCors(res); res.statusCode = 204; return res.end(); }
   if(req.method === "POST") return ssoHandler(req, res);
+  if(req.method === "GET" && req.query && req.query.snscron) return snsCronHandler(req, res);
   if(req.method === "GET" && req.query && req.query.igimg){ try{ return await igImageHandler(req, res); }catch(e){ return res.status(500).end("error"); } }
 
   var cfg = {

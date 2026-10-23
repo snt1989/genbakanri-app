@@ -1133,6 +1133,7 @@
     {id:"customers", label:"顧客管理", icon:iBriefcase2},
     {id:"cards", label:"名刺管理", icon:iCardIcon, adminOnly:true},
     {id:"files", label:"写真・ファイル", icon:iImage},
+    {id:"sns", label:"SNS投稿", icon:iShare, adminOnly:true},
     {id:"settings", label:"設定", icon:iBox}
   ];
   function iCardIcon(){ return svgIcon('<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6 16c.5-1.4 1.7-2 3-2s2.5.6 3 2"/><path d="M14.5 10h3.5M14.5 13.5h2.5"/>'); }
@@ -1180,9 +1181,9 @@
     fltMoreOpen:false,
     chatPaneOpen:false,
     tab:"home", returnTab:"sales",
-    projects:[], customers:[], members:[], tasks:[], chats:[], files:[], folders:[], events:[], steps:[], trash:[], reports:[], cards:[],
+    projects:[], customers:[], members:[], tasks:[], chats:[], files:[], folders:[], events:[], steps:[], trash:[], reports:[], cards:[], snsPosts:[],
     lazyOn:{},
-    loaded:{projects:false,customers:false,members:false,tasks:false,chats:false,files:false,folders:false,events:false,steps:false,trash:false,reports:false,cards:false},
+    loaded:{projects:false,customers:false,members:false,tasks:false,chats:false,files:false,folders:false,events:false,steps:false,trash:false,reports:false,cards:false,snsPosts:false},
     canWrite:true,
     sidebarOpen:false,
     salesFilter:{name:"",status:STATUS_LIST.slice(),type:"all",assignees:[],page:1},
@@ -2052,7 +2053,8 @@
     files:   {order:"uploadedAt"},
     folders: {},
     trash:   {},
-    cards:   {}
+    cards:   {},
+    snsPosts:{}
   };
   var lazyUnsub = {};
   state.lazyScope = state.lazyScope || {};
@@ -2091,6 +2093,8 @@
     if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1){ lazyStart("files"); lazyStart("folders"); lazyStart("trash"); }
     if(t==="settings" && seg==="trash") lazyStart("trash");
     if(t==="cards" && cardsAllowed()) lazyStart("cards");
+    if(state.isAdmin) lazyStart("snsPosts");
+    if(t==="sns" && state.isAdmin){ lazyStart("files"); lazyStart("folders"); }
     if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1 && state.isAdmin) lazyStart("cards");
   }
   // バックアップ前：未読み込みのコレクションがあれば読み込みを始めて false を返す（欠けたまま保存しない）
@@ -2113,7 +2117,7 @@
     Promise.race([Promise.all(jobs), new Promise(function(r){ setTimeout(r, 3000); })]).then(go, go);
   }
   /* ---- データの同期状況（画面右上の「同期」表示） ---- */
-  var SYNC_NAMES = {projects:"案件",customers:"顧客",members:"メンバー",tasks:"タスク",chats:"チャット",reports:"報告書",events:"予定",steps:"工程",files:"ファイル",folders:"フォルダ",cards:"名刺",trash:"ゴミ箱"};
+  var SYNC_NAMES = {projects:"案件",customers:"顧客",members:"メンバー",tasks:"タスク",chats:"チャット",reports:"報告書",events:"予定",steps:"工程",files:"ファイル",folders:"フォルダ",cards:"名刺",trash:"ゴミ箱",snsPosts:"SNS投稿"};
   var syncInfo = {subs:{}, lastServer:0, online:(typeof navigator.onLine==="boolean" ? navigator.onLine : true), timer:0};
   window.__syncNote = function(path, fromCache, pending, size, err){
     var o = syncInfo.subs[path] || (syncInfo.subs[path] = {});
@@ -2847,6 +2851,7 @@
         '<span style="font-size:12.5px;color:var(--ink-soft)">データの同期に時間がかかっています。空の状態で表示している可能性があります。</span>'+
         '<button class="btn sm" id="retry-sync-btn">再読み込み</button></div>';
     }
+    if(state.tab==="home") banner += snsHomeBanner();
     if(state.tab==="home" || state.tab==="sales" || state.tab==="construction") banner += a2hsBanner() + (a2hsShow() ? "" : pushOffBanner());
     if(state.tab==="home") c.innerHTML = banner+renderHome();
     else if(state.tab==="sales") c.innerHTML = banner+renderProjectList("sales");
@@ -2863,11 +2868,13 @@
     else if(state.tab==="help") c.innerHTML = banner+renderHelpPage();
     else if(state.tab==="apps") c.innerHTML = banner+renderAppsPage();
     else if(state.tab==="settings") c.innerHTML = banner+renderSettings();
+    else if(state.tab==="sns") c.innerHTML = banner+renderSns();
     else if(state.tab==="project-form") c.innerHTML = banner+renderProjectForm();
     else if(state.tab==="project-detail") c.innerHTML = banner+renderProjectDetail();
     else if(state.tab==="project-files") c.innerHTML = banner+renderProjectFiles();
     else if(state.tab==="member-form") c.innerHTML = banner+renderMemberForm();
     bindEvents();
+    if(state.tab==="sns") bindSns();
     c.querySelectorAll("[data-report-open]").forEach(function(a){ a.addEventListener("click", function(ev){ if(!db || window.claude || !myMember()) return; ev.preventDefault(); openReportApp("", a.getAttribute("href")); }); });   // 連携アプリのページから開くときも、ログイン情報つきで開く（アプリの中で案件を選べる）
     c.querySelectorAll("[data-report-project]").forEach(function(el){ el.addEventListener("click", function(){ openReportApp(el.getAttribute("data-report-project")); }); });
     var ur = document.getElementById("usage-refresh"); if(ur) ur.addEventListener("click", function(){ usageLoad(); });
@@ -2878,6 +2885,288 @@
     document.querySelectorAll("#content .segmented").forEach(function(sg){ var on = sg.querySelector(".segopt.active"); if(on && sg.scrollWidth>sg.clientWidth) sg.scrollLeft = Math.max(0, on.offsetLeft - (sg.clientWidth-on.offsetWidth)/2); });
     if(state.tab==="chat") scrollChatToBottom();
     formLive = (state.tab==="project-form" || state.tab==="member-form") && !!c.querySelector("input, textarea, select");
+  }
+
+  /* ============ SNS自動投稿（候補の案件から下書きを自動作成 → 管理者が承認 → 今すぐ／予約でInstagramへ投稿） ============ */
+  // 保存先：snsPosts コレクション ／ 設定：settings/sns
+  // 投稿の仕組みは「Instagram投稿文を作る」と同じ（/api/config の sns-ig）。投稿は必ず管理者の承認後です。
+  function iShare(){ return svgIcon('<circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.3 10.7l7.4-4.4M8.3 13.3l7.4 4.4"/>'); }
+  var SNS_ST = {
+    draft:["承認待ち","var(--warning)","var(--warning-soft)"], scheduled:["予約中","var(--info)","var(--info-soft)"],
+    posting:["投稿中","var(--info)","var(--info-soft)"], posted:["投稿済み","var(--success)","var(--success-soft)"],
+    failed:["要確認","var(--danger)","var(--danger-soft)"], skipped:["見送り","var(--ink-soft)","var(--surface-2)"]
+  };
+  var SNS_DEF = {autoDraft:true, trigger:"施工完了", company:"", tags:"", area:true, maxPhotos:10, hour:12, useReport:true, days:60};
+  state.sns = {cfg:null, cfgLoading:false, ig:null, filter:"draft", running:false, scanning:false};
+
+  function snsCfg(){ return Object.assign({}, SNS_DEF, state.sns.cfg || {}); }
+  function snsNow(){ return new Date().toISOString(); }
+  function snsFmt(iso){
+    if(!iso) return ""; var d = new Date(iso); if(isNaN(d)) return "";
+    return (d.getMonth()+1)+"/"+d.getDate()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+  }
+  function snsLoadCfg(){
+    var S = state.sns; if(!db || S.cfg || S.cfgLoading) return;
+    S.cfgLoading = true;
+    db.doc("settings/sns").get().then(function(snap){ S.cfg = snap.exists ? (snap.data()||{}) : {}; }).catch(function(){ S.cfg = {}; }).then(function(){ S.cfgLoading = false; render(); });
+  }
+  function snsIgCall(extra){
+    var me = myMember();
+    return fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(Object.assign({action:"sns-ig", auth:{name:me.name, password:me.password||""}}, extra))}).then(function(r){ return r.json(); });
+  }
+  // Instagram連携（IG_USER_ID / IG_ACCESS_TOKEN）が有効かどうかを一度だけ確認する
+  function snsProbe(){
+    var S = state.sns; if(S.ig !== null) return;
+    if(!db || window.claude){ S.ig = false; return; }
+    if(!myMember()) return;
+    S.ig = "checking";
+    snsIgCall({probe:true}).then(function(j){ S.ig = !!(j && j.enabled); }).catch(function(){ S.ig = false; }).then(function(){ render(); });
+  }
+  function snsPhotoById(id){ return state.files.filter(function(f){ return f.id===id; })[0]; }
+  // 写真の自動選び：作業前(最大3割)→作業中→作業後(最大5割)の順。現地調査フォルダの写真は使わない
+  function snsPick(p, max){
+    var all = snsPhotoList(p), fol = foldersForProject(p.id);
+    var fid = function(n){ var g = fol.filter(function(x){ return x.name===n; })[0]; return g ? g.id : null; };
+    var of = function(id){ return id ? all.filter(function(f){ return f.folderId===id; }) : []; };
+    var B = of(fid("作業前")), M = of(fid("作業中")), A = of(fid("作業後")), skip = fid("現地調査");
+    var nb = Math.min(B.length, Math.floor(max*0.3)), na = Math.min(A.length, Math.ceil(max*0.5)), nm = Math.max(0, Math.min(M.length, max-nb-na));
+    var out = [].concat(B.slice(0,nb), M.slice(0,nm), A.slice(0,na)), used = {};
+    out.forEach(function(f){ used[f.id] = 1; });
+    all.forEach(function(f){ if(out.length<max && !used[f.id] && !(skip && f.folderId===skip)){ out.push(f); used[f.id] = 1; } });
+    var bId = fid("作業前"), mId = fid("作業中"), aId = fid("作業後");
+    var rank = function(f){ return f.folderId===bId ? 0 : f.folderId===mId ? 1 : f.folderId===aId ? 3 : 2; };
+    return out.slice(0, max).map(function(f, i){ return {f:f, i:i}; }).sort(function(a,b){ return rank(a.f)-rank(b.f) || a.i-b.i; }).map(function(o){ return o.f.id; });
+  }
+  function snsAutoMemo(p){
+    var rp = state.reports.filter(function(x){ return x.projectId===p.id && secretVisible(x) && (x.result||x.content); })
+      .sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")); })[0];
+    if(!rp) return "";
+    var s = snsScrub(p, rp.result || rp.content).split(/[。\n]/)[0].trim();
+    return s ? s.slice(0,80)+"。" : "";
+  }
+  function snsBuildCaption(p, v){
+    var cfg = snsCfg();
+    return snsText(p, {memo: cfg.useReport ? snsAutoMemo(p) : "", company:cfg.company, extraTags:cfg.tags, area:!!cfg.area}, v||0);
+  }
+  // 候補：「施工完了」になった案件のうち、まだ投稿の記録がなく、使える写真がある案件
+  function snsCandidates(){
+    var cfg = snsCfg(), have = {}, cutoff = addDays(todayISO(), -(cfg.days||60));
+    state.snsPosts.forEach(function(x){ have[x.projectId] = 1; });
+    return state.projects.filter(function(p){
+      return p.status===cfg.trigger && !have[p.id] && ((p.endDate||p.updatedAt||p.createdAt||"").slice(0,10) >= cutoff) && snsPick(p, cfg.maxPhotos||10).length>0;
+    });
+  }
+  function snsAutoScan(manual){
+    var S = state.sns;
+    if(S.scanning || !db || !state.isAdmin || !state.canWrite) return 0;
+    if(!(state.loaded.projects && state.loaded.files && state.loaded.folders && state.loaded.snsPosts && state.loaded.reports)) return 0;
+    if(S.cfg===null) return 0;
+    var cfg = snsCfg(); if(!cfg.autoDraft && !manual) return 0;
+    var list = snsCandidates().slice(0, 5); if(!list.length) return 0;
+    S.scanning = true;
+    var n = state.snsPosts.length, t = snsNow();
+    Promise.all(list.map(function(p, i){
+      return db.collection("snsPosts").doc("auto_"+p.id).set({
+        projectId:p.id, projectName:p.name||"", caption:snsBuildCaption(p, n+i), fileIds:snsPick(p, cfg.maxPhotos||10),
+        status:"draft", source:"auto", scheduledAt:"", createdAt:t, updatedAt:t, createdBy:state.myName||""
+      });
+    })).then(function(){ toast("SNS投稿の下書きを"+list.length+"件作成しました。内容を確認して承認してください"); })
+      .catch(function(){ toast("SNS投稿の下書きを作れませんでした"); })
+      .then(function(){ S.scanning = false; });
+    return list.length;
+  }
+  function snsSet(id, patch){ return db.collection("snsPosts").doc(id).update(Object.assign({}, patch, {updatedAt:snsNow()})); }
+  function snsPostNow(post){
+    var S = state.sns;
+    if(!db || window.claude || !myMember()){ toast("Instagramへの投稿は、Vercel版（本番）に管理者でログインしているときだけ使えます"); return Promise.resolve(false); }
+    var ids = (post.fileIds||[]).slice(0,10);
+    if(!ids.length){ toast("写真が選ばれていません"); return Promise.resolve(false); }
+    if(!String(post.caption||"").trim()){ toast("投稿文が空です"); return Promise.resolve(false); }
+    return snsSet(post.id, {status:"posting", error:""}).then(function(){
+      return snsIgCall({projectId:post.projectId, fileIds:ids, caption:post.caption});
+    }).then(function(j){
+      if(j && j.ok){ toast("Instagramに投稿しました"); return snsSet(post.id, {status:"posted", postedAt:snsNow(), permalink:j.permalink||"", error:""}).then(function(){ return true; }); }
+      return snsSet(post.id, {status:"failed", error:String((j&&(j.detail||j.error))||"不明なエラー").slice(0,300)}).then(function(){ toast("投稿できませんでした"); return false; });
+    }).catch(function(){
+      return snsSet(post.id, {status:"failed", error:"通信エラー。すでに投稿されている可能性があるので、Instagramで確認してから再投稿してください"}).then(function(){ toast("投稿できませんでした（通信エラー）"); return false; }).catch(function(){ return false; });
+    });
+  }
+  // 予約の時刻になった投稿を、アプリを開いている管理者の端末から1件ずつ投稿する
+  function snsRunDue(){
+    var S = state.sns;
+    if(!db || window.claude || !state.isAdmin || !state.canWrite || S.ig!==true || S.running || !state.loaded.snsPosts) return;
+    var now = Date.now();
+    var stuck = state.snsPosts.filter(function(x){ return x.status==="posting" && now - Date.parse(x.updatedAt||0) > 15*60000; })[0];
+    if(stuck){ snsSet(stuck.id, {status:"failed", error:"投稿の結果が確認できませんでした。Instagramで確認してから再投稿してください"}).catch(function(){}); return; }
+    var due = state.snsPosts.filter(function(x){ return x.status==="scheduled" && x.scheduledAt && Date.parse(x.scheduledAt) <= now; })
+      .sort(function(a,b){ return String(a.scheduledAt).localeCompare(String(b.scheduledAt)); })[0];
+    if(!due) return;
+    S.running = true;
+    snsPostNow(due).then(function(){}).catch(function(){}).then(function(){ S.running = false; });
+  }
+  setInterval(snsRunDue, 60000);
+
+  function snsHomeBanner(){
+    if(!state.isAdmin || !state.loaded.snsPosts) return "";
+    var n = state.snsPosts.filter(function(x){ return x.status==="draft"; }).length, f = state.snsPosts.filter(function(x){ return x.status==="failed"; }).length;
+    if(!n && !f) return "";
+    return '<div class="card" style="padding:12px 16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:10px;border-color:var(--accent)">'+
+      '<span style="font-size:12.5px"><b>SNS投稿</b>：'+(n?'承認待ちの下書きが <b>'+n+'件</b> あります':'')+(n&&f?'／':'')+(f?'要確認の投稿が <b>'+f+'件</b> あります':'')+'</span>'+
+      '<button class="btn sm primary" data-goto="sns">確認する</button></div>';
+  }
+
+  function renderSns(){
+    if(!state.isAdmin) return emptyState(iShare, "SNS投稿は管理者だけが使えます", "");
+    var S = state.sns;
+    setTimeout(function(){ snsLoadCfg(); snsProbe(); snsAutoScan(false); }, 0);
+    if(!state.loaded.snsPosts || !state.loaded.projects || !state.loaded.files || !state.loaded.folders) return skeleton();
+    var posts = state.snsPosts.slice(), cnt = {draft:0, scheduled:0, posted:0, failed:0, skipped:0};
+    posts.forEach(function(x){ var k = x.status==="posting" ? "scheduled" : x.status; if(cnt[k]!=null) cnt[k]++; });
+    var igLine = S.ig===true ? '<span style="color:var(--success);font-weight:700">Instagram連携：有効</span>'
+      : S.ig==="checking" ? 'Instagram連携を確認中…'
+      : (window.claude ? '<span style="color:var(--warning);font-weight:700">プレビュー表示です（実際の投稿はVercel版のみ）</span>'
+        : '<span style="color:var(--danger);font-weight:700">Instagram連携が未設定です（サーバーに IG_USER_ID / IG_ACCESS_TOKEN を登録してください）</span>');
+    var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><div><h1 class="pagetitle">SNS投稿</h1>'+
+      '<div class="cell-sub" style="margin-top:4px">施工完了の案件から投稿の下書きを自動で作ります。承認すると、今すぐまたは予約した時刻にInstagramへ投稿されます。</div></div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="sns-scan">候補を探す</button><button class="btn" id="sns-rules">投稿ルール</button></div></div>'+
+      '<div class="cell-sub" style="margin:8px 0 14px;font-size:12px">'+igLine+(snsCfg().autoDraft?'':' ／ 自動下書き：オフ')+'</div>';
+    var tabs = [["draft","承認待ち"],["scheduled","予約中"],["failed","要確認"],["posted","投稿済み"],["skipped","見送り"],["all","すべて"]];
+    html += '<div class="segmented" style="margin-bottom:14px">'+tabs.map(function(x){
+      var n = x[0]==="all" ? posts.length : cnt[x[0]];
+      return '<div class="segopt'+(S.filter===x[0]?' active':'')+'" data-sns-filter="'+x[0]+'">'+x[1]+' '+n+'</div>';
+    }).join("")+'</div>';
+    var list = posts.filter(function(x){ var k = x.status==="posting" ? "scheduled" : x.status; return S.filter==="all" || k===S.filter; });
+    list.sort(function(a,b){
+      if(S.filter==="scheduled") return String(a.scheduledAt||"").localeCompare(String(b.scheduledAt||""));
+      return String(b.createdAt||"").localeCompare(String(a.createdAt||""));
+    });
+    if(!list.length){
+      var cand = snsCandidates().length;
+      return html + emptyState(iShare, S.filter==="draft" ? "承認待ちの投稿はありません" : "該当する投稿はありません",
+        S.filter==="draft" ? (cand ? "投稿の候補が"+cand+"件あります。「候補を探す」で下書きを作れます" : "案件が「"+snsCfg().trigger+"」になり、写真がそろうと、自動で下書きができます") : "");
+    }
+    html += list.map(snsCard).join("");
+    return html;
+  }
+  function snsCard(x){
+    var st = SNS_ST[x.status] || ["不明","var(--ink-soft)","var(--surface-2)"], p = state.projects.filter(function(q){ return q.id===x.projectId; })[0];
+    var ids = x.fileIds || [], thumbs = ids.slice(0,4).map(function(id){ var f = snsPhotoById(id);
+      return f ? '<img src="'+esc(f.url)+'" style="width:62px;height:62px;object-fit:cover;border-radius:6px;display:block">' : '<div style="width:62px;height:62px;border-radius:6px;background:var(--surface-2)"></div>'; }).join("");
+    var more = ids.length>4 ? '<div style="width:62px;height:62px;border-radius:6px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--ink-soft)">+'+(ids.length-4)+'</div>' : "";
+    var meta = [];
+    if(x.status==="scheduled" || x.status==="posting") meta.push("予約："+snsFmt(x.scheduledAt));
+    if(x.status==="posted") meta.push("投稿："+snsFmt(x.postedAt));
+    meta.push("写真 "+ids.length+"枚"); meta.push("作成 "+snsFmt(x.createdAt)+(x.source==="auto"?"（自動）":""));
+    var B = function(act, label, cls){ return '<button class="btn sm'+(cls?' '+cls:'')+'" data-sns-act="'+act+'" data-sns-id="'+esc(x.id)+'">'+label+'</button>'; };
+    var acts = [];
+    if(x.status==="draft") acts = [B("edit","確認・編集"), B("now","承認して今すぐ投稿","primary"), B("sched","承認して予約"), B("skip","見送る")];
+    else if(x.status==="scheduled") acts = [B("edit","確認・編集"), B("now","今すぐ投稿","primary"), B("unsched","予約を取り消す")];
+    else if(x.status==="failed") acts = [B("edit","確認・編集"), B("now","再投稿","primary"), B("restore","下書きに戻す")];
+    else if(x.status==="skipped") acts = [B("restore","下書きに戻す")];
+    else if(x.status==="posted") acts = [x.permalink ? '<a class="btn sm" href="'+esc(x.permalink)+'" target="_blank" rel="noopener">Instagramで見る</a>' : "", B("edit","内容を見る")];
+    return '<div class="card" style="padding:14px 16px;margin-bottom:12px"><div style="display:flex;gap:14px;flex-wrap:wrap">'+
+      '<div style="display:flex;gap:6px;flex:none;align-content:flex-start;flex-wrap:wrap;max-width:260px">'+thumbs+more+'</div>'+
+      '<div style="flex:1;min-width:220px"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:14px">'+esc((p&&p.name)||x.projectName||"（案件なし）")+'</b>'+
+      '<span class="badge" style="color:'+st[1]+';background:'+st[2]+'">'+st[0]+'</span></div>'+
+      '<div class="cell-sub" style="margin:3px 0 8px">'+esc(meta.join("　"))+'</div>'+
+      '<div style="font-size:12.5px;line-height:1.7;white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden">'+esc(x.caption||"")+'</div>'+
+      (x.error?'<div style="margin-top:8px;font-size:12px;color:var(--danger)">'+esc(x.error)+'</div>':'')+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+acts.join("")+'</div></div></div></div>';
+  }
+  function snsGet(id){ return state.snsPosts.filter(function(x){ return x.id===id; })[0]; }
+  function snsDefaultTime(){
+    var h = snsCfg().hour, d = new Date(); d.setSeconds(0,0); d.setHours(h, 0);
+    if(d.getTime() <= Date.now() + 30*60000) d.setDate(d.getDate()+1);
+    var z = function(n){ return String(n).padStart(2,"0"); };
+    return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate())+"T"+z(d.getHours())+":"+z(d.getMinutes());
+  }
+  function snsAct(act, id){
+    var x = snsGet(id); if(!x || !state.canWrite) return;
+    var go = function(patch, msg){ snsSet(id, patch).then(function(){ if(msg) toast(msg); }).catch(function(){ toast("保存に失敗しました"); }); };
+    if(act==="edit") return openSnsEdit(x);
+    if(act==="skip") return go({status:"skipped"}, "見送りにしました");
+    if(act==="restore") return go({status:"draft", error:"", scheduledAt:""}, "下書きに戻しました");
+    if(act==="unsched") return go({status:"draft", scheduledAt:""}, "予約を取り消しました");
+    if(act==="sched") return openSnsSchedule(x);
+    if(act==="now"){
+      var warn = x.status==="failed" && /通信エラー|確認できませんでした/.test(x.error||"") ? "\n\n※前回は結果が確認できていません。すでに投稿されていないか、Instagramで確認しましたか？" : "";
+      if(!window.confirm("Instagramに投稿します。\n写真"+(x.fileIds||[]).length+"枚と、投稿文が公開されます。よろしいですか？"+warn)) return;
+      snsPostNow(x);
+    }
+  }
+  function openSnsSchedule(x){
+    openModal("承認して予約する",
+      '<div class="cell-sub" style="margin-bottom:10px">指定した日時に、Instagramへ自動で投稿します。</div>'+
+      '<label class="field">投稿する日時<input type="datetime-local" id="sns-when" value="'+snsDefaultTime()+'"></label>'+
+      '<div class="cell-sub" style="margin-top:10px">※予約の投稿は、管理者がこのアプリを開いている間は指定の時刻に送られます。アプリを閉じている間は、サーバーが毎日12時ごろにまとめて投稿します。</div>',
+      '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="sns-when-ok">予約する</button>');
+    document.getElementById("sns-when-ok").addEventListener("click", function(){
+      var v = document.getElementById("sns-when").value, d = v ? new Date(v) : null;
+      if(!d || isNaN(d)){ toast("日時を入力してください"); return; }
+      if(d.getTime() < Date.now()){ toast("過去の日時は指定できません"); return; }
+      snsSet(x.id, {status:"scheduled", scheduledAt:d.toISOString(), error:""}).then(function(){ closeModal(); toast(snsFmt(d.toISOString())+" に投稿を予約しました"); }).catch(function(){ toast("保存に失敗しました"); });
+    });
+  }
+  function openSnsEdit(x){
+    var p = state.projects.filter(function(q){ return q.id===x.projectId; })[0], ro = x.status==="posted" || x.status==="posting";
+    var sel = (x.fileIds||[]).slice(), all = p ? snsPhotoList(p) : [];
+    var order = sel.map(function(id){ return snsPhotoById(id); }).filter(Boolean);
+    all.forEach(function(f){ if(sel.indexOf(f.id)===-1) order.push(f); });
+    var st = {v:0};
+    openModal(ro ? "投稿の内容" : "投稿の確認・編集",
+      '<div class="cell-sub" style="margin-bottom:10px">「'+esc((p&&p.name)||x.projectName||"")+'」。お客様のお名前・詳しい住所が入っていないか、必ず確認してください。</div>'+
+      '<label class="field">投稿文<textarea id="sns-e-cap" rows="13" style="font-size:16px"'+(ro?' readonly':'')+'>'+esc(x.caption||"")+'</textarea></label>'+
+      '<div style="font-size:12.5px;font-weight:700;margin:12px 0 4px">投稿する写真（最大10枚・上から順に投稿されます）</div>'+
+      '<div id="sns-e-ph" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px">'+
+      (order.length ? order.map(function(f){ return '<label style="position:relative;display:block;cursor:pointer"><img src="'+esc(f.url)+'" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block"><input type="checkbox" class="sns-e-p" value="'+esc(f.id)+'"'+(sel.indexOf(f.id)!==-1?' checked':'')+(ro?' disabled':'')+' style="position:absolute;top:5px;left:5px;width:20px;height:20px"></label>'; }).join("")
+        : '<div class="cell-sub">この案件にJPEGの写真がありません。</div>')+'</div>',
+      '<button class="btn" data-close-modal>閉じる</button>'+(ro?'':'<button class="btn" id="sns-e-next">別の文面にする</button><button class="btn primary" id="sns-e-save">保存する</button>'));
+    if(ro) return;
+    document.getElementById("sns-e-next").addEventListener("click", function(){
+      if(!p) return; st.v++;
+      document.getElementById("sns-e-cap").value = snsBuildCaption(p, state.snsPosts.length + st.v);
+    });
+    document.getElementById("sns-e-save").addEventListener("click", function(){
+      var ids = Array.prototype.map.call(document.querySelectorAll(".sns-e-p:checked"), function(c){ return c.value; });
+      var cap = document.getElementById("sns-e-cap").value;
+      if(ids.length>10){ toast("写真は10枚までです"); return; }
+      if(!cap.trim()){ toast("投稿文が空です"); return; }
+      snsSet(x.id, {caption:cap, fileIds:ids}).then(function(){ closeModal(); toast("保存しました"); }).catch(function(){ toast("保存に失敗しました"); });
+    });
+  }
+  function openSnsRules(){
+    var c = snsCfg();
+    openModal("投稿ルール",
+      '<label class="checkopt"><input type="checkbox" id="sr-auto"'+(c.autoDraft?' checked':'')+'>下書きを自動で作る</label>'+
+      '<label class="field" style="margin-top:10px">対象にする案件の進捗<select id="sr-trig">'+STATUS_LIST.map(function(s){ return '<option'+(c.trigger===s?' selected':'')+'>'+esc(s)+'</option>'; }).join("")+'</select></label>'+
+      '<label class="field" style="margin-top:10px">対象にする期間（完了から何日以内）<input type="number" id="sr-days" min="1" max="365" value="'+esc(c.days)+'"></label>'+
+      '<label class="field" style="margin-top:10px">会社名・店名<input type="text" id="sr-co" value="'+esc(c.company)+'" placeholder="例：株式会社○○"></label>'+
+      '<label class="field" style="margin-top:10px">追加のハッシュタグ（空白区切り）<input type="text" id="sr-tags" value="'+esc(c.tags)+'" placeholder="例：秋田 草刈り"></label>'+
+      '<label class="checkopt" style="margin-top:10px"><input type="checkbox" id="sr-area"'+(c.area?' checked':'')+'>市区町村までの場所を入れる</label>'+
+      '<label class="checkopt"><input type="checkbox" id="sr-rep"'+(c.useReport?' checked':'')+'>最新の報告書から「ひとこと」を入れる</label>'+
+      '<label class="field" style="margin-top:10px">写真の最大枚数（1〜10）<input type="number" id="sr-max" min="1" max="10" value="'+esc(c.maxPhotos)+'"></label>'+
+      '<label class="field" style="margin-top:10px">予約のときの初期時刻（時）<input type="number" id="sr-hour" min="0" max="23" value="'+esc(c.hour)+'"></label>'+
+      '<div class="cell-sub" style="margin-top:10px">お客様名・電話・住所・金額は、投稿文に入らないよう自動で取り除きます。投稿は必ず承認してから行われます。</div>',
+      '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="sr-save">保存する</button>');
+    document.getElementById("sr-save").addEventListener("click", function(){
+      var g = function(id){ return document.getElementById(id); }, clamp = function(v, a, b, d){ v = parseInt(v,10); return isNaN(v) ? d : Math.max(a, Math.min(b, v)); };
+      var val = {autoDraft:g("sr-auto").checked, trigger:g("sr-trig").value, days:clamp(g("sr-days").value,1,365,60), company:g("sr-co").value.trim(), tags:g("sr-tags").value.trim(),
+        area:g("sr-area").checked, useReport:g("sr-rep").checked, maxPhotos:clamp(g("sr-max").value,1,10,10), hour:clamp(g("sr-hour").value,0,23,12)};
+      db.doc("settings/sns").set(Object.assign({}, val, {updatedAt:snsNow()})).then(function(){
+        state.sns.cfg = val; closeModal(); toast("投稿ルールを保存しました"); render();
+      }).catch(function(){ toast("保存に失敗しました"); });
+    });
+  }
+  function bindSns(){
+    var c = document.getElementById("content"); if(!c) return;
+    c.querySelectorAll("[data-sns-filter]").forEach(function(el){ el.addEventListener("click", function(){ state.sns.filter = el.getAttribute("data-sns-filter"); render(); }); });
+    c.querySelectorAll("[data-sns-act]").forEach(function(el){ el.addEventListener("click", function(){ snsAct(el.getAttribute("data-sns-act"), el.getAttribute("data-sns-id")); }); });
+    var sc = document.getElementById("sns-scan");
+    if(sc) sc.addEventListener("click", function(){
+      if(state.sns.cfg===null){ toast("設定を読み込み中です。少し待ってからもう一度押してください"); return; }
+      var n = snsAutoScan(true); if(!n) toast("新しく下書きにできる案件はありません（「"+snsCfg().trigger+"」で写真がある案件が対象です）");
+    });
+    var ru = document.getElementById("sns-rules"); if(ru) ru.addEventListener("click", openSnsRules);
   }
 
   function skeleton(){ return '<div class="empty">読み込み中…</div>'; }
@@ -4168,7 +4457,7 @@
     var html = crumb(state.returnTab==="sales"?"営業案件一覧に戻る":"施工案件一覧に戻る", state.returnTab);
     html += '<div class="detail-head"><h1>'+esc(p.name)+'</h1><div class="updated">最終更新日時：'+fmtDateTime(p.updatedAt||p.createdAt)+'</div>'+
       (worksAvailable() ? (worksLoadStatus(), worksReady() ? '<button class="btn sm outline" data-works-share="'+esc(p.id)+'" style="margin-top:6px">LINE WORKSで共有</button>' : '') : '')+
-      (isExternalViewer() ? '' : ' <button class="btn sm outline" data-sns-post="'+esc(p.id)+'" style="margin-top:6px">Instagram投稿文を作る</button>')+'</div>';
+      '</div>';
 
     html += projectAppsHtml(p);
     html += '<div class="detail-grid">';
