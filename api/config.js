@@ -248,12 +248,15 @@ async function snsAiHandler(req, res, b){
 }
 
 // ---- Instagramへの直接投稿（Instagram Graph API）。環境変数 IG_USER_ID と IG_ACCESS_TOKEN があるときだけ有効。管理者のみ ----
-function igSecret(){ return crypto.createHash("sha256").update("igimg:" + F.env("IG_ACCESS_TOKEN")).digest(); }
+function igSecret(){ return crypto.createHash("sha256").update("igimg:" + (F.env("SSO_SECRET") || F.env("CRON_SECRET") || F.env("IG_ACCESS_TOKEN"))).digest(); }
+function igKey(){ return crypto.createHash("sha256").update("igtok:" + (F.env("SSO_SECRET") || F.env("CRON_SECRET") || "")).digest(); }
+function igEncrypt(t){ var iv = crypto.randomBytes(12), c = crypto.createCipheriv("aes-256-gcm", igKey(), iv), e = Buffer.concat([c.update(String(t), "utf8"), c.final()]); return iv.toString("base64") + "." + c.getAuthTag().toString("base64") + "." + e.toString("base64"); }
+function igDecrypt(t){ var a = String(t || "").split("."); if(a.length !== 3) throw new Error("トークンを読み出せません"); var d = crypto.createDecipheriv("aes-256-gcm", igKey(), Buffer.from(a[0], "base64")); d.setAuthTag(Buffer.from(a[1], "base64")); return Buffer.concat([d.update(Buffer.from(a[2], "base64")), d.final()]).toString("utf8"); }
 function igSig(id, exp){ return crypto.createHmac("sha256", igSecret()).update(id + "." + exp).digest("hex").slice(0, 32); }
 function igEnabled(){ return !!(F.env("IG_USER_ID") && F.env("IG_ACCESS_TOKEN")); }
 async function igImageHandler(req, res){
   var q = req.query || {}, id = String(q.igimg || ""), exp = String(q.exp || ""), sig = String(q.sig || "");
-  if(!igEnabled() || !/^[A-Za-z0-9_-]{4,64}$/.test(id) || !(Number(exp) > Date.now()) || sig !== igSig(id, exp)) return res.status(403).end("forbidden");
+  if(!/^[A-Za-z0-9_-]{4,64}$/.test(id) || !(Number(exp) > Date.now()) || sig !== igSig(id, exp)) return res.status(403).end("forbidden");
   var d = await W.getDoc("files/" + id);
   var m = String(d && d.url || "").match(/^data:(image\/jpeg);base64,(.+)$/s);
   if(!m) return res.status(404).end("not found");
@@ -267,32 +270,67 @@ async function igToken(){
   if(igHost() !== "graph.instagram.com") return F.env("IG_ACCESS_TOKEN");
   if(_igTok && Date.now() - _igTok.at < 60000) return _igTok.v;
   var v = F.env("IG_ACCESS_TOKEN");
-  try{ var d = await W.getDoc("settings/igToken"); if(d && d.token && Date.parse(d.baseUpdatedAt || 0) >= 0 && d.base === F.env("IG_ACCESS_TOKEN").slice(-12)) v = d.token; }catch(e){}
+  try{ var d = await W.getDoc("settings/igToken"); if(d && d.token && d.base === F.env("IG_ACCESS_TOKEN").slice(-12)) v = d.token; }catch(e){}
   _igTok = {v: v, at: Date.now()};
   return v;
 }
+// 連携しているInstagramアカウントの一覧。main＝環境変数の既定アカウント、それ以外＝アプリの画面で追加したアカウント（トークンは暗号化して保存）
+var _igAcc = null;
+async function igAccounts(force){
+  if(!force && _igAcc && Date.now() - _igAcc.at < 20000) return _igAcc.v;
+  var out = [];
+  if(igEnabled()) out.push({id: "main", name: F.env("IG_ACCOUNT_NAME") || "", division: F.env("IG_ACCOUNT_DIVISION") || "", userId: F.env("IG_USER_ID"), main: true});
+  try{
+    (await W.listDocs("igAccounts")).forEach(function(d){
+      if(d.disabled || !d.userId || !d.tokenEnc) return;
+      out.push({id: d.id, name: d.name || "", division: d.division || "", userId: String(d.userId), tokenEnc: d.tokenEnc, username: d.username || ""});
+    });
+  }catch(e){ console.error("igAccounts", e.message); }
+  _igAcc = {v: out, at: Date.now()};
+  return out;
+}
+function igPick(list, id, division){
+  if(id){ var a = list.filter(function(x){ return x.id === id; })[0]; if(a) return a; }
+  var byDiv = division ? list.filter(function(x){ return x.division && x.division === division; })[0] : null;
+  return byDiv || list.filter(function(x){ return !x.division; })[0] || list[0] || null;
+}
 // Instagramログイン方式のトークン（60日）を、毎日のcronで延長して Firestore に保存する
 async function igRefreshToken(){
-  if(igHost() !== "graph.instagram.com") return "n/a";
-  var cur = await igToken();
-  var r = await fetch("https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=" + encodeURIComponent(cur));
-  var j = await r.json().catch(function(){ return {}; });
-  if(!r.ok || !j.access_token) return "refresh failed: " + ((j.error && j.error.message) || r.status);
-  await W.patchDoc("settings/igToken", {token: j.access_token, base: F.env("IG_ACCESS_TOKEN").slice(-12), baseUpdatedAt: new Date().toISOString(), expiresIn: j.expires_in || 0});
-  _igTok = {v: j.access_token, at: Date.now()};
-  return "refreshed";
+  var res = [];
+  if(igHost() === "graph.instagram.com" && igEnabled()){
+    var cur = await igToken();
+    var r = await fetch("https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=" + encodeURIComponent(cur));
+    var j = await r.json().catch(function(){ return {}; });
+    if(r.ok && j.access_token){
+      await W.patchDoc("settings/igToken", {token: j.access_token, base: F.env("IG_ACCESS_TOKEN").slice(-12), baseUpdatedAt: new Date().toISOString(), expiresIn: j.expires_in || 0});
+      _igTok = {v: j.access_token, at: Date.now()}; res.push("main:ok");
+    }else res.push("main:" + ((j.error && j.error.message) || r.status));
+  }
+  var list = (await igAccounts(true)).filter(function(a){ return !a.main; });
+  for(var i = 0; i < list.length; i++){
+    try{
+      var tk = igDecrypt(list[i].tokenEnc);
+      var r2 = await fetch("https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=" + encodeURIComponent(tk));
+      var j2 = await r2.json().catch(function(){ return {}; });
+      if(r2.ok && j2.access_token){ await W.patchDoc("igAccounts/" + list[i].id, {tokenEnc: igEncrypt(j2.access_token), refreshedAt: new Date().toISOString()}); res.push(list[i].id + ":ok"); }
+      else res.push(list[i].id + ":" + ((j2.error && j2.error.message) || r2.status));
+    }catch(e){ res.push(list[i].id + ":error"); }
+  }
+  return res.join(",") || "n/a";
 }
-async function igGraph(path, method, params){
-  var base = "https://" + igHost() + "/" + (F.env("IG_API_VERSION") || "v21.0") + "/" + path;
-  var p = new URLSearchParams(Object.assign({access_token: await igToken()}, params || {}));
+async function igGraph(path, method, params, acct){
+  var host = acct && !acct.main ? "graph.instagram.com" : igHost();
+  var tok = acct && acct.token ? acct.token : (acct && !acct.main ? igDecrypt(acct.tokenEnc) : await igToken());
+  var base = "https://" + host + "/" + (F.env("IG_API_VERSION") || "v21.0") + "/" + path;
+  var p = new URLSearchParams(Object.assign({access_token: tok}, params || {}));
   var r = method === "GET" ? await fetch(base + "?" + p.toString()) : await fetch(base, {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: p.toString()});
   var j = await r.json().catch(function(){ return {}; });
   if(!r.ok || j.error){ var e = new Error((j.error && j.error.message) || ("instagram " + r.status)); e.status = 502; throw e; }
   return j;
 }
-async function igWait(id){
+async function igWait(id, acct){
   for(var i = 0; i < 25; i++){
-    var j = await igGraph(id, "GET", {fields: "status_code"});
+    var j = await igGraph(id, "GET", {fields: "status_code"}, acct);
     if(j.status_code === "FINISHED" || !j.status_code) return;
     if(j.status_code === "ERROR" || j.status_code === "EXPIRED") throw Object.assign(new Error("Instagram側で画像を処理できませんでした（JPEG画像のみ投稿できます）"), {status: 502});
     await new Promise(function(r){ setTimeout(r, 1000); });
@@ -304,8 +342,37 @@ async function igHandler(req, res, b){
     var me = await F.verifyMember(a.name, a.password);
     if(!me) return res.status(403).json({error: "認証に失敗しました"});
     if(!F.isAdminMember(me)) return res.status(200).json({enabled: false, reason: "admin"});
-    if(!igEnabled()) return res.status(200).json({enabled: false});
-    if(b.probe) return res.status(200).json({enabled: true});
+    var op = String(b.op || "");
+    // アカウントの追加・変更・削除（トークンは暗号化して保存）
+    if(op === "acct-save"){
+      if(!(F.env("SSO_SECRET") || F.env("CRON_SECRET"))) return res.status(200).json({error: "ig", detail: "SSO_SECRET が未設定のため、トークンを安全に保存できません"});
+      var uid0 = String(b.userId || "").trim(), tok0 = String(b.token || "").trim(), id0 = String(b.id || "");
+      if(!/^[0-9]{5,25}$/.test(uid0)) return res.status(200).json({error: "ig", detail: "ユーザーIDは数字だけで入力してください"});
+      var old = id0 && id0 !== "main" && /^[A-Za-z0-9_-]{4,64}$/.test(id0) ? await W.getDoc("igAccounts/" + id0) : null;
+      if(!tok0 && !(old && old.tokenEnc)) return res.status(200).json({error: "ig", detail: "アクセストークンを入力してください"});
+      var test = {token: tok0 || igDecrypt(old.tokenEnc), main: false};
+      var who = await igGraph(uid0, "GET", {fields: "username"}, test).catch(function(e){ throw Object.assign(new Error("このユーザーIDとトークンでは、Instagramに接続できませんでした（" + e.message + "）"), {status: 200}); });
+      var rec = {name: String(b.name || "").trim().slice(0, 40) || who.username || "", division: String(b.division || "").trim().slice(0, 40), userId: uid0, username: String(who.username || ""), disabled: false, updatedAt: new Date().toISOString()};
+      if(tok0) rec.tokenEnc = igEncrypt(tok0);
+      if(old && old.id) await W.patchDoc("igAccounts/" + old.id, rec); else{ rec.createdAt = rec.updatedAt; await W.createDoc("igAccounts", rec); }
+      await igAccounts(true);
+      return res.status(200).json({ok: true, username: rec.username});
+    }
+    if(op === "acct-del"){
+      var did = String(b.id || "");
+      if(!/^[A-Za-z0-9_-]{4,64}$/.test(did) || did === "main") return res.status(400).json({error: "対象を指定してください"});
+      await W.patchDoc("igAccounts/" + did, {disabled: true, tokenEnc: "", updatedAt: new Date().toISOString()});
+      await igAccounts(true);
+      return res.status(200).json({ok: true});
+    }
+    var accts = await igAccounts(op === "accounts");
+    if(!accts.length) return res.status(200).json({enabled: false});
+    var pub0 = async function(x){
+      var nm = x.name || x.username || "";
+      if(!nm && x.main){ try{ nm = (await igGraph(x.userId, "GET", {fields: "username"}, x)).username || ""; }catch(e){} }
+      return {id: x.id, name: nm || "（名前未設定）", division: x.division || "", userId: x.userId, main: !!x.main};
+    };
+    if(b.probe || op === "accounts") return res.status(200).json({enabled: true, accounts: await Promise.all(accts.map(pub0))});
     var ids = (Array.isArray(b.fileIds) ? b.fileIds : []).map(String).slice(0, 10);
     var caption = String(b.caption || "").slice(0, 2200);
     if(!ids.length) return res.status(400).json({error: "写真を1枚以上選んでください"});
@@ -314,25 +381,9 @@ async function igHandler(req, res, b){
     if(!pd || !pd.id || !W.visibleProjects([pd], me).length) return res.status(403).json({error: "この案件は利用できません"});
     var host = String(req.headers["x-forwarded-host"] || req.headers.host || "");
     if(!host) return res.status(500).json({error: "host"});
-    var exp = String(Date.now() + 30 * 60000), urls = [];
-    for(var i = 0; i < ids.length; i++){
-      if(!/^[A-Za-z0-9_-]{4,64}$/.test(ids[i])) return res.status(400).json({error: "写真の指定が正しくありません"});
-      var fd = await W.getDoc("files/" + ids[i]);
-      if(!fd || fd.projectId !== pd.id || !/^data:image\/jpeg;base64,/.test(String(fd.url || ""))) return res.status(400).json({error: "JPEG形式のこの案件の写真だけ投稿できます"});
-      urls.push("https://" + host + "/api/config?igimg=" + ids[i] + "&exp=" + exp + "&sig=" + igSig(ids[i], exp));
-    }
-    var uid = F.env("IG_USER_ID"), creation;
-    if(urls.length === 1){
-      creation = (await igGraph(uid + "/media", "POST", {image_url: urls[0], caption: caption})).id;
-    }else{
-      var kids = [];
-      kids = await Promise.all(urls.map(function(u){ return igGraph(uid + "/media", "POST", {image_url: u, is_carousel_item: "true"}).then(function(c){ return igWait(c.id).then(function(){ return c.id; }); }); }));
-      creation = (await igGraph(uid + "/media", "POST", {media_type: "CAROUSEL", children: kids.join(","), caption: caption})).id;
-    }
-    await igWait(creation);
-    var pub = await igGraph(uid + "/media_publish", "POST", {creation_id: creation});
-    var link = "";
-    try{ link = (await igGraph(pub.id, "GET", {fields: "permalink"})).permalink || ""; }catch(e){}
+    var acct = igPick(accts, String(b.account || ""), pd.division || "");
+    if(b.account && acct && acct.id !== String(b.account)) return res.status(200).json({error: "ig", detail: "選ばれたInstagramアカウントが見つかりません"});
+    var link = await igPublishScheduled(host, pd, ids, caption, acct);
     return res.status(200).json({enabled: true, ok: true, permalink: link});
   }catch(e){
     return res.status(200).json({error: "ig", detail: String(e.message || e).slice(0, 220)});
@@ -370,7 +421,7 @@ async function ssoHandler(req, res){
 // ---- 予約投稿の定期実行（Vercel Cron が GET /api/config?snscron=1 を呼ぶ。vercel.json）----
 // 管理者がアプリを開いている間は画面側が時刻どおりに投稿する。閉じている間の分を、ここで拾って投稿する。
 // 画面側が先に処理できるよう、予約時刻から10分以上たった投稿だけを対象にする。
-async function igPublishScheduled(host, pd, ids, caption){
+async function igPublishScheduled(host, pd, ids, caption, acct){
   var exp = String(Date.now() + 30 * 60000), urls = [];
   for(var i = 0; i < ids.length; i++){
     if(!/^[A-Za-z0-9_-]{4,64}$/.test(ids[i])) throw new Error("写真の指定が正しくありません");
@@ -378,18 +429,17 @@ async function igPublishScheduled(host, pd, ids, caption){
     if(!fd || fd.projectId !== pd.id || !/^data:image\/jpeg;base64,/.test(String(fd.url || ""))) throw new Error("JPEG形式のこの案件の写真だけ投稿できます");
     urls.push("https://" + host + "/api/config?igimg=" + ids[i] + "&exp=" + exp + "&sig=" + igSig(ids[i], exp));
   }
-  var uid = F.env("IG_USER_ID"), creation;
+  var uid = acct.userId, creation;
   if(urls.length === 1){
-    creation = (await igGraph(uid + "/media", "POST", {image_url: urls[0], caption: caption})).id;
+    creation = (await igGraph(uid + "/media", "POST", {image_url: urls[0], caption: caption}, acct)).id;
   }else{
-    var kids = [];
-    kids = await Promise.all(urls.map(function(u){ return igGraph(uid + "/media", "POST", {image_url: u, is_carousel_item: "true"}).then(function(c){ return igWait(c.id).then(function(){ return c.id; }); }); }));
-    creation = (await igGraph(uid + "/media", "POST", {media_type: "CAROUSEL", children: kids.join(","), caption: caption})).id;
+    var kids = await Promise.all(urls.map(function(u){ return igGraph(uid + "/media", "POST", {image_url: u, is_carousel_item: "true"}, acct).then(function(c){ return igWait(c.id, acct).then(function(){ return c.id; }); }); }));
+    creation = (await igGraph(uid + "/media", "POST", {media_type: "CAROUSEL", children: kids.join(","), caption: caption}, acct)).id;
   }
-  await igWait(creation);
-  var pub = await igGraph(uid + "/media_publish", "POST", {creation_id: creation});
+  await igWait(creation, acct);
+  var pub = await igGraph(uid + "/media_publish", "POST", {creation_id: creation}, acct);
   var link = "";
-  try{ link = (await igGraph(pub.id, "GET", {fields: "permalink"})).permalink || ""; }catch(e){}
+  try{ link = (await igGraph(pub.id, "GET", {fields: "permalink"}, acct)).permalink || ""; }catch(e){}
   return link;
 }
 async function snsCronHandler(req, res){
@@ -398,7 +448,8 @@ async function snsCronHandler(req, res){
   if(!secret) return res.status(503).json({error: "CRON_SECRET が未設定です"});
   if(!F.safeEq(req.headers.authorization || "", "Bearer " + secret)) return res.status(401).json({error: "unauthorized"});
   try{
-    if(!igEnabled()) return res.status(200).json({skipped: "instagram not configured"});
+    var accts = await igAccounts(true);
+    if(!accts.length) return res.status(200).json({skipped: "instagram not configured"});
     var host = F.env("APP_HOST") || F.env("VERCEL_PROJECT_PRODUCTION_URL") || String(req.headers["x-forwarded-host"] || req.headers.host || "");
     if(!host) return res.status(200).json({skipped: "host"});
     var t0 = Date.now(), now = Date.now(), iso = function(){ return new Date().toISOString(); };
@@ -421,7 +472,9 @@ async function snsCronHandler(req, res){
         if(!ids.length || !caption.trim()) throw new Error("写真または投稿文がありません");
         var pd = await W.getDoc("projects/" + encodeURIComponent(String(x.projectId || "")));
         if(!pd || !pd.id) throw new Error("案件が見つかりません");
-        var link = await igPublishScheduled(host, pd, ids, caption);
+        var acct = igPick(accts, String(x.igAccount || ""), pd.division || "");
+        if(x.igAccount && (!acct || acct.id !== String(x.igAccount))) throw new Error("選ばれたInstagramアカウントが見つかりません。投稿先を選び直してください");
+        var link = await igPublishScheduled(host, pd, ids, caption, acct);
         await W.patchDoc("snsPosts/" + x.id, {status: "posted", postedAt: iso(), permalink: link, error: "", updatedAt: iso()});
         posted++;
       }catch(e){

@@ -2897,7 +2897,7 @@
     failed:["要確認","var(--danger)","var(--danger-soft)"], skipped:["見送り","var(--ink-soft)","var(--surface-2)"]
   };
   var SNS_DEF = {autoDraft:true, trigger:"施工完了", company:"", tags:"", area:true, maxPhotos:10, hour:12, useReport:true, days:60};
-  state.sns = {cfg:null, cfgLoading:false, ig:null, filter:"draft", running:false, scanning:false};
+  state.sns = {cfg:null, cfgLoading:false, ig:null, accounts:[], filter:"draft", running:false, scanning:false};
 
   function snsCfg(){ return Object.assign({}, SNS_DEF, state.sns.cfg || {}); }
   function snsNow(){ return new Date().toISOString(); }
@@ -2920,7 +2920,7 @@
     if(!db || window.claude){ S.ig = false; return; }
     if(!myMember()) return;
     S.ig = "checking";
-    snsIgCall({probe:true}).then(function(j){ S.ig = !!(j && j.enabled); }).catch(function(){ S.ig = false; }).then(function(){ render(); });
+    snsIgCall({probe:true}).then(function(j){ S.ig = !!(j && j.enabled); S.accounts = (j && j.accounts) || []; }).catch(function(){ S.ig = false; }).then(function(){ render(); });
   }
   function snsPhotoById(id){ return state.files.filter(function(f){ return f.id===id; })[0]; }
   // 写真の自動選び：作業前(最大3割)→作業中→作業後(最大5割)の順。現地調査フォルダの写真は使わない
@@ -3006,7 +3006,7 @@
     if(!ids.length){ toast("写真が選ばれていません"); return Promise.resolve(false); }
     if(!String(post.caption||"").trim()){ toast("投稿文が空です"); return Promise.resolve(false); }
     return snsSet(post.id, {status:"posting", error:""}).then(function(){
-      return snsIgCall({projectId:post.projectId, fileIds:ids, caption:post.caption});
+      return snsIgCall({projectId:post.projectId, fileIds:ids, caption:post.caption, account:post.igAccount||""});
     }).then(function(j){
       if(j && j.ok){ toast("Instagramに投稿しました"); return snsSet(post.id, {status:"posted", postedAt:snsNow(), permalink:j.permalink||"", error:""}).then(function(){ return true; }); }
       return snsSet(post.id, {status:"failed", error:String((j&&(j.detail||j.error))||"不明なエラー").slice(0,300)}).then(function(){ toast("投稿できませんでした"); return false; });
@@ -3045,13 +3045,13 @@
     if(!state.loaded.snsPosts || !state.loaded.projects || !state.loaded.files || !state.loaded.folders) return skeleton();
     var posts = state.snsPosts.slice(), cnt = {draft:0, scheduled:0, posted:0, failed:0, skipped:0};
     posts.forEach(function(x){ var k = x.status==="posting" ? "scheduled" : x.status; if(cnt[k]!=null) cnt[k]++; });
-    var igLine = S.ig===true ? '<span style="color:var(--success);font-weight:700">Instagram連携：有効</span>'
+    var igLine = S.ig===true ? '<span style="color:var(--success);font-weight:700">Instagram連携：有効（'+(S.accounts.length||1)+'アカウント）</span>'
       : S.ig==="checking" ? 'Instagram連携を確認中…'
       : (window.claude ? '<span style="color:var(--warning);font-weight:700">プレビュー表示です（実際の投稿はVercel版のみ）</span>'
-        : '<span style="color:var(--danger);font-weight:700">Instagram連携が未設定です（サーバーに IG_USER_ID / IG_ACCESS_TOKEN を登録してください）</span>');
+        : '<span style="color:var(--danger);font-weight:700">Instagram連携が未設定です。「Instagramアカウント」から追加してください</span>');
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><div><h1 class="pagetitle">SNS投稿</h1>'+
       '<div class="cell-sub" style="margin-top:4px">施工完了の案件から投稿の下書きを自動で作ります。承認すると、今すぐまたは予約した時刻にInstagramへ投稿されます。</div></div>'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="sns-scan">候補を探す</button><button class="btn" id="sns-rules">投稿ルール</button></div></div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="sns-scan">候補を探す</button><button class="btn" id="sns-accts">Instagramアカウント</button><button class="btn" id="sns-rules">投稿ルール</button></div></div>'+
       '<div class="cell-sub" style="margin:8px 0 14px;font-size:12px">'+igLine+(snsCfg().autoDraft?'':' ／ 自動下書き：オフ')+'</div>';
     var tabs = [["draft","承認待ち"],["scheduled","予約中"],["failed","要確認"],["posted","投稿済み"],["skipped","見送り"],["all","すべて"]];
     html += '<div class="segmented" style="margin-bottom:14px">'+tabs.map(function(x){
@@ -3079,6 +3079,7 @@
     var meta = [];
     if(x.status==="scheduled" || x.status==="posting") meta.push("予約："+snsFmt(x.scheduledAt));
     if(x.status==="posted") meta.push("投稿："+snsFmt(x.postedAt));
+    if((state.sns.accounts||[]).length>1 || x.igAccount){ var an = snsAcctName(x); if(an) meta.push("投稿先："+an); }
     meta.push("写真 "+ids.length+"枚"); meta.push("作成 "+snsFmt(x.createdAt)+(x.source==="auto"?"（自動）":""));
     var B = function(act, label, cls){ return '<button class="btn sm'+(cls?' '+cls:'')+'" data-sns-act="'+act+'" data-sns-id="'+esc(x.id)+'">'+label+'</button>'; };
     var acts = [];
@@ -3129,9 +3130,10 @@
   }
   // Instagram風プレビュー＋最終チェック。投稿はチェックをすべて入れてから押せる。ov に編集中の内容（保存前）を渡せる
   function openSnsPreview(x, ov){
-    var cap = String((ov && ov.caption!=null) ? ov.caption : (x.caption||"")), ids = ((ov && ov.fileIds) ? ov.fileIds : (x.fileIds||[])).slice(0,10);
+    var cap = String((ov && ov.caption!=null) ? ov.caption : (x.caption||"")), ids = ((ov && ov.fileIds) ? ov.fileIds : (x.fileIds||[])).slice(0,10), acc = (ov && ov.igAccount!=null) ? ov.igAccount : (x.igAccount||"");
+    x = Object.assign({}, x, {igAccount:acc});
     var p = state.projects.filter(function(q){ return q.id===x.projectId; })[0], cfg = snsCfg();
-    var name = (cfg.company || "あなたのアカウント"), imgs = ids.map(function(id){ return snsPhotoById(id); }).filter(Boolean);
+    var accObj = snsAcctFor(x), name = (accObj ? accObj.name : (cfg.company || "あなたのアカウント")), imgs = ids.map(function(id){ return snsPhotoById(id); }).filter(Boolean);
     var canPost = x.status==="draft" || x.status==="scheduled" || x.status==="failed";
     var tag = function(t){ return esc(t).replace(/(#[^\s#]+)/g, '<span style="color:#00376b">$1</span>'); };
     var short = cap.length > 90 ? cap.slice(0, 90).replace(/\s+$/,"") : "";
@@ -3145,7 +3147,7 @@
       '<div style="display:flex;gap:14px;padding:10px 12px 4px;font-size:20px"><span>♡</span><span>💬</span><span>➤</span><span style="margin-left:auto">🔖</span></div>'+
       '<div id="sns-pv-cap" style="padding:2px 12px 12px;font-size:13.5px;line-height:1.55;word-break:break-word"><b>'+esc(name)+'</b> <span id="sns-pv-txt">'+(short ? tag(short)+'… <a href="#" id="sns-pv-more" style="color:#8e8e8e;text-decoration:none">もっと見る</a>' : tag(cap).replace(/\n/g,"<br>"))+'</span></div></div>';
     var checks = canPost ? '<div style="margin-top:14px;font-size:12.5px;font-weight:700">最終チェック（すべてチェックすると投稿できます）</div>'+
-      ['写真に、お客様の顔・車のナンバー・表札・書類などが写っていない','投稿文に、お客様のお名前・詳しい住所・電話番号・金額が入っていない','写真の順番と、投稿文の内容に間違いがない'].map(function(t,i){ return '<label class="checkopt" style="margin-top:6px"><input type="checkbox" class="sns-pv-ck">'+esc(t)+'</label>'; }).join("") : "";
+      ((state.sns.accounts||[]).length>1 ? ['投稿先は、「'+name+'」のアカウントで間違いない'] : []).concat(['写真に、お客様の顔・車のナンバー・表札・書類などが写っていない','投稿文に、お客様のお名前・詳しい住所・電話番号・金額が入っていない','写真の順番と、投稿文の内容に間違いがない']).map(function(t,i){ return '<label class="checkopt" style="margin-top:6px"><input type="checkbox" class="sns-pv-ck">'+esc(t)+'</label>'; }).join("") : "";
     openModal("Instagramでの見え方（プレビュー）",
       '<div class="cell-sub" style="margin-bottom:10px">実際の画面とは、少し違って見える場合があります。写真は、正方形で表示しています。</div>'+ig+warn+checks,
       '<button class="btn" id="sns-pv-back">'+(canPost?'編集に戻る':'閉じる')+'</button>'+(canPost?'<button class="btn" id="sns-pv-sched">予約にする</button><button class="btn primary" id="sns-pv-go" disabled>この内容で今すぐ投稿</button>':''));
@@ -3157,17 +3159,71 @@
     });
     var more = document.getElementById("sns-pv-more");
     if(more) more.addEventListener("click", function(e){ e.preventDefault(); document.getElementById("sns-pv-txt").innerHTML = tag(cap).replace(/\n/g,"<br>"); });
-    document.getElementById("sns-pv-back").addEventListener("click", function(){ if(canPost) openSnsEdit(Object.assign({}, x, {caption:cap, fileIds:ids})); else closeModal(); });
+    document.getElementById("sns-pv-back").addEventListener("click", function(){ if(canPost) openSnsEdit(Object.assign({}, x, {caption:cap, fileIds:ids, igAccount:acc})); else closeModal(); });
     if(!canPost) return;
     var go = document.getElementById("sns-pv-go"), cks = document.querySelectorAll(".sns-pv-ck");
     var upd = function(){ go.disabled = !Array.prototype.every.call(cks, function(c){ return c.checked; }); };
     Array.prototype.forEach.call(cks, function(c){ c.addEventListener("change", upd); });
-    var saveFirst = function(){ return (cap!==(x.caption||"") || ids.join(",")!==(x.fileIds||[]).join(",")) ? snsSet(x.id, {caption:cap, fileIds:ids}) : Promise.resolve(); };
-    document.getElementById("sns-pv-sched").addEventListener("click", function(){ saveFirst().then(function(){ openSnsSchedule(Object.assign({}, x, {caption:cap, fileIds:ids})); }).catch(function(){ toast("保存に失敗しました"); }); });
+    var orig = snsGet(x.id) || x;
+    var saveFirst = function(){ return (cap!==(orig.caption||"") || ids.join(",")!==(orig.fileIds||[]).join(",") || acc!==(orig.igAccount||"")) ? snsSet(x.id, {caption:cap, fileIds:ids, igAccount:acc}) : Promise.resolve(); };
+    document.getElementById("sns-pv-sched").addEventListener("click", function(){ saveFirst().then(function(){ openSnsSchedule(Object.assign({}, x, {caption:cap, fileIds:ids, igAccount:acc})); }).catch(function(){ toast("保存に失敗しました"); }); });
     go.addEventListener("click", function(){
       if(go.disabled) return; go.disabled = true; go.textContent = "投稿中…（最大1分ほどかかります）";
-      saveFirst().then(function(){ return snsPostNow(Object.assign({}, x, {caption:cap, fileIds:ids})); }).then(function(ok){ closeModal(); }).catch(function(){ closeModal(); });
+      saveFirst().then(function(){ return snsPostNow(Object.assign({}, x, {caption:cap, fileIds:ids, igAccount:acc})); }).then(function(ok){ closeModal(); }).catch(function(){ closeModal(); });
     });
+  }
+  // 投稿先アカウント：投稿に指定があればそれ。なければ案件の事業部が同じアカウント → 事業部の指定がないアカウント → 最初のアカウント
+  function snsAcctFor(x){
+    var L = state.sns.accounts || [], p = state.projects.filter(function(q){ return q.id===x.projectId; })[0];
+    if(x.igAccount){ var a = L.filter(function(o){ return o.id===x.igAccount; })[0]; return a || null; }
+    var div = (p && p.division) || "";
+    return (div ? L.filter(function(o){ return o.division && o.division===div; })[0] : null) || L.filter(function(o){ return !o.division; })[0] || L[0] || null;
+  }
+  function snsAcctName(x){ var a = snsAcctFor(x); return a ? a.name : (x.igAccount ? "（見つからないアカウント）" : ""); }
+  function openSnsAccounts(){
+    var me = myMember();
+    if(!db || window.claude || !me){ toast("アカウントの管理は、Vercel版（本番）に管理者でログインしているときだけ使えます"); return; }
+    var divs = DIVISIONS.slice(); state.projects.forEach(function(p){ if(p.division && divs.indexOf(p.division)===-1) divs.push(p.division); });
+    var draw = function(list, editing){
+      var rows = list.length ? list.map(function(a){
+        return '<div style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)"><div style="flex:1;min-width:0"><b style="font-size:13.5px">'+esc(a.name)+'</b>'+(a.main?' <span class="badge">既定</span>':'')+
+          '<div class="cell-sub">'+(a.division?'事業部：'+esc(a.division):'事業部の指定なし（他の事業部の案件も、ここに投稿）')+'　ID：'+esc(a.userId)+'</div></div>'+
+          (a.main?'':'<button class="btn sm" data-ac-edit="'+esc(a.id)+'">編集</button><button class="btn sm" data-ac-del="'+esc(a.id)+'">削除</button>')+'</div>';
+      }).join("") : '<div class="cell-sub" style="padding:8px 0">まだアカウントがありません。</div>';
+      var e = editing || {};
+      var form = '<div style="margin-top:14px;font-size:13px;font-weight:700">'+(e.id?'アカウントを編集':'アカウントを追加')+'</div>'+
+        '<label class="field" style="margin-top:6px">表示名（アプリ内での名前）<input type="text" id="ac-name" value="'+esc(e.name||"")+'" placeholder="例：緑化事業部"></label>'+
+        '<label class="field" style="margin-top:8px">担当の事業部（この事業部の案件は、このアカウントに投稿）<input type="text" id="ac-div" list="ac-divs" value="'+esc(e.division||"")+'" placeholder="空のままにすると、事業部を限定しません"><datalist id="ac-divs">'+divs.map(function(d){ return '<option value="'+esc(d)+'">'; }).join("")+'</datalist></label>'+
+        '<label class="field" style="margin-top:8px">InstagramのユーザーID（数字）<input type="text" id="ac-uid" inputmode="numeric" value="'+esc(e.userId||"")+'" placeholder="例：17841400000000000"></label>'+
+        '<label class="field" style="margin-top:8px">アクセストークン'+(e.id?'（変えないときは空のまま）':'')+'<input type="password" id="ac-tok" autocomplete="off" placeholder="Metaの画面で生成した、長い文字列"></label>'+
+        '<div class="cell-sub" style="margin-top:8px;line-height:1.7">トークンは暗号化して保存され、画面には再表示されません。取得の手順：<br>① Metaアプリ「現場管理」の「アプリの役割」→「ロール」で、追加したいInstagramアカウントを「Instagramテスター」に追加し、Instagram側で承認する。<br>② 「InstagramログインによるAPI設定」の「アカウントを追加」でそのアカウントにログインし、「トークンを生成」を押す。<br>③ 表示されたIDとトークンを、ここに入力する。</div>';
+      var body = '<div class="cell-sub" style="margin-bottom:6px">事業部ごとのInstagramアカウントを登録します。投稿のたびに、投稿先を確認できます。</div>'+rows+form;
+      openModal("Instagramアカウント", body, '<button class="btn" data-close-modal>閉じる</button>'+(e.id?'<button class="btn" id="ac-cancel">編集をやめる</button>':'')+'<button class="btn primary" id="ac-save">'+(e.id?'更新する':'追加する')+'</button>');
+      Array.prototype.forEach.call(document.querySelectorAll("[data-ac-edit]"), function(b){ b.addEventListener("click", function(){ var a = list.filter(function(o){ return o.id===b.getAttribute("data-ac-edit"); })[0]; draw(list, a); }); });
+      Array.prototype.forEach.call(document.querySelectorAll("[data-ac-del]"), function(b){ b.addEventListener("click", function(){
+        var a = list.filter(function(o){ return o.id===b.getAttribute("data-ac-del"); })[0];
+        if(!a || !window.confirm("「"+a.name+"」の連携を削除します。予約中の投稿で、このアカウントを選んでいるものは投稿できなくなります。よろしいですか？")) return;
+        snsIgCall({op:"acct-del", id:a.id}).then(function(j){ if(j && j.ok){ toast("削除しました"); reload(); } else toast("削除できませんでした"); }).catch(function(){ toast("削除できませんでした（通信エラー）"); });
+      }); });
+      var cn = document.getElementById("ac-cancel"); if(cn) cn.addEventListener("click", function(){ draw(list, null); });
+      document.getElementById("ac-save").addEventListener("click", function(){
+        var btn = this, g = function(id){ return document.getElementById(id).value.trim(); };
+        if(!/^[0-9]{5,25}$/.test(g("ac-uid"))){ toast("ユーザーIDは数字だけで入力してください"); return; }
+        if(!e.id && !g("ac-tok")){ toast("アクセストークンを入力してください"); return; }
+        btn.disabled = true; btn.textContent = "確認中…";
+        snsIgCall({op:"acct-save", id:e.id||"", name:g("ac-name"), division:g("ac-div"), userId:g("ac-uid"), token:g("ac-tok")}).then(function(j){
+          if(j && j.ok){ toast("連携しました"+(j.username?"（@"+j.username+"）":"")); reload(); }
+          else{ toast("保存できませんでした："+((j&&(j.detail||j.error))||"不明なエラー")); btn.disabled = false; btn.textContent = e.id?"更新する":"追加する"; }
+        }).catch(function(){ toast("保存できませんでした（通信エラー）"); btn.disabled = false; btn.textContent = e.id?"更新する":"追加する"; });
+      });
+    };
+    var reload = function(){
+      snsIgCall({op:"accounts"}).then(function(j){
+        var L = (j && j.accounts) || []; state.sns.accounts = L; state.sns.ig = !!(j && j.enabled);
+        draw(L, null); render();
+      }).catch(function(){ toast("アカウント一覧を読み込めませんでした"); });
+    };
+    reload();
   }
   function openSnsEdit(x){
     var p = state.projects.filter(function(q){ return q.id===x.projectId; })[0], ro = x.status==="posted" || x.status==="posting";
@@ -3177,6 +3233,7 @@
     var st = {v:0};
     openModal(ro ? "投稿の内容" : "投稿の確認・編集",
       '<div class="cell-sub" style="margin-bottom:10px">「'+esc((p&&p.name)||x.projectName||"")+'」。お客様のお名前・詳しい住所が入っていないか、必ず確認してください。</div>'+
+      ((state.sns.accounts||[]).length>1 ? '<label class="field" style="margin-bottom:10px">投稿先のInstagramアカウント<select id="sns-e-acct"'+(ro?' disabled':'')+'><option value="">自動（案件の事業部で決める）：'+esc((function(){ var a = snsAcctFor(Object.assign({}, x, {igAccount:""})); return a ? a.name : "—"; })())+'</option>'+state.sns.accounts.map(function(a){ return '<option value="'+esc(a.id)+'"'+(x.igAccount===a.id?' selected':'')+'>'+esc(a.name)+(a.division?'（'+esc(a.division)+'）':'')+'</option>'; }).join("")+'</select></label>' : "")+
       '<label class="field">投稿文<textarea id="sns-e-cap" rows="13" style="font-size:16px"'+(ro?' readonly':'')+'>'+esc(x.caption||"")+'</textarea></label>'+
       '<div style="font-size:12.5px;font-weight:700;margin:12px 0 4px">投稿する写真（最大10枚・上から順に投稿されます）</div>'+
       '<div id="sns-e-ph" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px">'+
@@ -3186,7 +3243,8 @@
     if(ro) return;
     document.getElementById("sns-e-prev").addEventListener("click", function(){
       var ids = Array.prototype.map.call(document.querySelectorAll(".sns-e-p:checked"), function(c){ return c.value; });
-      openSnsPreview(x, {caption:document.getElementById("sns-e-cap").value, fileIds:ids});
+      var ac = document.getElementById("sns-e-acct");
+      openSnsPreview(x, {caption:document.getElementById("sns-e-cap").value, fileIds:ids, igAccount: ac ? ac.value : (x.igAccount||"")});
     });
     document.getElementById("sns-e-ai").addEventListener("click", function(){
       if(!p) return; var b = this, ta = document.getElementById("sns-e-cap");
@@ -3205,7 +3263,8 @@
       var cap = document.getElementById("sns-e-cap").value;
       if(ids.length>10){ toast("写真は10枚までです"); return; }
       if(!cap.trim()){ toast("投稿文が空です"); return; }
-      snsSet(x.id, {caption:cap, fileIds:ids}).then(function(){ closeModal(); toast("保存しました"); }).catch(function(){ toast("保存に失敗しました"); });
+      var ac = document.getElementById("sns-e-acct");
+      snsSet(x.id, {caption:cap, fileIds:ids, igAccount: ac ? ac.value : (x.igAccount||"")}).then(function(){ closeModal(); toast("保存しました"); }).catch(function(){ toast("保存に失敗しました"); });
     });
   }
   function openSnsRules(){
@@ -3241,6 +3300,7 @@
       var n = snsAutoScan(true); if(!n) toast("新しく下書きにできる案件はありません（「"+snsCfg().trigger+"」で写真がある案件が対象です）");
     });
     var ru = document.getElementById("sns-rules"); if(ru) ru.addEventListener("click", openSnsRules);
+    var ac = document.getElementById("sns-accts"); if(ac) ac.addEventListener("click", openSnsAccounts);
   }
 
   function skeleton(){ return '<div class="empty">読み込み中…</div>'; }
