@@ -1481,6 +1481,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-10-23-1", title:"10月23日の更新", items:[
+      {t:"案件から社用車管理アプリを開くと、行先に現場名が入ります", d:"案件の詳細画面の「連携アプリ」で「社用車管理」を押すと、出発登録が開き、行先にその案件の現場名が自動で入ります（運転者としてログインしていない場合は、ログイン後に開きます）。社用車管理アプリ側では、行先の入力は必須ではなくなりました。"}
+    ]},
     {id:"2026-10-22-1", title:"10月22日の更新", items:[
       {t:"保存できていない変更を見逃さないようにしました", d:"案件の進捗などを変更したとき、サーバーに本当に保存できたことを確認してから、LINE WORKS・アプリの通知を送ります。保存に時間がかかっている間は「サーバーに保存中」と表示し、保存できなかった場合は赤い帯でお知らせします。保存中に画面を閉じようとすると確認が出ます。"}
     ]},
@@ -2526,7 +2529,7 @@
     {name:"報告写真アプリ", url:"https://houkokusho-two.vercel.app/", icon:iImage, desc:"報告写真の作成・管理。"},
     {name:"黒板アプリ", url:"https://kokubanapp.vercel.app/", icon:iImage, desc:"工事用の電子小黒板。"},
     {name:"勤怠アプリ", url:"https://kintaiapp-one.vercel.app/", icon:iCalendar, desc:"勤怠(出退勤)の管理。"},
-    {name:"社用車管理アプリ", url:"https://shayosha-kanri.vercel.app/", icon:iBriefcase2, desc:"社用車の管理。"}
+    {name:"社用車管理アプリ", url:"https://shayosha-kanri.vercel.app/", icon:iBriefcase2, site:true, desc:"社用車の管理。案件の画面から開くと、出発登録の行先に現場名が入ります。"}
   ];
   function renderAppsPage(){
     return '<div style="max-width:780px"><div style="margin-bottom:12px"><h1 style="font-size:22px;margin:0">連携アプリ</h1><div style="font-size:12.5px;color:var(--ink-soft);margin-top:2px">社内の関連アプリを新しいタブで開きます。</div></div>'+
@@ -3945,7 +3948,7 @@
       var short = a.name.replace(/アプリ$/,"");
       var inner = '<span class="pa-ico">'+a.icon()+'</span><span class="pa-name"><span>'+esc(short)+'</span><span class="pa-sfx">アプリ</span></span>';
       if(a.name==="報告写真アプリ") return '<button type="button" class="btn sm outline pa-btn" data-report-project="'+esc(p.id)+'" title="この案件を指定して報告写真アプリを開きます（作ったPDFはこの案件のファイルに保存できます）">'+inner+'</button>';
-      return '<a class="btn sm outline pa-btn" '+(a.sso?'data-bihin-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を指定して備品管理アプリを開きます（持出時の現場名が自動で入ります）" ':'')+'href="'+esc(a.url+(a.sso?"?site="+encodeURIComponent(p.name||""):""))+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>';
+      return '<a class="btn sm outline pa-btn" '+(a.sso?'data-bihin-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を指定して備品管理アプリを開きます（持出時の現場名が自動で入ります）" ':'')+'href="'+esc(a.url+((a.sso||a.site)?"?site="+encodeURIComponent(p.name||""):""))+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>';
     };
     return '<div class="card pa-card"><div class="pa-title">連携アプリ</div><div class="pa-list">'+APP_LINKS.map(btn).join("")+'</div></div>';
   }
