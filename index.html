@@ -1499,6 +1499,7 @@
       {t:"案件から社用車管理アプリを開くと、行先に現場名が入ります", d:"案件の詳細画面の「連携アプリ」で「社用車管理」を押すと、出発登録が開き、行先にその案件の現場名が、事業部が同じ名前で登録されていれば事業部も自動で入ります（運転者としてログインしていない場合は、ログイン後に開きます）。社用車管理アプリ側では、行先の入力は必須ではなくなりました。同じ氏名の運転者が社用車管理アプリにいれば、ログインも引き継ぎます（SSO.md の設定が必要です）。"}
     ]},
     {id:"2026-10-22-1", title:"10月22日の更新", items:[
+      {t:"Instagram投稿文のAIが、案件の施工指示・工程・報告書・メモから具体的に書きます。管理者はそのまま投稿もできます", d:"「Instagram投稿文を作る」で、AIが使う情報が自動で入り、消したり書き足したりできます（お客様名・電話・住所・金額は自動で取り除きます）。管理者がInstagramの連携設定を済ませると、写真を選んで「Instagramに投稿する」で直接投稿できます。", admin:true},
       {t:"案件の情報から、Instagramの投稿文を自動で作れます", d:"案件の詳細画面の「Instagram投稿文を作る」から、工事の種類・場所（市区町村まで）・施工日をもとに投稿文とハッシュタグを自動で作成します。文面は3パターンから選べ、そのまま直してコピーできます。お客様のお名前や詳しい住所は入りません。管理者がAnthropic APIキーを登録すると「AIで作り直す」も使えます。"},
       {t:"案件のファイル管理に、標準のフォルダを用意しました", d:"案件の写真・ファイルを開くと、フォルダがまだ無い案件には「現地調査」「作業前」「作業中」「作業後」の4つのフォルダが自動で作られます。不要なフォルダは削除・名前変更ができ、削除しても作り直されません。"},
       {t:"案件一覧の担当者の絞り込みを、管理者とその他に分けました", d:"営業案件一覧・施工案件一覧の「進捗・担当者で絞り込み」で、メンバーが「管理者」と「その他」の2つに分かれて表示されます。それぞれ「この区分をまとめて選択」で一括して絞り込めます。"},
@@ -2353,6 +2354,39 @@
     ];
     return T[v % T.length]();
   }
+  /* AIに渡す「案件から抜き出した情報」。お客様名・電話・住所・金額などは取り除く */
+  function snsScrub(p, text){
+    var s = String(text||""), cust = state.customers.find(function(c){ return c.id===p.customerId; });
+    var rmv = [p.name, cust&&cust.name, cust&&cust.kana];
+    rmv.forEach(function(x){ x = (x||"").trim(); if(x.length>=2) s = s.split(x).join("現場"); });
+    s = s.replace(/[0-9０-９]{2,4}[-ー－][0-9０-９]{2,4}[-ー－][0-9０-９]{3,4}/g,"")
+         .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g,"")
+         .replace(/〒?\s?[0-9０-９]{3}[-ー－][0-9０-９]{4}/g,"")
+         .replace(/[¥￥]\s?[0-9,，]+|[0-9,，]{3,}\s?円/g,"")
+         .replace(/[^\s、。，,（）()「」]{1,8}様邸?/g,"お客様");
+    return s.replace(/[ \t]{2,}/g," ").trim();
+  }
+  function snsMaterial(p, use){
+    var out = [], cl = function(x,n){ return snsScrub(p, x).slice(0,n); };
+    if(use.instr && p.workInstruction) out.push("【施工内容・指示】\n"+cl(p.workInstruction,600));
+    if(use.steps){
+      var st = state.steps.filter(function(x){ return x.projectId===p.id && secretVisible(x); }).sort(function(a,b){ return (a.startDate||"").localeCompare(b.startDate||""); }).slice(0,15);
+      if(st.length) out.push("【作業の流れ（工程）】\n"+st.map(function(x){ return "・"+cl(x.name,40)+(x.startDate?"（"+x.startDate+(x.endDate&&x.endDate!==x.startDate?"〜"+x.endDate:"")+"）":"")+(x.progress!=null&&x.progress!==""?" 進捗"+x.progress+"%":""); }).join("\n"));
+    }
+    if(use.reports){
+      var rp = state.reports.filter(function(x){ return x.projectId===p.id && secretVisible(x); }).sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")); }).slice(0,5);
+      if(rp.length) out.push("【現場の報告（新しい順）】\n"+rp.map(function(x){
+        var l = [x.date, x.weather&&("天候:"+x.weather), x.workers&&("作業人数・担当:"+cl(x.workers,40)), x.content&&("作業内容:"+cl(x.content,300)), x.result&&("結果:"+cl(x.result,200)), x.issues&&("課題・気づき:"+cl(x.issues,200)), x.nextPlan&&("次の予定:"+cl(x.nextPlan,150))].filter(Boolean);
+        return "・"+l.join(" ／ ");
+      }).join("\n"));
+    }
+    if(use.memo){
+      var mm = projMemos(p).slice().sort(function(a,b){ return String(b.at||"").localeCompare(String(a.at||"")); }).slice(0,6);
+      if(mm.length) out.push("【案件メモ】\n"+mm.map(function(m){ return "・"+cl(m.text,200); }).join("\n"));
+    }
+    return out.join("\n\n");
+  }
+  function snsPhotoList(p){ return filesForProject(p.id).filter(function(f){ return (f.contentType||"")==="image/jpeg" && !f.chunked && String(f.url||"").indexOf("data:image/jpeg")===0 && secretVisible(f); }).slice(0,60); }
   function openSnsModal(p){
     var st = {v:0};
     var co0 = ""; try{ co0 = localStorage.getItem("gc_sns_company")||""; }catch(e){}
@@ -2366,9 +2400,17 @@
       '<label class="field">会社名・店名（任意）<input type="text" id="sns-co" value="'+esc(co0)+'" placeholder="例：株式会社○○"></label>'+
       '<label class="field">追加のハッシュタグ（任意・空白区切り）<input type="text" id="sns-tags" value="'+esc(ex0)+'" placeholder="例：秋田 草刈り"></label>'+
       '<label class="checkopt"><input type="checkbox" id="sns-area" checked>市区町村までの場所を入れる</label>'+
+      '<div id="sns-matbox" style="display:none;margin-top:10px"><div style="font-size:12.5px;font-weight:700;margin-bottom:4px">AIが使う、案件から抜き出した情報</div>'+
+        '<div class="checkgroup" style="margin-bottom:6px"><label class="checkopt"><input type="checkbox" class="sns-use" data-k="instr" checked>施工指示</label><label class="checkopt"><input type="checkbox" class="sns-use" data-k="steps" checked>工程</label><label class="checkopt"><input type="checkbox" class="sns-use" data-k="reports" checked>報告書</label><label class="checkopt"><input type="checkbox" class="sns-use" data-k="memo">案件メモ</label></div>'+
+        '<textarea id="sns-mat" rows="8" style="font-size:16px" placeholder="案件に施工指示・工程・報告書があると、ここに自動で入ります"></textarea>'+
+        '<div class="cell-sub">お客様名・電話・住所・金額は自動で取り除きます。AIに渡す前に、ここで消したり書き足したりできます。</div></div>'+
       '<label class="field" style="margin-top:10px">投稿文（このまま直せます）<textarea id="sns-out" rows="12" style="font-size:16px"></textarea></label>'+
-      '<div class="cell-sub">写真の目安：'+esc(hint)+'（「作業前」「作業後」フォルダの写真を使うと伝わりやすいです）</div>',
-      '<button class="btn" data-close-modal>閉じる</button><button class="btn" id="sns-ai" style="display:none">AIで作り直す</button><button class="btn" id="sns-next">別の文面にする</button><button class="btn primary" id="sns-copy">コピーする</button>');
+      '<div class="cell-sub">写真の目安：'+esc(hint)+'（「作業前」「作業後」フォルダの写真を使うと伝わりやすいです）</div>'+
+      '<div id="sns-ig" style="display:none;margin-top:12px"><div style="font-size:12.5px;font-weight:700;margin-bottom:4px">Instagramに直接投稿する写真（JPEG・最大10枚）</div>'+
+        '<div id="sns-photos" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px">'+
+        snsPhotoList(p).map(function(f){ return '<label style="position:relative;display:block;cursor:pointer"><img src="'+esc(f.url)+'" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block"><input type="checkbox" class="sns-ph" value="'+esc(f.id)+'" style="position:absolute;top:5px;left:5px;width:20px;height:20px"></label>'; }).join("")+'</div>'+
+        '<div class="cell-sub" style="margin-top:6px">'+(snsPhotoList(p).length?'選んだ順ではなく、画面の並びの順で投稿されます。投稿すると公開されます。':'この案件にJPEGの写真がありません。先に写真をアップロードしてください。')+'</div></div>',
+      '<button class="btn" data-close-modal>閉じる</button><button class="btn" id="sns-ai" style="display:none">AIで作り直す</button><button class="btn" id="sns-post" style="display:none;border-color:var(--accent);color:var(--accent);font-weight:700">Instagramに投稿する</button><button class="btn" id="sns-next">別の文面にする</button><button class="btn primary" id="sns-copy">コピーする</button>');
     var gen = function(){
       var o = {memo:document.getElementById("sns-memo").value, company:document.getElementById("sns-co").value, extraTags:document.getElementById("sns-tags").value, area:document.getElementById("sns-area").checked};
       try{ localStorage.setItem("gc_sns_company", o.company); localStorage.setItem("gc_sns_tags", o.extraTags); }catch(e){}
@@ -2383,19 +2425,44 @@
     });
     gen();
     // ANTHROPIC_API_KEY が登録されているときだけ「AIで作り直す」を出す
+    var fillMat = function(){
+      var use = {}; document.querySelectorAll(".sns-use").forEach(function(c){ use[c.getAttribute("data-k")] = c.checked; });
+      var el = document.getElementById("sns-mat"); if(el) el.value = snsMaterial(p, use);
+    };
+    document.querySelectorAll(".sns-use").forEach(function(c){ c.addEventListener("change", fillMat); });
     var me = myMember();
+    var igCall = function(extra){
+      return fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(Object.assign({action:"sns-ig", auth:{name:me.name, password:me.password||""}}, extra))}).then(function(r){ return r.json(); });
+    };
     var aiCall = function(extra){
       return fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(Object.assign({action:"sns-ai", auth:{name:me.name, password:me.password||""}}, extra))}).then(function(r){ return r.json(); });
     };
     if(me && db){
-      aiCall({probe:true}).then(function(j){ if(j && j.enabled){ var b = document.getElementById("sns-ai"); if(b) b.style.display = ""; } }).catch(function(){});
+      aiCall({probe:true}).then(function(j){ if(j && j.enabled){ var b = document.getElementById("sns-ai"); if(b) b.style.display = ""; var mb = document.getElementById("sns-matbox"); if(mb){ mb.style.display = ""; fillMat(); } } }).catch(function(){});
     }
+    // IG_USER_ID / IG_ACCESS_TOKEN が登録されていて、管理者のときだけ「Instagramに投稿する」を出す
+    if(me && db && state.isAdmin){
+      igCall({probe:true}).then(function(j){ if(j && j.enabled){ var b = document.getElementById("sns-post"), g = document.getElementById("sns-ig"); if(b) b.style.display = ""; if(g) g.style.display = ""; } }).catch(function(){});
+    }
+    document.getElementById("sns-post").addEventListener("click", function(){
+      var btn = this, ids = Array.prototype.map.call(document.querySelectorAll(".sns-ph:checked"), function(c){ return c.value; });
+      var cap = document.getElementById("sns-out").value;
+      if(!ids.length){ toast("投稿する写真を選んでください"); return; }
+      if(ids.length>10){ toast("写真は10枚までです"); return; }
+      if(!cap.trim()){ toast("投稿文が空です"); return; }
+      if(!window.confirm("Instagramに投稿します。\n写真"+ids.length+"枚と、いま表示している投稿文が公開されます。よろしいですか？")) return;
+      btn.disabled = true; btn.textContent = "投稿中…";
+      igCall({projectId:p.id, fileIds:ids, caption:cap}).then(function(j){
+        if(j && j.ok){ toast("Instagramに投稿しました"); if(j.permalink){ var cs = document.querySelector("#modal-box .cell-sub"); if(cs) cs.innerHTML = '投稿しました：<a href="'+esc(j.permalink)+'" target="_blank" rel="noopener">Instagramで見る</a>'; } }
+        else toast("投稿できませんでした："+((j&&(j.detail||j.error))||"不明なエラー"));
+      }).catch(function(){ toast("投稿できませんでした（通信エラー）"); }).then(function(){ btn.disabled = false; btn.textContent = "Instagramに投稿する"; });
+    });
     document.getElementById("sns-ai").addEventListener("click", function(){
       var btn = this, a = snsArea(p), area = document.getElementById("sns-area").checked;
       var o = {memo:document.getElementById("sns-memo").value, company:document.getElementById("sns-co").value, extraTags:document.getElementById("sns-tags").value, area:area};
       btn.disabled = true; btn.textContent = "作成中…";
       st.v++;
-      aiCall({facts:{type:p.type||"", division:p.division||"", place: area ? (a.pref+a.city) : "", period:snsPeriod(p), memo:o.memo, company:o.company, tags:snsTags(p, o), style:["丁寧","元気","落ち着いた"][st.v%3]}})
+      aiCall({facts:{type:p.type||"", division:p.division||"", place: area ? (a.pref+a.city) : "", period:snsPeriod(p), memo:o.memo, company:o.company, tags:snsTags(p, o), material:(document.getElementById("sns-mat")||{}).value||"", style:["丁寧","元気","落ち着いた"][st.v%3]}})
         .then(function(j){
           if(j && j.text){ document.getElementById("sns-out").value = j.text; toast("AIで作成しました。内容を確認してください"); }
           else toast("AIでの作成に失敗しました（定型文を使ってください）");

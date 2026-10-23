@@ -1,5 +1,13 @@
 {
   "crons": [
-    { "path": "/api/works-cron", "schedule": "0 23 * * *" }
-  ]
+    {
+      "path": "/api/works-cron",
+      "schedule": "0 23 * * *"
+    }
+  ],
+  "functions": {
+    "api/config.js": {
+      "maxDuration": 30
+    }
+  }
 }

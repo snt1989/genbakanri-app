@@ -219,9 +219,9 @@ async function snsAiHandler(req, res, b){
       "現場でのひとこと: " + cut(f.memo, 400),
       "会社名: " + cut(f.company, 60),
       "ハッシュタグの候補: " + cut(f.tags, 300)
-    ].join("\n");
+    ].join("\n") + (f.material ? "\n\n案件から抜き出した情報（具体的な作業内容・工程・現場の様子・気づきなど）:\n" + cut(f.material, 3500) : "");
     var prompt = "あなたは建設・造園・除雪会社の広報担当です。次の施工情報をもとに、Instagramの投稿文を日本語で1つ作ってください。\n" +
-      "条件:\n- 親しみやすく丁寧な文体。全体で250〜400字程度。絵文字は多くても4個。\n- お客様の名前や詳しい住所は書かない（下の情報に無いことは、推測して書かない）。\n- 最後に問い合わせを促す一文と、ハッシュタグ（候補を使い、最大10個）を付ける。\n- 投稿文の本文だけを出力し、前置きや説明は書かない。\n" +
+      "条件:\n- 親しみやすく丁寧な文体。全体で300〜500字程度。\n- 「案件から抜き出した情報」がある場合は、そこにある具体的な作業内容・手順・工夫・現場の様子・仕上がりを、事実のとおりに本文へ盛り込む（数字や固有の作業名を使い、ありきたりな言い回しだけにしない）。情報に無いことは作らない。絵文字は多くても4個。\n- 下の「施工内容・経過」から、作業の内容・工夫した点・仕上がり・苦労した点など具体的な事実を拾って書く（数字や固有の作業名を活かす）。\n- お客様の名前・個人名・詳しい住所・金額は書かない。下の情報に無いことは、推測して書かない。\n- 最後に問い合わせを促す一文と、ハッシュタグ（候補を使い、最大10個）を付ける。\n- 投稿文の本文だけを出力し、前置きや説明は書かない。\n" +
       (f.style ? "- 文体の指定: " + cut(f.style, 40) + "\n" : "") +
       "\n施工情報:\n" + facts;
     var model = F.env("ANTHROPIC_MODEL") || "claude-sonnet-5-5";
@@ -240,6 +240,76 @@ async function snsAiHandler(req, res, b){
   }
 }
 
+// ---- Instagramへの直接投稿（Instagram Graph API）。環境変数 IG_USER_ID と IG_ACCESS_TOKEN があるときだけ有効。管理者のみ ----
+function igSecret(){ return crypto.createHash("sha256").update("igimg:" + F.env("IG_ACCESS_TOKEN")).digest(); }
+function igSig(id, exp){ return crypto.createHmac("sha256", igSecret()).update(id + "." + exp).digest("hex").slice(0, 32); }
+function igEnabled(){ return !!(F.env("IG_USER_ID") && F.env("IG_ACCESS_TOKEN")); }
+async function igImageHandler(req, res){
+  var q = req.query || {}, id = String(q.igimg || ""), exp = String(q.exp || ""), sig = String(q.sig || "");
+  if(!igEnabled() || !/^[A-Za-z0-9_-]{4,64}$/.test(id) || !(Number(exp) > Date.now()) || sig !== igSig(id, exp)) return res.status(403).end("forbidden");
+  var d = await W.getDoc("files/" + id);
+  var m = String(d && d.url || "").match(/^data:(image\/jpeg);base64,(.+)$/s);
+  if(!m) return res.status(404).end("not found");
+  res.setHeader("Content-Type", "image/jpeg"); res.setHeader("Cache-Control", "no-store");
+  return res.status(200).end(Buffer.from(m[2], "base64"));
+}
+async function igGraph(path, method, params){
+  var base = "https://graph.facebook.com/" + (F.env("IG_API_VERSION") || "v21.0") + "/" + path;
+  var p = new URLSearchParams(Object.assign({access_token: F.env("IG_ACCESS_TOKEN")}, params || {}));
+  var r = method === "GET" ? await fetch(base + "?" + p.toString()) : await fetch(base, {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: p.toString()});
+  var j = await r.json().catch(function(){ return {}; });
+  if(!r.ok || j.error){ var e = new Error((j.error && j.error.message) || ("instagram " + r.status)); e.status = 502; throw e; }
+  return j;
+}
+async function igWait(id){
+  for(var i = 0; i < 12; i++){
+    var j = await igGraph(id, "GET", {fields: "status_code"});
+    if(j.status_code === "FINISHED" || !j.status_code) return;
+    if(j.status_code === "ERROR" || j.status_code === "EXPIRED") throw Object.assign(new Error("Instagram側で画像を処理できませんでした（JPEG画像のみ投稿できます）"), {status: 502});
+    await new Promise(function(r){ setTimeout(r, 1000); });
+  }
+}
+async function igHandler(req, res, b){
+  try{
+    var a = b.auth || {};
+    var me = await F.verifyMember(a.name, a.password);
+    if(!me) return res.status(403).json({error: "認証に失敗しました"});
+    if(!F.isAdminMember(me)) return res.status(200).json({enabled: false, reason: "admin"});
+    if(!igEnabled()) return res.status(200).json({enabled: false});
+    if(b.probe) return res.status(200).json({enabled: true});
+    var ids = (Array.isArray(b.fileIds) ? b.fileIds : []).map(String).slice(0, 10);
+    var caption = String(b.caption || "").slice(0, 2200);
+    if(!ids.length) return res.status(400).json({error: "写真を1枚以上選んでください"});
+    if(!caption.trim()) return res.status(400).json({error: "投稿文が空です"});
+    var pd = await W.getDoc("projects/" + encodeURIComponent(String(b.projectId || "")));
+    if(!pd || !pd.id || !W.visibleProjects([pd], me).length) return res.status(403).json({error: "この案件は利用できません"});
+    var host = String(req.headers["x-forwarded-host"] || req.headers.host || "");
+    if(!host) return res.status(500).json({error: "host"});
+    var exp = String(Date.now() + 30 * 60000), urls = [];
+    for(var i = 0; i < ids.length; i++){
+      if(!/^[A-Za-z0-9_-]{4,64}$/.test(ids[i])) return res.status(400).json({error: "写真の指定が正しくありません"});
+      var fd = await W.getDoc("files/" + ids[i]);
+      if(!fd || fd.projectId !== pd.id || !/^data:image\/jpeg;base64,/.test(String(fd.url || ""))) return res.status(400).json({error: "JPEG形式のこの案件の写真だけ投稿できます"});
+      urls.push("https://" + host + "/api/config?igimg=" + ids[i] + "&exp=" + exp + "&sig=" + igSig(ids[i], exp));
+    }
+    var uid = F.env("IG_USER_ID"), creation;
+    if(urls.length === 1){
+      creation = (await igGraph(uid + "/media", "POST", {image_url: urls[0], caption: caption})).id;
+    }else{
+      var kids = [];
+      for(var k = 0; k < urls.length; k++){ var c = await igGraph(uid + "/media", "POST", {image_url: urls[k], is_carousel_item: "true"}); await igWait(c.id); kids.push(c.id); }
+      creation = (await igGraph(uid + "/media", "POST", {media_type: "CAROUSEL", children: kids.join(","), caption: caption})).id;
+    }
+    await igWait(creation);
+    var pub = await igGraph(uid + "/media_publish", "POST", {creation_id: creation});
+    var link = "";
+    try{ link = (await igGraph(pub.id, "GET", {fields: "permalink"})).permalink || ""; }catch(e){}
+    return res.status(200).json({enabled: true, ok: true, permalink: link});
+  }catch(e){
+    return res.status(200).json({error: "ig", detail: String(e.message || e).slice(0, 220)});
+  }
+}
+
 async function ssoHandler(req, res){
   res.setHeader("Cache-Control", "no-store");
   if(req.method !== "POST"){ res.setHeader("Allow", "POST"); return res.status(405).json({error: "POST only"}); }
@@ -247,6 +317,7 @@ async function ssoHandler(req, res){
   if(b.action === "usage") return usageHandler(req, res, b);
   if(String(b.action || "").indexOf("report-") === 0) return reportHandler(req, res, b);
   if(b.action === "sns-ai") return snsAiHandler(req, res, b);
+  if(b.action === "sns-ig") return igHandler(req, res, b);
   try{
     var secret = F.env("SSO_SECRET");
     if(!secret || secret.length < 16) return res.status(200).json({error: "notconfigured"});
@@ -270,6 +341,7 @@ async function ssoHandler(req, res){
 module.exports = async function handler(req, res) {
   if(req.method === "OPTIONS"){ setCors(res); res.statusCode = 204; return res.end(); }
   if(req.method === "POST") return ssoHandler(req, res);
+  if(req.method === "GET" && req.query && req.query.igimg){ try{ return await igImageHandler(req, res); }catch(e){ return res.status(500).end("error"); } }
 
   var cfg = {
     apiKey: process.env.FIREBASE_API_KEY || null,
