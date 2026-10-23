@@ -1188,7 +1188,7 @@
     salesFilter:{name:"",status:STATUS_LIST.slice(),type:"all",assignees:[],page:1},
     constFilter:{name:"",status:["契約済","施工中"],type:"all",assignees:[],page:1},
     filesFilter:{project:"all",kind:"all"},
-    masterTab:"project", taskFilter:{status:"open",project:"all",assignee:"all",q:""}, calView:"grid", ganttView:"chart", calMonth:null, calFilter:{project:true,step:true,task:true,event:true}, ganttStart:null, ganttScale:"2w", ganttHideDone:true, ganttClosed:{}, filesView:"all", pfFolder:"", pfSort:"date_desc", pfView:"thumb", pfMine:false, pfSel:{}, filesProjectId:null, projectFilesKind:"all", filesBack:"detail",
+    masterTab:"project", taskFilter:{status:"open",project:"all",assignee:"all",q:"",scope:"all"}, calView:"grid", ganttView:"chart", calMonth:null, calFilter:{project:true,step:true,task:true,event:true}, ganttStart:null, ganttScale:"2w", ganttHideDone:true, ganttClosed:{}, filesView:"all", pfFolder:"", pfSort:"date_desc", pfView:"thumb", pfMine:false, pfSel:{}, filesProjectId:null, projectFilesKind:"all", filesBack:"detail",
     memberSeg:"all",
     bulk:{on:false,entity:null,selected:{},field:"",value:""},
     settingsSeg:"company",
@@ -1432,6 +1432,16 @@
     if(mode==="app") upd.homeAppAt = now;
     try{ db.collection("members").doc(m.id).update(upd).catch(function(){}); }catch(e){}
   }
+  /* ---- 依頼したタスクの完了（相手がタスクを完了したら、依頼した人のお知らせに出す） ---- */
+  function tkAckKey(){ return "gc_tkack_"+(state.myName||""); }
+  function tkAcked(){ try{ return JSON.parse(localStorage.getItem(tkAckKey())||"[]"); }catch(e){ return []; } }
+  function tkAckDone(){
+    var ids = state.tasks.filter(function(t){ return t.done && taskRequestedByMe(t); }).map(function(t){ return t.id; });
+    if(!ids.length) return;
+    var cur = tkAcked(), add = ids.filter(function(i){ return cur.indexOf(i)===-1; });
+    if(!add.length) return;
+    try{ localStorage.setItem(tkAckKey(), JSON.stringify(cur.concat(add).slice(-300))); }catch(e){}
+  }
   /* ---- お知らせ（ベルマーク） ---- */
   function noticeItems(){
     var items = [], today = todayISO(), tmr = addDays(today,1), me = state.myName;
@@ -1439,6 +1449,10 @@
     var mine = function(t){ return t.assignee===me; };   // タスクのお知らせは、管理者でも自分が担当のものだけ
     state.tasks.filter(function(t){ return !t.done && t.dueDate && t.dueDate<=today && mine(t); }).sort(function(a,b){ return a.dueDate<b.dueDate?-1:1; }).forEach(function(t){
       items.push({grp:"task", urgent:true, title:t.title||"タスク", sub:(t.dueDate<today?"期限切れ（"+fmtDate(t.dueDate)+"）":"今日が期限")+(t.projectName?" ／ "+t.projectName:"")+"", go:function(){ setTab("tasks"); }});
+    });
+    var ack = tkAcked();
+    state.tasks.filter(function(t){ return t.done && taskRequestedByMe(t) && ack.indexOf(t.id)===-1; }).sort(function(a,b){ return String(b.doneAt||"").localeCompare(String(a.doneAt||"")); }).forEach(function(t){
+      items.push({grp:"task", urgent:true, title:"依頼したタスクが完了しました："+(t.title||"タスク"), sub:(t.assignee||"")+"さんが完了"+(t.doneAt?"（"+fmtDateTime(t.doneAt)+"）":"")+(t.projectName?" ／ "+t.projectName:""), go:function(){ state.taskFilter.scope = "requested"; state.taskFilter.status = "all"; setTab("tasks"); }});
     });
     state.tasks.filter(function(t){ return !t.done && t.dueDate===tmr && mine(t); }).forEach(function(t){
       items.push({grp:"task", title:t.title||"タスク", sub:"明日が期限"+(t.projectName?" ／ "+t.projectName:""), go:function(){ setTab("tasks"); }});
@@ -1485,6 +1499,7 @@
       {t:"案件から社用車管理アプリを開くと、行先に現場名が入ります", d:"案件の詳細画面の「連携アプリ」で「社用車管理」を押すと、出発登録が開き、行先にその案件の現場名が、事業部が同じ名前で登録されていれば事業部も自動で入ります（運転者としてログインしていない場合は、ログイン後に開きます）。社用車管理アプリ側では、行先の入力は必須ではなくなりました。同じ氏名の運転者が社用車管理アプリにいれば、ログインも引き継ぎます（SSO.md の設定が必要です）。"}
     ]},
     {id:"2026-10-22-1", title:"10月22日の更新", items:[
+      {t:"依頼したタスクを、相手が完了したか確認できます", d:"他の人を担当者にしてタスクを作ると、タスク管理の「自分が依頼」で一覧を見られ、担当者の欄に「未完了（相手の対応待ち）」または「相手が完了（日時）」が出ます。相手が完了すると、依頼した人のベルのお知らせとスマホ通知に「依頼したタスクが完了しました」が届きます。この更新のあとに作ったタスクから対象になります。"},
       {t:"タスクのお知らせは、自分が担当のものだけになりました", d:"ベルのお知らせとアプリのバッジに出るタスクが、管理者でも自分が担当のものだけになります（これまでは管理者に全員分が出ていました）。スマホ通知は、もともと担当者本人にだけ届きます。"},
       {t:"保存できていない変更を見逃さないようにしました", d:"案件の進捗などを変更したとき、サーバーに本当に保存できたことを確認してから、LINE WORKS・アプリの通知を送ります。保存に時間がかかっている間は「サーバーに保存中」と表示し、保存できなかった場合は赤い帯でお知らせします。保存中に画面を閉じようとすると確認が出ます。"}
     ]},
@@ -3206,6 +3221,7 @@
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">タスク管理</h1>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap">'+csvToolbar("tasks")+'<button class="btn primary" data-task-add="">'+iPlus()+' タスクを追加</button></div></div><div style="height:12px"></div>';
     html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'+stat("未完了",open.length)+stat("期限超過",overdue,overdue?'var(--danger)':'')+stat("本日期限",todayN)+stat("7日以内",week)+stat("完了",all.length-open.length)+'</div>';
+    html += '<div class="segmented" style="margin-bottom:8px">'+[["all","すべて"],["mine","自分の担当"],["requested","自分が依頼"]].map(function(x){ return '<div class="segopt'+((f.scope||"all")===x[0]?' active':'')+'" data-task-scope="'+x[0]+'">'+x[1]+(x[0]==="requested"?' <span style="font-weight:600;opacity:.8">'+all.filter(taskRequestedByMe).length+'</span>':'')+'</div>'; }).join("")+'</div>';
     html += '<div class="segmented" style="margin-bottom:12px">'+[["open","未完了"],["done","完了"],["all","すべて"]].map(function(x){ return '<div class="segopt'+(f.status===x[0]?' active':'')+'" data-task-status="'+x[0]+'">'+x[1]+'</div>'; }).join("")+'</div>';
     var projs = state.projects.slice().sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");});
     var names = state.members.map(function(m){return m.name;});
@@ -3226,7 +3242,7 @@
           : '<button class="btn sm primary" data-task-done="'+esc(t.id)+'" data-to="1" title="完了にする" style="white-space:nowrap">'+iCheckIcon()+' 完了にする</button>')+'</td>'+
         '<td><div class="cell-name"'+(t.done?' style="text-decoration:line-through;color:var(--ink-faint)"':'')+'>'+esc(t.title||"")+'</div>'+(t.note?'<div class="cell-sub">'+esc(t.note)+'</div>':'')+(t.done&&t.doneAt?'<div class="cell-sub">完了：'+esc(fmtDateTime(t.doneAt))+(t.doneBy?'（'+esc(t.doneBy)+'）':'')+'</div>':'')+'</td>'+
         '<td>'+(t.projectName?'<a href="#" data-open-project="'+esc(t.projectId||"")+'">'+esc(t.projectName)+'</a>':'—')+'</td>'+
-        '<td>'+esc(t.assignee||"—")+'</td><td class="num">'+esc(fmtDate(t.dueDate))+'<div class="cell-sub">'+rel+'</div></td>'+
+        '<td>'+esc(t.assignee||"—")+(taskRequestedByMe(t)?'<div class="cell-sub" style="'+(t.done?'color:var(--accent);font-weight:700':'')+'">'+(t.done?'✓ 相手が完了'+(t.doneAt?'（'+esc(fmtDateTime(t.doneAt))+'）':''):'未完了（相手の対応待ち）')+'</div>':(t.createdBy&&t.createdBy!==t.assignee?'<div class="cell-sub">依頼者：'+esc(t.createdBy)+'</div>':''))+'</td><td class="num">'+esc(fmtDate(t.dueDate))+'<div class="cell-sub">'+rel+'</div></td>'+
         '<td style="white-space:nowrap"><button class="btn sm" data-task-edit="'+esc(t.id)+'">'+iEdit()+' 編集</button> <button class="iconbtn" data-task-del="'+esc(t.id)+'" title="削除">'+iTrash()+'</button></td></tr>';
     }).join("");
     html += '</tbody></table></div>';
@@ -6792,6 +6808,7 @@
     }else if(col==="tasks"){
       if(!old){ ev = "task"; text = "【タスク追加】"+(data.title||"")+"\n期限: "+(data.dueDate||"—")+(data.assignee?"　担当: "+data.assignee:"")+(data.projectName?"\n案件: "+data.projectName:""); }
     }
+    if(col==="tasks" && !ev){ try{ pushEventAfterWrite(col, id, data, old); }catch(e){} return; }   // タスク完了は、依頼した人にスマホ通知だけ送る
     if(!ev) return;
     try{ pushEventAfterWrite(col, id, data, old); }catch(e){}
     worksLoadStatus().then(function(st){
@@ -6812,7 +6829,8 @@
       var prev = old ? (old.status||"下書き") : "";
       if(data.status==="提出済" && prev!=="提出済"){ kind="report"; title="報告書が提出されました"; body=(data.type||"")+" "+(data.title||"")+"（"+(data.projectName||"—")+"）"; names=asg(projOf(data.projectId, data.projectName)); }
     }else if(col==="tasks"){
-      if(!old){ kind="task"; title="タスクが追加されました"; body=(data.title||"")+(data.dueDate?"（期限 "+data.dueDate+"）":""); names=[data.assignee].filter(Boolean); }
+      if(old && data.done===true && !old.done && old.createdBy && old.createdBy!==state.myName && old.assignee){ kind="task"; title="依頼したタスクが完了しました"; body=(old.title||data.title||"")+"（"+(state.myName||"")+"さんが完了）"; names=[old.createdBy]; }
+      else if(!old){ kind="task"; title="タスクが追加されました"; body=(data.title||"")+(data.dueDate?"（期限 "+data.dueDate+"）":""); names=[data.assignee].filter(Boolean); }
     }
     if(!kind) return;
     pushCall("event", {kind:kind, title:title, text:body, names:names}).catch(function(){});
@@ -7949,6 +7967,7 @@
       if(!selfOk){ toast("メンバーの変更は管理者のみ行えます"); return; }
     }
     data.updatedAt = new Date().toISOString();
+    if(col==="tasks" && state.myName && !id) data.createdBy = state.myName;   // 誰が依頼（作成）したタスクかを残す
     if((col==="projects"||col==="customers") && state.myName){ data.updatedBy = state.myName; if(!id) data.createdBy = state.myName; }
     var oldRec = id ? (rawOf(col).find(function(x){ return x.id===id; }) || null) : null;
     var hn = histNext(col, oldRec, data); if(hn) data.history = hn;
@@ -8374,7 +8393,10 @@
       return true;
     }).sort(function(a,b){return (b.uploadedAt||"").localeCompare(a.uploadedAt||"");});
   }
+  function taskRequestedByMe(t){ return !!state.myName && t.createdBy===state.myName && !!t.assignee && t.assignee!==state.myName; }
   function taskMatches(t, f){
+    if(f.scope==="mine" && t.assignee!==state.myName) return false;
+    if(f.scope==="requested" && !taskRequestedByMe(t)) return false;
     if(f.status==="open" && t.done) return false;
     if(f.status==="done" && !t.done) return false;
     if(f.project!=="all" && t.projectId!==f.project) return false;
@@ -9450,6 +9472,8 @@
     if(state.tab==="reports" || state.tab==="project-detail") bindReportEvents(c);
     if(state.tab==="tasks"){
       var tf = state.taskFilter;
+      c.querySelectorAll("[data-task-scope]").forEach(function(el){ el.addEventListener("click", function(){ tf.scope = el.getAttribute("data-task-scope"); if(tf.scope==="requested") tf.status = "all"; render(); }); });
+      if(tf.scope==="requested") tkAckDone();   // 「自分が依頼」を開いたら、完了のお知らせは確認済みにする
       c.querySelectorAll("[data-task-status]").forEach(function(el){ el.addEventListener("click", function(){ tf.status = el.getAttribute("data-task-status"); render(); }); });
       var tq = document.getElementById("tk-q"); if(tq) tq.addEventListener("keydown", function(e){ if(e.key==="Enter"){ tf.q = tq.value.trim(); render(); } }), tq.addEventListener("change", function(){ tf.q = tq.value.trim(); render(); });
       var tp = document.getElementById("tk-project"); if(tp) tp.addEventListener("change", function(){ tf.project = tp.value; render(); });
