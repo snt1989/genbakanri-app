@@ -200,12 +200,53 @@ async function reportHandler(req, res, b){
   }
 }
 
+// ---- Instagram投稿文のAI作成。環境変数 ANTHROPIC_API_KEY（任意: ANTHROPIC_MODEL）があるときだけ有効。キーが無ければ enabled:false を返し、アプリは定型文だけを使う ----
+async function snsAiHandler(req, res, b){
+  try{
+    var key = F.env("ANTHROPIC_API_KEY");
+    var a = b.auth || {};
+    var me = await F.verifyMember(a.name, a.password);
+    if(!me) return res.status(403).json({error: "認証に失敗しました"});
+    if(!key) return res.status(200).json({enabled: false});
+    if(b.probe) return res.status(200).json({enabled: true});
+    var f = b.facts || {};
+    var cut = function(x, n){ return String(x == null ? "" : x).slice(0, n); };
+    var facts = [
+      "工事の種類: " + cut(f.type, 60),
+      "事業部: " + cut(f.division, 40),
+      "場所: " + cut(f.place, 60),
+      "施工日: " + cut(f.period, 60),
+      "現場でのひとこと: " + cut(f.memo, 400),
+      "会社名: " + cut(f.company, 60),
+      "ハッシュタグの候補: " + cut(f.tags, 300)
+    ].join("\n");
+    var prompt = "あなたは建設・造園・除雪会社の広報担当です。次の施工情報をもとに、Instagramの投稿文を日本語で1つ作ってください。\n" +
+      "条件:\n- 親しみやすく丁寧な文体。全体で250〜400字程度。絵文字は多くても4個。\n- お客様の名前や詳しい住所は書かない（下の情報に無いことは、推測して書かない）。\n- 最後に問い合わせを促す一文と、ハッシュタグ（候補を使い、最大10個）を付ける。\n- 投稿文の本文だけを出力し、前置きや説明は書かない。\n" +
+      (f.style ? "- 文体の指定: " + cut(f.style, 40) + "\n" : "") +
+      "\n施工情報:\n" + facts;
+    var model = F.env("ANTHROPIC_MODEL") || "claude-sonnet-5-5";
+    var r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {"content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01"},
+      body: JSON.stringify({model: model, max_tokens: 1000, messages: [{role: "user", content: prompt}]})
+    });
+    var j = await r.json().catch(function(){ return {}; });
+    if(!r.ok) return res.status(200).json({error: "ai", detail: cut((j.error && j.error.message) || ("status " + r.status), 160)});
+    var text = (j.content || []).filter(function(c){ return c.type === "text"; }).map(function(c){ return c.text; }).join("").trim();
+    if(!text) return res.status(200).json({error: "ai", detail: "empty"});
+    return res.status(200).json({enabled: true, text: text});
+  }catch(e){
+    return res.status(e.status || 500).json({error: "server", detail: String(e.message || e).slice(0, 200)});
+  }
+}
+
 async function ssoHandler(req, res){
   res.setHeader("Cache-Control", "no-store");
   if(req.method !== "POST"){ res.setHeader("Allow", "POST"); return res.status(405).json({error: "POST only"}); }
   var b = readBody(req);
   if(b.action === "usage") return usageHandler(req, res, b);
   if(String(b.action || "").indexOf("report-") === 0) return reportHandler(req, res, b);
+  if(b.action === "sns-ai") return snsAiHandler(req, res, b);
   try{
     var secret = F.env("SSO_SECRET");
     if(!secret || secret.length < 16) return res.status(200).json({error: "notconfigured"});
