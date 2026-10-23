@@ -1499,6 +1499,7 @@
       {t:"案件から社用車管理アプリを開くと、行先に現場名が入ります", d:"案件の詳細画面の「連携アプリ」で「社用車管理」を押すと、出発登録が開き、行先にその案件の現場名が、事業部が同じ名前で登録されていれば事業部も自動で入ります（運転者としてログインしていない場合は、ログイン後に開きます）。社用車管理アプリ側では、行先の入力は必須ではなくなりました。同じ氏名の運転者が社用車管理アプリにいれば、ログインも引き継ぎます（SSO.md の設定が必要です）。"}
     ]},
     {id:"2026-10-22-1", title:"10月22日の更新", items:[
+      {t:"案件の情報から、Instagramの投稿文を自動で作れます", d:"案件の詳細画面の「Instagram投稿文を作る」から、工事の種類・場所（市区町村まで）・施工日をもとに投稿文とハッシュタグを自動で作成します。文面は3パターンから選べ、そのまま直してコピーできます。お客様のお名前や詳しい住所は入りません。"},
       {t:"案件のファイル管理に、標準のフォルダを用意しました", d:"案件の写真・ファイルを開くと、フォルダがまだ無い案件には「現地調査」「作業前」「作業中」「作業後」の4つのフォルダが自動で作られます。不要なフォルダは削除・名前変更ができ、削除しても作り直されません。"},
       {t:"案件一覧の担当者の絞り込みを、管理者とその他に分けました", d:"営業案件一覧・施工案件一覧の「進捗・担当者で絞り込み」で、メンバーが「管理者」と「その他」の2つに分かれて表示されます。それぞれ「この区分をまとめて選択」で一括して絞り込めます。"},
       {t:"依頼したタスクを、相手が完了したか確認できます", d:"他の人を担当者にしてタスクを作ると、タスク管理の「自分が依頼」で一覧を見られ、担当者の欄に「未完了（相手の対応待ち）」または「相手が完了（日時）」が出ます。相手が完了すると、依頼した人のベルのお知らせとスマホ通知に「依頼したタスクが完了しました」が届きます。この更新のあとに作ったタスクから対象になります。"},
@@ -2312,6 +2313,75 @@
     mark().then(function(){
       STD_FOLDERS.forEach(function(nm, i){ db.collection("folders").add({projectId:p.id, name:nm, secret:false, std:true, createdAt:new Date(t0+i).toISOString(), updatedAt:new Date(t0+i).toISOString()}); });
     }).catch(function(){ delete seedingFolders[p.id]; });
+  }
+  /* ============ Instagram投稿文の自動作成（案件の情報から定型文で作る。お客様名・詳しい住所は入れない） ============ */
+  function snsArea(p){
+    var a = propertyAddressOf(p), pref = (p.addressMode==="new" ? p.propertyPrefecture : p.prefecture) || "";
+    var rest = (p.addressMode==="new" ? p.propertyAddress : p.address) || "";
+    var m = rest.match(/^(.+?[市区町村郡])/);
+    return {pref:pref, city: m ? m[1] : ""};
+  }
+  function snsPeriod(p){
+    var f = function(d){ if(!d) return ""; var q=d.split("-"); return q.length<3 ? d : parseInt(q[0],10)+"年"+parseInt(q[1],10)+"月"+parseInt(q[2],10)+"日"; };
+    if(p.startDate && p.endDate && p.startDate!==p.endDate) return f(p.startDate)+"〜"+f(p.endDate);
+    return f(p.endDate||p.startDate);
+  }
+  function snsTags(p, o){
+    var t = ["施工事例"], add = function(x){ x=(x||"").replace(/[\s　#＃・、,，/／]+/g,""); if(x && t.indexOf(x)===-1) t.push(x); };
+    add(p.type);
+    if(p.division==="緑化事業部"){ add("造園"); add("緑化"); add("庭木"); }
+    if(p.division==="除雪事業部"){ add("除雪"); add("雪かき"); }
+    if(o.area){ var a = snsArea(p); add(a.pref); add(a.city); }
+    add(o.company);
+    (o.extraTags||"").split(/[\s　,，]+/).forEach(function(x){ add(x); });
+    return t.map(function(x){ return "#"+x; }).join(" ");
+  }
+  function snsText(p, o, v){
+    var a = snsArea(p), place = o.area ? (a.pref+a.city) : "", per = snsPeriod(p), kind = p.type || "施工";
+    var memo = (o.memo||"").trim(), co = (o.company||"").trim();
+    var info = [];
+    if(place) info.push("📍 場所：" + place);
+    if(per) info.push("📅 施工日：" + per);
+    info.push("🔧 内容：" + kind);
+    var body = memo ? memo : "";
+    var tags = snsTags(p, o);
+    var tail = co ? "\nご相談・お見積りは"+co+"までお気軽にどうぞ。" : "\nご相談・お見積りはお気軽にどうぞ。";
+    var T = [
+      function(){ return "【施工事例】"+kind+"を行いました"+(place?"（"+place+"）":"")+"\n\n"+info.join("\n")+(body?"\n\n"+body:"")+"\n\nビフォーアフターの写真もぜひご覧ください。"+tail+"\n\n"+tags; },
+      function(){ return "＼"+kind+"、完了しました／\n\n"+(place?place+"にて、":"")+"「"+kind+"」のご依頼をいただきました。"+(body?"\n"+body:"")+"\n\n"+info.join("\n")+"\n\n丁寧な作業で、きれいに仕上げました。"+tail+"\n\n"+tags; },
+      function(){ return "📣 施工レポート\n"+kind+(place?" ／ "+place:"")+"\n\n"+(per?per+"に施工しました。":"施工しました。")+(body?"\n"+body:"")+"\n\n作業前→作業後の変化をご覧ください！"+tail+"\n\n"+tags; }
+    ];
+    return T[v % T.length]();
+  }
+  function openSnsModal(p){
+    var st = {v:0};
+    var co0 = ""; try{ co0 = localStorage.getItem("gc_sns_company")||""; }catch(e){}
+    var ex0 = ""; try{ ex0 = localStorage.getItem("gc_sns_tags")||""; }catch(e){}
+    var folders = foldersForProject(p.id);
+    var pf = function(nm){ var g = folders.find(function(x){ return x.name===nm; }); return g ? filesForProject(p.id).filter(function(f){ return f.folderId===g.id && isImageFile(f); }).length : 0; };
+    var hint = ["作業前","作業中","作業後"].map(function(n){ return n+" "+pf(n)+"枚"; }).join("、");
+    openModal("Instagram投稿文を作る",
+      '<div class="cell-sub" style="margin-bottom:10px">「'+esc(p.name)+'」の情報から、投稿文のたたき台を作ります。お客様のお名前・詳しい住所は入りません。</div>'+
+      '<label class="field">施工のひとこと（任意）<textarea id="sns-memo" rows="2" placeholder="例：伸びきった雑草を刈り取り、すっきりしました。"></textarea></label>'+
+      '<label class="field">会社名・店名（任意）<input type="text" id="sns-co" value="'+esc(co0)+'" placeholder="例：株式会社○○"></label>'+
+      '<label class="field">追加のハッシュタグ（任意・空白区切り）<input type="text" id="sns-tags" value="'+esc(ex0)+'" placeholder="例：秋田 草刈り"></label>'+
+      '<label class="checkopt"><input type="checkbox" id="sns-area" checked>市区町村までの場所を入れる</label>'+
+      '<label class="field" style="margin-top:10px">投稿文（このまま直せます）<textarea id="sns-out" rows="12" style="font-size:16px"></textarea></label>'+
+      '<div class="cell-sub">写真の目安：'+esc(hint)+'（「作業前」「作業後」フォルダの写真を使うと伝わりやすいです）</div>',
+      '<button class="btn" data-close-modal>閉じる</button><button class="btn" id="sns-next">別の文面にする</button><button class="btn primary" id="sns-copy">コピーする</button>');
+    var gen = function(){
+      var o = {memo:document.getElementById("sns-memo").value, company:document.getElementById("sns-co").value, extraTags:document.getElementById("sns-tags").value, area:document.getElementById("sns-area").checked};
+      try{ localStorage.setItem("gc_sns_company", o.company); localStorage.setItem("gc_sns_tags", o.extraTags); }catch(e){}
+      document.getElementById("sns-out").value = snsText(p, o, st.v);
+    };
+    ["sns-memo","sns-co","sns-tags","sns-area"].forEach(function(id){ document.getElementById(id).addEventListener(id==="sns-area"?"change":"input", gen); });
+    document.getElementById("sns-next").addEventListener("click", function(){ st.v++; gen(); });
+    document.getElementById("sns-copy").addEventListener("click", function(){
+      var el = document.getElementById("sns-out"), done = function(){ toast("コピーしました。Instagramに貼り付けてください"); };
+      if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(el.value).then(done, function(){ el.select(); try{ document.execCommand("copy"); done(); }catch(e){ toast("文章を選択してコピーしてください"); } });
+      else { el.select(); try{ document.execCommand("copy"); done(); }catch(e){ toast("文章を選択してコピーしてください"); } }
+    });
+    gen();
   }
   function foldersForProject(pid){
     return state.folders.filter(function(x){ return x.projectId===pid && !(x.secret && isExternalViewer()); }).sort(function(a,b){ return (a.createdAt||"").localeCompare(b.createdAt||"") || (a.name||"").localeCompare(b.name||""); });
@@ -4010,7 +4080,8 @@
 
     var html = crumb(state.returnTab==="sales"?"営業案件一覧に戻る":"施工案件一覧に戻る", state.returnTab);
     html += '<div class="detail-head"><h1>'+esc(p.name)+'</h1><div class="updated">最終更新日時：'+fmtDateTime(p.updatedAt||p.createdAt)+'</div>'+
-      (worksAvailable() ? (worksLoadStatus(), worksReady() ? '<button class="btn sm outline" data-works-share="'+esc(p.id)+'" style="margin-top:6px">LINE WORKSで共有</button>' : '') : '')+'</div>';
+      (worksAvailable() ? (worksLoadStatus(), worksReady() ? '<button class="btn sm outline" data-works-share="'+esc(p.id)+'" style="margin-top:6px">LINE WORKSで共有</button>' : '') : '')+
+      (isExternalViewer() ? '' : ' <button class="btn sm outline" data-sns-post="'+esc(p.id)+'" style="margin-top:6px">Instagram投稿文を作る</button>')+'</div>';
 
     html += projectAppsHtml(p);
     html += '<div class="detail-grid">';
@@ -7200,6 +7271,7 @@
       worksCall("saveSettings", collect()).then(function(){ return worksCall("test"); })
         .then(function(){ el.disabled = false; toast("テスト送信しました。トークルームを確認してください"); }, function(e){ el.disabled = false; toast("送信できませんでした："+e.message); });
     }));
+    c.querySelectorAll("[data-sns-post]").forEach(function(el){ el.addEventListener("click", function(){ var p = state.projects.find(function(x){ return x.id===el.getAttribute("data-sns-post"); }); if(p) openSnsModal(p); }); });
     c.querySelectorAll("[data-works-share]").forEach(function(el){ el.addEventListener("click", function(){
       var p = state.projects.find(function(x){ return x.id===el.getAttribute("data-works-share"); });
       if(p) openWorksShare(p);
