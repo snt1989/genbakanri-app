@@ -2292,7 +2292,18 @@
   var STD_FOLDERS = ["現地調査","作業前","作業中","作業後"];
   var seedingFolders = {};
   function seedStdFolders(p){
-    if(!p || !db || p.foldersSeeded || seedingFolders[p.id] || !state.loaded.folders || !state.canWrite || isExternalViewer()) return;
+    if(!p || !db || seedingFolders[p.id] || !state.loaded.folders || !state.canWrite || isExternalViewer()) return;
+    // 最初に作った旧標準フォルダ（見積書など6つ）が空のまま残っている案件は、新しい4つに置き換える
+    var OLD = ["見積書","契約書","図面・仕様書","発注書・請求書","打合せ記録","完了書類"];
+    var oldStd = state.folders.filter(function(x){ return x.projectId===p.id && x.std===true && OLD.indexOf(x.name)!==-1 && !state.files.some(function(f){ return f.folderId===x.id; }); });
+    if(oldStd.length && state.loaded.files){
+      var t1 = Date.now();
+      seedingFolders[p.id] = true;
+      oldStd.forEach(function(x){ db.collection("folders").doc(x.id).delete().catch(function(){}); });
+      STD_FOLDERS.forEach(function(nm, i){ if(!state.folders.some(function(x){ return x.projectId===p.id && x.name===nm; })) db.collection("folders").add({projectId:p.id, name:nm, secret:false, std:true, createdAt:new Date(t1+i).toISOString(), updatedAt:new Date(t1+i).toISOString()}); });
+      return;
+    }
+    if(p.foldersSeeded) return;
     seedingFolders[p.id] = true;
     var has = state.folders.some(function(x){ return x.projectId===p.id; });
     var mark = function(){ return db.collection("projects").doc(p.id).update({foldersSeeded:true}); };
