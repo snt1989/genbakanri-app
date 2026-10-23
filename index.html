@@ -1482,7 +1482,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-10-23-1", title:"10月23日の更新", items:[
-      {t:"案件から社用車管理アプリを開くと、行先に現場名が入ります", d:"案件の詳細画面の「連携アプリ」で「社用車管理」を押すと、出発登録が開き、行先にその案件の現場名が自動で入ります（運転者としてログインしていない場合は、ログイン後に開きます）。社用車管理アプリ側では、行先の入力は必須ではなくなりました。同じ氏名の運転者が社用車管理アプリにいれば、ログインも引き継ぎます（SSO.md の設定が必要です）。"}
+      {t:"案件から社用車管理アプリを開くと、行先に現場名が入ります", d:"案件の詳細画面の「連携アプリ」で「社用車管理」を押すと、出発登録が開き、行先にその案件の現場名が、事業部が同じ名前で登録されていれば事業部も自動で入ります（運転者としてログインしていない場合は、ログイン後に開きます）。社用車管理アプリ側では、行先の入力は必須ではなくなりました。同じ氏名の運転者が社用車管理アプリにいれば、ログインも引き継ぎます（SSO.md の設定が必要です）。"}
     ]},
     {id:"2026-10-22-1", title:"10月22日の更新", items:[
       {t:"保存できていない変更を見逃さないようにしました", d:"案件の進捗などを変更したとき、サーバーに本当に保存できたことを確認してから、LINE WORKS・アプリの通知を送ります。保存に時間がかかっている間は「サーバーに保存中」と表示し、保存できなかった場合は赤い帯でお知らせします。保存中に画面を閉じようとすると確認が出ます。"}
@@ -2515,7 +2515,7 @@
     // 案件の画面から開くときは、その案件（現場名）を指定して開く → 備品管理アプリで現場名が自動で入る
     var pid = ev && ev.currentTarget && ev.currentTarget.getAttribute ? ev.currentTarget.getAttribute("data-bihin-project") : "";
     var pj = pid ? state.projects.find(function(x){ return x.id===pid; }) : null;
-    if(pj) plain += "?site=" + encodeURIComponent(pj.name || "");
+    if(pj) plain += "?site=" + encodeURIComponent(pj.name || "") + (toShayosha && pj.division ? "&division=" + encodeURIComponent(pj.division) : "");
     if(!db || window.claude || !me) return;   // 通常のリンクとして開く
     ev.preventDefault();
     var w = window.open("", "_blank");        // ポップアップ制限を避けるため、先に空のタブを開く
@@ -3949,7 +3949,7 @@
       var short = a.name.replace(/アプリ$/,"");
       var inner = '<span class="pa-ico">'+a.icon()+'</span><span class="pa-name"><span>'+esc(short)+'</span><span class="pa-sfx">アプリ</span></span>';
       if(a.name==="報告写真アプリ") return '<button type="button" class="btn sm outline pa-btn" data-report-project="'+esc(p.id)+'" title="この案件を指定して報告写真アプリを開きます（作ったPDFはこの案件のファイルに保存できます）">'+inner+'</button>';
-      return '<a class="btn sm outline pa-btn" '+(a.sso?'data-bihin-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を指定して備品管理アプリを開きます（持出時の現場名が自動で入ります）" ':'')+(a.site?'data-shayosha-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を行先に入れて社用車管理アプリを開きます（ログインも引き継ぎます）" ':'')+'href="'+esc(a.url+((a.sso||a.site)?"?site="+encodeURIComponent(p.name||""):""))+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>';
+      return '<a class="btn sm outline pa-btn" '+(a.sso?'data-bihin-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を指定して備品管理アプリを開きます（持出時の現場名が自動で入ります）" ':'')+(a.site?'data-shayosha-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を行先に入れて社用車管理アプリを開きます（ログインも引き継ぎます）" ':'')+'href="'+esc(a.url+((a.sso||a.site)?"?site="+encodeURIComponent(p.name||"")+(a.site&&p.division?"&division="+encodeURIComponent(p.division):""):""))+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>';
     };
     return '<div class="card pa-card"><div class="pa-title">連携アプリ</div><div class="pa-list">'+APP_LINKS.map(btn).join("")+'</div></div>';
   }

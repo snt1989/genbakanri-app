@@ -31,7 +31,7 @@ function b64u(buf){ return Buffer.from(buf).toString("base64").replace(/\+/g, "-
 function makeTicket(name, secret, project, kind){
   var o = {n: name, exp: Date.now() + 60000, j: crypto.randomBytes(6).toString("hex")};
   if(kind) o.k = kind;   // 発行先の種類（"s" = 社用車管理）。受け取る側が、他のアプリ向けのチケットを使い回されないように確認する
-  if(project && project.id){ o.p = String(project.id); o.pn = String(project.name || "").slice(0, 80); }   // 案件を指定して備品管理アプリを開く（現場名の紐づけ用）
+  if(project && project.id){ o.p = String(project.id); o.pn = String(project.name || "").slice(0, 80); if(project.division) o.dv = String(project.division).slice(0, 60); }   // 案件を指定して備品管理アプリを開く（現場名の紐づけ用）
   var payload = b64u(JSON.stringify(o));
   var sig = b64u(crypto.createHmac("sha256", secret).update(payload).digest());
   return payload + "." + sig;
