@@ -6004,7 +6004,6 @@
     html += '<h1 class="pagetitle" style="margin:10px 0 16px;font-size:24px;font-weight:500">'+esc(cur?cur.name:"ファイル")+(cur&&cur.secret?' <span style="font-size:12px;color:var(--lock);font-weight:600">'+iLock()+' 社外秘</span>':'')+'</h1>';
     html += '<div style="display:flex;gap:10px;flex-wrap:wrap">'+
       '<label class="btn primary" style="cursor:pointer;border-radius:999px;padding:10px 22px">'+iUpload()+' ファイルをアップロード<input type="file" id="pf-input" multiple style="display:none"></label>'+
-      '<button class="btn outline" data-report-project="'+esc(state.filesProjectId)+'" style="border-radius:999px;padding:10px 22px">'+iImage()+' 報告書を作成</button>'+
       (cur ? '' : '<button class="btn outline" id="pf-newfolder" style="border-radius:999px;padding:10px 22px">新規フォルダ作成</button>')+
       (cur ? '<button class="btn outline" data-pf-edit-folder="'+esc(cur.id)+'" style="border-radius:999px;padding:10px 22px">'+iEdit()+' フォルダを編集</button>' : '')+
       '<button class="btn outline" id="pf-dl-all" style="border-radius:999px;padding:10px 22px">'+iDownload()+' '+(cur?'このフォルダをダウンロード':'すべてダウンロード')+'</button>'+
