@@ -3630,15 +3630,27 @@
         '<button class="btn sm primary" data-pd-add="step" data-pid="'+esc(p.id)+'">'+iPlus()+' 工程を追加</button></span></div>'+
       '<div class="card" style="padding:6px 18px">'+gantt+(rows.length ? rows.slice(0,10).join("")+(rows.length>10?'<div style="font-size:12px;padding:8px 0"><a href="#" data-pd-goto="schedule">すべて見る（'+rows.length+'件）</a></div>':'') : '<div style="font-size:12px;color:var(--ink-faint);padding:12px 0">この案件の工程・予定はまだありません</div>')+'</div>';
   }
+  // 新規追加の画面で「工程 / 予定」を切り替える（どちらも同じ入口から追加できるように）
+  function kindSwitchHtml(cur){
+    var b = function(k,l){ return '<button type="button" class="btn sm'+(cur===k?' primary':'')+'" data-kind-sw="'+k+'" style="flex:1">'+l+'</button>'; };
+    return '<div style="display:flex;gap:6px;margin-bottom:10px">'+b("step","工程")+b("event","予定")+'</div>';
+  }
+  function bindKindSwitch(cur, pid, day){
+    document.querySelectorAll("[data-kind-sw]").forEach(function(el){ el.addEventListener("click", function(){
+      var k = el.getAttribute("data-kind-sw"); if(k===cur) return;
+      if(k==="event") openEventModal(null, day||null, pid); else openStepModal(null, pid);
+    }); });
+  }
   function openEventModal(ev, day, projectId){
     var e = ev || {date:day||localToday(), projectId:projectId||""};
     openModal(ev?"予定の編集":"予定の追加",
-      field("予定の種類",selectHtml("f-ecat", EVENT_TYPES, selVal(e.category, "")))+
+      (ev?"":kindSwitchHtml("event"))+field("予定の種類",selectHtml("f-ecat", EVENT_TYPES, selVal(e.category, "")))+
       field("内容（任意・種類と一緒に表示されます）",'<input type="text" id="f-etitle" maxlength="60" placeholder="例）〇〇邸 下見、午前中" value="'+esc(e.title||"")+'">')+
       '<div class="field-row">'+field("開始日",'<input type="date" id="f-edate" value="'+esc(e.date||"")+'">')+field("終了日（任意）",'<input type="date" id="f-eend" value="'+esc(e.endDate||"")+'">')+'</div>'+
       field("案件（任意）",'<select id="f-eproj">'+projectOptions(e.projectId)+'</select>')+
       field("メモ",'<textarea id="f-enote" style="min-height:60px">'+esc(e.note||"")+'</textarea>')+secretRadio(e.secret),
       (ev?'<button class="btn" id="f-edel" style="color:var(--danger)">'+iTrash()+' 削除</button>':'')+'<button class="btn" id="f-egcal" style="margin-right:auto">'+iCalendar()+' Googleカレンダーに追加</button><button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-esave">'+(ev?"保存する":"追加する")+'</button>');
+    if(!ev) bindKindSwitch("event", projectId||"", day);
     if(ev) document.getElementById("f-edel").addEventListener("click", function(){ confirmDelete("この予定を削除しますか？", function(){ deleteDoc("events", ev.id, "予定を削除しました"); }); });
     document.getElementById("f-egcal").addEventListener("click", function(){
       var cat = document.getElementById("f-ecat").value, t = document.getElementById("f-etitle").value.trim();
@@ -3658,6 +3670,7 @@
     var members = state.members.map(function(m){return m.name;});
     var today = localToday();
     openModal(st?"工程の編集":"工程の追加",
+      (st?"":kindSwitchHtml("step"))+
       field("案件",'<select id="f-sproj">'+state.projects.slice().sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");}).map(function(p){ return '<option value="'+esc(p.id)+'"'+(p.id===s.projectId?" selected":"")+'>'+esc(p.name)+'</option>'; }).join("")+'</select>')+
       field("工程名",'<input type="text" id="f-sname" data-ac-all="1" maxlength="60" autocomplete="off" placeholder="自由に入力（候補から選ぶこともできます）" value="'+esc(s.name||"")+'">')+
       '<div class="field-row">'+field("開始日",'<input type="date" id="f-sstart" value="'+esc(s.startDate||(st?"":today))+'">')+field("終了日",'<input type="date" id="f-send" value="'+esc(s.endDate||(st?"":today))+'">')+'</div>'+
@@ -3667,6 +3680,7 @@
       (st?'<button class="btn" id="f-sdel" style="color:var(--danger)">'+iTrash()+' 削除</button>':'')+'<button class="btn" id="f-sgcal" style="margin-right:auto">'+iCalendar()+' Googleカレンダーに追加</button><button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-ssave">'+(st?"保存する":"追加する")+'</button>');
     (function(){ var ni = document.getElementById("f-sname"); acDropdown(ni, function(){ return STEP_NAMES.map(function(n){ return {label:n}; }); }, function(it){ ni.value = it.label; });
       var as = document.getElementById("f-sassg"); if(as) acSelect(as); })();
+    if(!st) bindKindSwitch("step", projectId||"");
     if(st) document.getElementById("f-sdel").addEventListener("click", function(){ confirmDelete("この工程を削除しますか？", function(){ deleteDoc("steps", st.id, "工程を削除しました"); }); });
     document.getElementById("f-sgcal").addEventListener("click", function(){
       var pr = state.projects.find(function(x){return x.id===document.getElementById("f-sproj").value;});
