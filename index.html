@@ -1506,7 +1506,7 @@
       {t:"案件から社用車管理アプリを開くと、行先に現場名が入ります", d:"案件の詳細画面の「連携アプリ」で「社用車管理」を押すと、出発登録が開き、行先にその案件の現場名が、事業部が同じ名前で登録されていれば事業部も自動で入ります（運転者としてログインしていない場合は、ログイン後に開きます）。社用車管理アプリ側では、行先の入力は必須ではなくなりました。同じ氏名の運転者が社用車管理アプリにいれば、ログインも引き継ぎます（SSO.md の設定が必要です）。"}
     ]},
     {id:"2026-10-22-1", title:"10月22日の更新", items:[
-      {t:"工程表を、提出用の様式（月ごとの表）で表示・PDFにできます", d:"案件の工程表が、工事名・発注者・責任者などの表と、日付ごとのマス目（土日は色付き）の様式になりました。複数の月にまたがる案件は、月ごとに1ページになります。工程には「区分」（例：除草工）と「備考」（例：予備日含む）を入れられ、PDFの「印刷 / PDF」で発注者・責任者・作成者も直せます。"},
+      {t:"工程表を、提出用の様式（月ごとの表）で表示・PDFにできます", d:"案件の工程表が、工事名・発注者・責任者などの表と、日付ごとのマス目（土日は色付き）の様式になりました。案件の詳細では、工程表をクリックすると大きく表示して印刷・PDFにでき、追加ボタンは「工程を追加」に1つにしました。複数の月にまたがる案件は、月ごとに1ページになります。工程には「区分」（例：除草工）と「備考」（例：予備日含む）を入れられ、PDFの「印刷 / PDF」で発注者・責任者・作成者も直せます。"},
       {t:"案件の詳細画面に、その案件の工程表（ガントチャート）を表示しました", d:"案件の詳細の「工程表」に、その案件の工程と予定だけを、シンプルな横棒で並べた図が出ます。図の下の一覧から、これまでどおり編集できます。"},
       {t:"案件一覧から、案件ごとの工程表を見られます", d:"案件一覧の「作業」の列にある「工程表」の目印を押すと、その案件の工程表（工程・予定・タスク）が開き、そのまま印刷 / PDFにもできます。"},
       {t:"案件の詳細・案件一覧でも、カレンダーと工程表を「工程表」に統一しました", d:"案件の詳細では「工程表」の1か所に、工程と予定を日付順にまとめて表示し、工程・予定の追加と、その案件だけの印刷 / PDFができます。案件一覧の「工程表」の目印も1つになりました。"},
@@ -3621,13 +3621,13 @@
       if(gms.indexOf(cur)===-1) cur = gms.indexOf(tm)!==-1 ? tm : gms[0];
       var ci = gms.indexOf(cur);
       gantt = (gms.length>1 ? '<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 0 2px"><button class="btn sm" data-pd-gm="'+esc(p.id)+'" data-ym="'+(ci>0?gms[ci-1]:"")+'"'+(ci>0?'':' disabled')+'>◀</button><b style="font-size:13px">'+esc(cur.slice(0,4))+'年'+(+cur.slice(5,7))+'月</b><button class="btn sm" data-pd-gm="'+esc(p.id)+'" data-ym="'+(ci<gms.length-1?gms[ci+1]:"")+'"'+(ci<gms.length-1?'':' disabled')+'>▶</button></div>' : '')+
-        '<div style="overflow-x:auto"><iframe class="pd-gantt" style="width:100%;min-width:560px;height:200px;border:0;display:block;background:#fff" srcdoc="'+esc(scheduleFormDoc({project:p.id, months:[cur], compact:true, inc:ginc, info:formInfoDefaults(p.id)}))+'"></iframe></div>'+
+        '<div style="overflow-x:auto"><div style="position:relative;min-width:560px"><iframe class="pd-gantt" style="width:100%;height:200px;border:0;display:block;background:#fff" srcdoc="'+esc(scheduleFormDoc({project:p.id, months:[cur], compact:true, inc:ginc, info:formInfoDefaults(p.id)}))+'"></iframe>'+
+        '<a href="#" data-pd-print="'+esc(p.id)+'" title="クリックで大きく表示・印刷 / PDF" style="position:absolute;inset:0;cursor:zoom-in"></a></div></div>'+
+        '<div style="font-size:11px;color:var(--ink-faint);padding:4px 2px 0">工程表をクリックすると、大きく表示して印刷・PDFにできます</div>'+
         '<div style="border-top:1px solid var(--border);margin:6px 0 0"></div>';
     }
     return '<div class="form-section-title" style="flex-wrap:wrap;gap:8px"><span style="white-space:nowrap">工程表</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">'+
-        '<button class="btn sm outline" data-pd-print="'+esc(p.id)+'">'+iDownload()+' 印刷 / PDF</button>'+
-        '<button class="btn sm primary" data-pd-add="step" data-pid="'+esc(p.id)+'">'+iPlus()+' 工程を追加</button>'+
-        '<button class="btn sm" data-pd-add="event" data-pid="'+esc(p.id)+'">'+iPlus()+' 予定を追加</button></span></div>'+
+        '<button class="btn sm primary" data-pd-add="step" data-pid="'+esc(p.id)+'">'+iPlus()+' 工程を追加</button></span></div>'+
       '<div class="card" style="padding:6px 18px">'+gantt+(rows.length ? rows.slice(0,10).join("")+(rows.length>10?'<div style="font-size:12px;padding:8px 0"><a href="#" data-pd-goto="schedule">すべて見る（'+rows.length+'件）</a></div>':'') : '<div style="font-size:12px;color:var(--ink-faint);padding:12px 0">この案件の工程・予定はまだありません</div>')+'</div>';
   }
   function openEventModal(ev, day, projectId){
@@ -10290,7 +10290,7 @@
     c.querySelectorAll("[data-pd-gm]").forEach(function(el){ el.addEventListener("click", function(){ var ym = el.getAttribute("data-ym"); if(!ym) return; state.pdGM = state.pdGM || {}; state.pdGM[el.getAttribute("data-pd-gm")] = ym; render(); }); });
     c.querySelectorAll("iframe.pd-gantt").forEach(function(f){ f.addEventListener("load", function(){ try{ f.style.height = (f.contentDocument.documentElement.scrollHeight+6)+"px"; }catch(e){} }); });
     c.querySelectorAll("[data-sched-proj]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); ev.stopPropagation(); openSchedulePrint(el.getAttribute("data-sched-proj")); }); });
-    c.querySelectorAll("[data-pd-print]").forEach(function(el){ el.addEventListener("click", function(){ openSchedulePrint(el.getAttribute("data-pd-print")); }); });
+    c.querySelectorAll("[data-pd-print]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); openSchedulePrint(el.getAttribute("data-pd-print")); }); });
     c.querySelectorAll("[data-pd-add]").forEach(function(el){ el.addEventListener("click", function(){
       var k = el.getAttribute("data-pd-add"), pid = el.getAttribute("data-pid");
       if(k==="event") openEventModal(null, null, pid); else if(k==="step") openStepModal(null, pid); else openReportModal(null, pid);
