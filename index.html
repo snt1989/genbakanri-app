@@ -3659,12 +3659,14 @@
     var today = localToday();
     openModal(st?"工程の編集":"工程の追加",
       field("案件",'<select id="f-sproj">'+state.projects.slice().sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");}).map(function(p){ return '<option value="'+esc(p.id)+'"'+(p.id===s.projectId?" selected":"")+'>'+esc(p.name)+'</option>'; }).join("")+'</select>')+
-      field("工程名",'<input type="text" id="f-sname" list="f-sname-list" maxlength="60" autocomplete="off" placeholder="自由に入力（候補から選ぶこともできます）" value="'+esc(s.name||"")+'"><datalist id="f-sname-list">'+STEP_NAMES.map(function(n){ return '<option value="'+esc(n)+'"></option>'; }).join("")+'</datalist>')+
+      field("工程名",'<input type="text" id="f-sname" data-ac-all="1" maxlength="60" autocomplete="off" placeholder="自由に入力（候補から選ぶこともできます）" value="'+esc(s.name||"")+'">')+
       '<div class="field-row">'+field("開始日",'<input type="date" id="f-sstart" value="'+esc(s.startDate||(st?"":today))+'">')+field("終了日",'<input type="date" id="f-send" value="'+esc(s.endDate||(st?"":today))+'">')+'</div>'+
       '<div class="field-row">'+field("担当者",'<select id="f-sassg"><option value="">（未設定）</option>'+members.map(function(n){ return '<option value="'+esc(n)+'"'+(n===s.assignee?" selected":"")+'>'+esc(n)+'</option>'; }).join("")+'</select>')+
       field("進捗（%）",'<input type="number" id="f-sprog" min="0" max="100" step="5" value="'+(+s.progress||0)+'">')+'</div>'+
       '<div class="field-row">'+field("区分（任意・工程表で見出しになります）",'<input type="text" id="f-sgroup" maxlength="30" placeholder="例：除草工" value="'+esc(s.group||"")+'">')+field("備考（任意）",'<input type="text" id="f-snote" maxlength="40" placeholder="例：予備日含む" value="'+esc(s.note||"")+'">')+'</div>'+secretRadio(s.secret),
       (st?'<button class="btn" id="f-sdel" style="color:var(--danger)">'+iTrash()+' 削除</button>':'')+'<button class="btn" id="f-sgcal" style="margin-right:auto">'+iCalendar()+' Googleカレンダーに追加</button><button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-ssave">'+(st?"保存する":"追加する")+'</button>');
+    (function(){ var ni = document.getElementById("f-sname"); acDropdown(ni, function(){ return STEP_NAMES.map(function(n){ return {label:n}; }); }, function(it){ ni.value = it.label; });
+      var as = document.getElementById("f-sassg"); if(as) acSelect(as); })();
     if(st) document.getElementById("f-sdel").addEventListener("click", function(){ confirmDelete("この工程を削除しますか？", function(){ deleteDoc("steps", st.id, "工程を削除しました"); }); });
     document.getElementById("f-sgcal").addEventListener("click", function(){
       var pr = state.projects.find(function(x){return x.id===document.getElementById("f-sproj").value;});
