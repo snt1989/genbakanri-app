@@ -1506,7 +1506,7 @@
       {t:"案件から社用車管理アプリを開くと、行先に現場名が入ります", d:"案件の詳細画面の「連携アプリ」で「社用車管理」を押すと、出発登録が開き、行先にその案件の現場名が、事業部が同じ名前で登録されていれば事業部も自動で入ります（運転者としてログインしていない場合は、ログイン後に開きます）。社用車管理アプリ側では、行先の入力は必須ではなくなりました。同じ氏名の運転者が社用車管理アプリにいれば、ログインも引き継ぎます（SSO.md の設定が必要です）。"}
     ]},
     {id:"2026-10-22-1", title:"10月22日の更新", items:[
-      {t:"案件の詳細画面に、その案件の工程表（ガントチャート）を表示しました", d:"案件の詳細の「工程表」に、工程・予定・タスク・引渡しを横棒で並べた図が出ます。図の下の一覧から、これまでどおり編集できます。"},
+      {t:"案件の詳細画面に、その案件の工程表（ガントチャート）を表示しました", d:"案件の詳細の「工程表」に、その案件の工程と予定だけを、シンプルな横棒で並べた図が出ます。図の下の一覧から、これまでどおり編集できます。"},
       {t:"案件一覧から、案件ごとの工程表を見られます", d:"案件一覧の「作業」の列にある「工程表」の目印を押すと、その案件の工程表（工程・予定・タスク）が開き、そのまま印刷 / PDFにもできます。"},
       {t:"案件の詳細・案件一覧でも、カレンダーと工程表を「工程表」に統一しました", d:"案件の詳細では「工程表」の1か所に、工程と予定を日付順にまとめて表示し、工程・予定の追加と、その案件だけの印刷 / PDFができます。案件一覧の「工程表」の目印も1つになりました。"},
       {t:"カレンダーを工程表に統一し、工程表を印刷・PDFにできます", d:"メニューは「工程表」だけになり、画面上の切り替えで「横断工程表・担当別・工程一覧・月カレンダー・予定一覧」を見られます（これまでのカレンダーの予定やタスクもそのまま入っています）。「印刷 / PDF」から、案件と期間を選んで、A4横の工程表を印刷またはPDFにできます。"},
@@ -3611,11 +3611,12 @@
     all.sort(function(a,b){ return a.d.localeCompare(b.d); });
     var rows = all.map(function(x){ return x.html; });
     var gantt = "";
-    var gr = scheduleRowsFor(p.id, {proj:true, step:true, ev:true, task:true});
+    var ginc = {proj:false, step:true, ev:true, task:false};
+    var gr = scheduleRowsFor(p.id, ginc);
     if(gr.length){
-      var ga = addDays(gr.map(function(r){ return r.s; }).sort()[0], -2), gb = addDays(gr.map(function(r){ return r.e; }).sort().pop(), 2);
+      var ga = addDays(gr.map(function(r){ return r.s; }).sort()[0], -1), gb = addDays(gr.map(function(r){ return r.e; }).sort().pop(), 1);
       if(diffDays(ga,gb)>119) gb = addDays(ga,119);
-      gantt = '<iframe class="pd-gantt" style="width:100%;height:160px;border:0;display:block;background:#fff" srcdoc="'+esc(scheduleHtml({project:p.id, from:ga, to:gb, compact:true, inc:{proj:true, step:true, ev:true, task:true}}))+'"></iframe>'+
+      gantt = '<iframe class="pd-gantt" style="width:100%;height:160px;border:0;display:block;background:#fff" srcdoc="'+esc(scheduleHtml({project:p.id, from:ga, to:gb, compact:true, inc:ginc}))+'"></iframe>'+
         '<div style="border-top:1px solid var(--border);margin:6px 0 0"></div>';
     }
     return '<div class="form-section-title" style="flex-wrap:wrap;gap:8px"><span style="white-space:nowrap">工程表</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">'+
@@ -3865,7 +3866,7 @@
         var cs = r.s<o.from?o.from:r.s, ce = r.e>o.to?o.to:r.e, left = diffDays(o.from,cs), wd = diffDays(cs,ce)+1;
         var bar = r.k==="handover" ? '<u class="dia" style="left:'+pct(left+0.5)+'"></u>' :
           '<span class="bar'+(r.s<o.from?' cl':'')+(r.e>o.to?' cr':'')+'" style="left:'+pct(left)+';width:'+pct(wd)+';background:'+COL[r.k]+'">'+(r.k==="step"&&r.prog?'<span style="width:'+Math.min(100,r.prog)+'%"></span>':'')+'</span>';
-        body += '<div class="row"><div class="lb"><i style="background:'+COL[r.k]+'"></i><span class="t">'+esc(r.label)+'</span><span class="s">'+esc(KIND[r.k]+(r.sub?"：":"")+(r.sub||""))+'</span></div><div class="ch">'+bar+'</div></div>';
+        body += '<div class="row"><div class="lb"><i style="background:'+COL[r.k]+'"></i><span class="t">'+esc(r.label)+'</span><span class="s">'+esc(o.compact ? (r.s.slice(5).replace("-","/")+(r.e!==r.s?"〜"+r.e.slice(5).replace("-","/"):"")) : (KIND[r.k]+(r.sub?"：":"")+(r.sub||"")))+'</span></div><div class="ch">'+bar+'</div></div>';
       });
     });
     var title = o.project==="all" ? "全案件の工程表" : ((state.projects.find(function(x){ return x.id===o.project; })||{}).name||"")+" 工程表";
@@ -3880,7 +3881,7 @@
       '.row{min-height:15px;border-bottom:1px solid #e3e8e5;break-inside:avoid}.lb{display:flex;align-items:center;gap:4px;padding:1px 4px;overflow:hidden}.lb i{width:6px;height:6px;border-radius:2px;flex:none}.lb .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:28mm}.lb .s{color:#666;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'+
       '.ch .bar{position:absolute;top:3px;height:9px;border-radius:2px;overflow:hidden}.bar.cl{border-top-left-radius:0;border-bottom-left-radius:0}.bar.cr{border-top-right-radius:0;border-bottom-right-radius:0}.bar span{display:block;height:100%;background:rgba(0,0,0,.28)}.dia{position:absolute;top:3px;width:9px;height:9px;margin-left:-4.5px;background:#c0392b;transform:rotate(45deg) scale(.8)}'+
       '.legend{margin-top:8px;font-size:8.5px;color:#444;display:flex;gap:12px;flex-wrap:wrap}.legend i{display:inline-block;width:10px;height:6px;margin-right:3px;border-radius:2px;vertical-align:middle}.empty{padding:30px;text-align:center;color:#777}';
-    if(o.compact) css += '.hd .lb,.row .lb{width:104px}.stripes{left:104px}.lb .s{display:none}.lb .t{max-width:96px}body{margin:0 2px}.legend{font-size:8px;gap:8px}';
+    if(o.compact) css += '.top,.legend,.grp{display:none}.hd .lb,.row .lb{width:112px}.stripes{left:112px}.lb{flex-direction:column;align-items:flex-start;gap:0;justify-content:center;padding:2px 4px}.lb i{display:none}.lb .t{max-width:106px;font-size:11px}.lb .s{display:block;font-size:9px;color:#777}.row{min-height:30px;border-bottom:1px solid #eef1ef}.ch .bar{top:9px;height:12px;border-radius:3px}body{margin:0 2px}.hd .m{font-size:10px}';
     return '<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>'+esc(title)+'</title><style>'+css+'</style></head><body>'+
       '<div class="top"><div><h1>'+esc(title)+'</h1><div class="sub">'+esc(fmtDate(o.from)+" 〜 "+fmtDate(o.to))+'</div></div><div class="sub" style="text-align:right">'+esc(org)+'<br>作成日 '+esc(fmtDate(today))+'</div></div>'+
       '<div class="wrap"><div class="hd"><div class="lb"></div><div class="ch"><div style="display:flex;width:100%">'+head1+'</div><div style="display:flex;width:100%">'+head2+'</div></div></div>'+
