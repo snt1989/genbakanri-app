@@ -3607,10 +3607,7 @@
         badge+' <button class="btn sm" '+attr+'="'+esc(id)+'">'+iEdit()+' 編集</button></div>';
     };
     var all = [];
-    var ist = 'font:inherit;font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface,#fff);min-width:0;';
-    sts.forEach(function(x){ all.push({d:x.startDate||"", html:'<div class="pf-docrow" style="align-items:center;flex-wrap:wrap;gap:6px"><div style="flex:1 1 120px;min-width:0"><a class="nm" href="#" data-pd-step="'+esc(x.id)+'">'+(x.secret?iLock()+' ':'')+esc(x.name||"（無題）")+'</a>'+(x.assignee?'<div class="d" style="font-size:11.5px;color:var(--ink-faint)">'+esc(x.assignee)+'</div>':'')+'</div>'+
-      '<span style="display:flex;gap:4px;align-items:center;flex-wrap:wrap"><input type="date" style="'+ist+'width:128px" data-qe="startDate" data-qid="'+esc(x.id)+'" value="'+esc(x.startDate||"")+'">〜<input type="date" style="'+ist+'width:128px" data-qe="endDate" data-qid="'+esc(x.id)+'" value="'+esc(x.endDate||"")+'"><input type="number" min="0" max="100" step="5" style="'+ist+'width:58px" data-qe="progress" data-qid="'+esc(x.id)+'" value="'+esc(String(x.progress||0))+'" title="進捗（%）">%</span>'+
-      ' <button class="btn sm" data-pd-step="'+esc(x.id)+'">'+iEdit()+' 編集</button></div>'}); });
+    sts.forEach(function(x){ all.push({d:x.startDate||"", html:row("data-pd-step", x.id, x.secret, x.name||"（無題）", esc(range(x.startDate,x.endDate))+(x.assignee?' ・ '+esc(x.assignee):''), '<span class="badge line-gray">進捗 '+esc(String(x.progress||0))+'%</span>')}); });
     evs.forEach(function(x){ all.push({d:x.date||"", html:row("data-pd-event", x.id, x.secret, eventLabel(x), esc(range(x.date,x.endDate)), '<span class="badge line-gray">予定</span>')}); });
     all.sort(function(a,b){ return a.d.localeCompare(b.d); });
     var rows = all.map(function(x){ return x.html; });
@@ -3631,7 +3628,7 @@
     }
     return '<div class="form-section-title" style="flex-wrap:wrap;gap:8px"><span style="white-space:nowrap">工程表</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">'+
         '<button class="btn sm primary" data-pd-add="step" data-pid="'+esc(p.id)+'">'+iPlus()+' 工程を追加</button></span></div>'+
-      '<div class="card" style="padding:6px 18px">'+gantt+'<div class="pd-qa" data-qpid="'+esc(p.id)+'" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--border)"><span style="position:relative;flex:1 1 140px;min-width:0"><input type="text" class="qa-name" maxlength="60" data-ac-all="1" autocomplete="off" placeholder="工程名を直接入力" style="'+ist+'width:100%;box-sizing:border-box;padding:6px 8px"></span><input type="date" class="qa-s" style="'+ist+'width:128px" value="'+esc(localToday())+'">〜<input type="date" class="qa-e" style="'+ist+'width:128px" value="'+esc(localToday())+'"><button class="btn sm primary qa-go">'+iPlus()+' 追加</button></div>'+(rows.length ? rows.slice(0,10).join("")+(rows.length>10?'<div style="font-size:12px;padding:8px 0"><a href="#" data-pd-goto="schedule">すべて見る（'+rows.length+'件）</a></div>':'') : '<div style="font-size:12px;color:var(--ink-faint);padding:12px 0">この案件の工程・予定はまだありません</div>')+'</div>';
+      '<div class="card" style="padding:6px 18px">'+gantt+(rows.length ? rows.slice(0,10).join("")+(rows.length>10?'<div style="font-size:12px;padding:8px 0"><a href="#" data-pd-goto="schedule">すべて見る（'+rows.length+'件）</a></div>':'') : '<div style="font-size:12px;color:var(--ink-faint);padding:12px 0">この案件の工程・予定はまだありません</div>')+'</div>';
   }
   function openEventModal(ev, day, projectId){
     var e = ev || {date:day||localToday(), projectId:projectId||""};
@@ -3981,6 +3978,7 @@
       '<div id="sp-info" class="field-row" style="display:none">'+field("発注者",'<input type="text" id="sp-client" value="">')+field("責任者",'<input type="text" id="sp-resp" value="">')+field("作成者",'<input type="text" id="sp-author" value="">')+'</div>'+
       '<div class="checkgroup" style="margin:2px 0 8px">'+[["proj","施工期間・引渡し"],["step","工程"],["ev","予定"],["task","タスク"]].map(function(x){ return '<label class="checkopt"><input type="checkbox" class="sp-inc" data-k="'+x[0]+'"'+(st.inc[x[0]]?" checked":"")+'>'+x[1]+'</label>'; }).join("")+'</div>'+
       '<div class="cell-sub" style="margin-bottom:6px">期間は最長120日です。印刷のとき、送信先を「PDFに保存」にするとPDFになります（用紙はA4横）。</div>'+
+      (pid?'<div id="sp-edit"></div>':'')+
       '<iframe id="sp-frame" style="width:100%;height:56vh;border:1px solid var(--border);border-radius:8px;background:#fff"></iframe>',
       '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="sp-print">印刷 / PDFで保存</button>');
     document.getElementById("modal-box").style.maxWidth = "980px";
@@ -4002,6 +4000,35 @@
     document.getElementById("sp-proj").value = prevP;
     document.querySelectorAll(".sp-inc").forEach(function(c){ c.addEventListener("change", build); });
     document.getElementById("sp-print").addEventListener("click", function(){ try{ fr.contentWindow.focus(); fr.contentWindow.print(); }catch(e){ toast("印刷できませんでした"); } });
+    var reopen = function(){ setTimeout(function(){ openSchedulePrint(pid); }, 250); };
+    var editBox = document.getElementById("sp-edit");
+    if(editBox) (function(){
+      var ist = 'font:inherit;font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface,#fff);min-width:0;';
+      var mine = state.steps.filter(function(x){ return x.projectId===pid && secretVisible(x); }).sort(function(a,b){ return (a.startDate||"").localeCompare(b.startDate||""); });
+      editBox.innerHTML = '<div style="font-size:12px;font-weight:700;margin:2px 0 4px">工程を直接入力・編集</div>'+
+        '<div class="pd-qa" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:6px 0"><span style="position:relative;flex:1 1 140px;min-width:0"><input type="text" class="qa-name" maxlength="60" data-ac-all="1" autocomplete="off" placeholder="工程名を直接入力" style="'+ist+'width:100%;box-sizing:border-box;padding:6px 8px"></span><input type="date" class="qa-s" style="'+ist+'width:128px" value="'+esc(today)+'">〜<input type="date" class="qa-e" style="'+ist+'width:128px" value="'+esc(today)+'"><button class="btn sm primary qa-go">'+iPlus()+' 追加</button></div>'+
+        (mine.length?'<div style="max-height:150px;overflow:auto;border-top:1px solid var(--border)">'+mine.map(function(x){
+          return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:5px 0;border-bottom:1px solid var(--border)"><span style="flex:1 1 110px;min-width:0;font-size:13px">'+esc(x.name||"（無題）")+'</span>'+
+            '<input type="date" style="'+ist+'width:128px" data-qe="startDate" data-qid="'+esc(x.id)+'" value="'+esc(x.startDate||"")+'">〜<input type="date" style="'+ist+'width:128px" data-qe="endDate" data-qid="'+esc(x.id)+'" value="'+esc(x.endDate||"")+'"><input type="number" min="0" max="100" step="5" style="'+ist+'width:58px" data-qe="progress" data-qid="'+esc(x.id)+'" value="'+esc(String(x.progress||0))+'" title="進捗（%）">%</div>'; }).join("")+'</div>':'');
+      editBox.querySelectorAll("[data-qe]").forEach(function(el){ el.addEventListener("change", function(){
+        var id = el.getAttribute("data-qid"), k = el.getAttribute("data-qe"), x = state.steps.find(function(y){return y.id===id;}); if(!x) return;
+        var v = el.value, d = {};
+        if(k==="progress"){ v = Math.max(0, Math.min(100, Math.round(+v||0))); d.progress = v; }
+        else { if(!v){ reopen(); return; } d[k] = v; var st2 = k==="startDate"?v:x.startDate, en = k==="endDate"?v:x.endDate; if(en && st2 && en<st2){ if(k==="startDate") d.endDate = v; else d.startDate = v; } }
+        writeDoc("steps", id, d, "工程を更新しました", reopen);
+      }); });
+      var box = editBox.querySelector(".pd-qa"), nm = box.querySelector(".qa-name"), qs = box.querySelector(".qa-s"), qe = box.querySelector(".qa-e");
+      acDropdown(nm, function(){ return STEP_NAMES.map(function(n){ return {label:n}; }); }, function(it){ nm.value = it.label; });
+      qs.addEventListener("change", function(){ if(!qe.value || qe.value<qs.value) qe.value = qs.value; });
+      var go = function(){
+        var name = nm.value.trim(); if(!name){ nm.focus(); toast("工程名を入力してください"); return; }
+        var pr = state.projects.find(function(y){return y.id===pid;});
+        var st2 = qs.value || today, en = qe.value || st2; if(en<st2) en = st2;
+        writeDoc("steps", null, {projectId:pid, projectName:pr?pr.name:"", name:name, startDate:st2, endDate:en, assignee:"", progress:0, group:"", note:"", secret:false}, "工程を追加しました", reopen);
+      };
+      box.querySelector(".qa-go").addEventListener("click", go);
+      nm.addEventListener("keydown", function(e){ if(e.key==="Enter" && !e.defaultPrevented){ e.preventDefault(); go(); } });
+    })();
     build();
   }
   function bindScheduleEvents(c){
@@ -10296,26 +10323,6 @@
     c.querySelectorAll("iframe.pd-gantt").forEach(function(f){ f.addEventListener("load", function(){ try{ f.style.height = (f.contentDocument.documentElement.scrollHeight+6)+"px"; }catch(e){} }); });
     c.querySelectorAll("[data-sched-proj]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); ev.stopPropagation(); openSchedulePrint(el.getAttribute("data-sched-proj")); }); });
     c.querySelectorAll("[data-pd-print]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); openSchedulePrint(el.getAttribute("data-pd-print")); }); });
-    c.querySelectorAll("[data-qe]").forEach(function(el){ el.addEventListener("change", function(){
-      var id = el.getAttribute("data-qid"), k = el.getAttribute("data-qe"), x = state.steps.find(function(y){return y.id===id;}); if(!x) return;
-      var v = el.value, d = {};
-      if(k==="progress"){ v = Math.max(0, Math.min(100, Math.round(+v||0))); d.progress = v; }
-      else { if(!v){ render(); return; } d[k] = v; var st = k==="startDate"?v:x.startDate, en = k==="endDate"?v:x.endDate; if(en && st && en<st){ if(k==="startDate") d.endDate = v; else d.startDate = v; } }
-      writeDoc("steps", id, d, "工程を更新しました");
-    }); });
-    c.querySelectorAll(".pd-qa").forEach(function(box){
-      var nm = box.querySelector(".qa-name"), qs = box.querySelector(".qa-s"), qe = box.querySelector(".qa-e");
-      acDropdown(nm, function(){ return STEP_NAMES.map(function(n){ return {label:n}; }); }, function(it){ nm.value = it.label; });
-      qs.addEventListener("change", function(){ if(!qe.value || qe.value<qs.value) qe.value = qs.value; });
-      var go = function(){
-        var name = nm.value.trim(); if(!name){ nm.focus(); toast("工程名を入力してください"); return; }
-        var pid = box.getAttribute("data-qpid"), pr = state.projects.find(function(y){return y.id===pid;});
-        var st = qs.value || localToday(), en = qe.value || st; if(en<st) en = st;
-        writeDoc("steps", null, {projectId:pid, projectName:pr?pr.name:"", name:name, startDate:st, endDate:en, assignee:"", progress:0, group:"", note:"", secret:false}, "工程を追加しました");
-      };
-      box.querySelector(".qa-go").addEventListener("click", go);
-      nm.addEventListener("keydown", function(e){ if(e.key==="Enter" && !e.defaultPrevented){ e.preventDefault(); go(); } });
-    });
     c.querySelectorAll("[data-pd-add]").forEach(function(el){ el.addEventListener("click", function(){
       var k = el.getAttribute("data-pd-add"), pid = el.getAttribute("data-pid");
       if(k==="event") openEventModal(null, null, pid); else if(k==="step") openStepModal(null, pid); else openReportModal(null, pid);
