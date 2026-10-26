@@ -2595,7 +2595,6 @@
   function iCheckIcon(){ return svgIcon('<path d="M4 12.5l5 5L20 6"/>',13); }
   function iImage(){ return svgIcon('<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.7"/><path d="M3 16.5l5-5 4 4 3-3 6 6"/>'); }
   function iFile(){ return svgIcon('<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/>',14); }
-  function iEye(){ return svgIcon('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',16); }
   function iEyeOff(){ return svgIcon('<path d="M2 12s3.5-7 10-7c2 0 3.6.5 5 1.3M22 12s-3.5 7-10 7c-2 0-3.6-.5-5-1.3"/><path d="M6.1 6.1 17.9 17.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',16); }
 
   /* ============ スマホ版メニューバー（下のバー）の編集 ============ */
@@ -3665,7 +3664,7 @@
       if(!date){ toast("開始日を入力してください"); return; }
       if(end && end<date){ toast("終了日は開始日以降にしてください"); return; }
       var pid = document.getElementById("f-eproj").value, pr = state.projects.find(function(x){return x.id===pid;});
-      writeDoc("events", ev?ev.id:null, {createdBy:(ev&&ev.createdBy)||state.myName||"", title:title, category:document.getElementById("f-ecat").value, date:date, endDate:end||"", projectId:pid||"", projectName:pr?pr.name:"", note:document.getElementById("f-enote").value.trim(), secret:document.querySelector('input[name="f-sscope"]:checked').value==="secret", createdBy:(ev&&ev.createdBy)||state.myName||""}, ev?"予定を更新しました":"予定を追加しました");
+      writeDoc("events", ev?ev.id:null, {title:title, category:document.getElementById("f-ecat").value, date:date, endDate:end||"", projectId:pid||"", projectName:pr?pr.name:"", note:document.getElementById("f-enote").value.trim(), secret:document.querySelector('input[name="f-sscope"]:checked').value==="secret", createdBy:(ev&&ev.createdBy)||state.myName||""}, ev?"予定を更新しました":"予定を追加しました");
     });
   }
   function openStepModal(st, projectId){
@@ -4059,7 +4058,7 @@
         paper.style.width = (1060*k)+"px"; paper.style.height = (h*k)+"px";
       }catch(e){}
     };
-    fr.addEventListener("load", fit); window.addEventListener("resize", fit);
+    fr.addEventListener("load", fit); if(window.__spFit) window.removeEventListener("resize", window.__spFit); window.__spFit = fit; window.addEventListener("resize", fit);
     var build = function(){
       var np = document.getElementById("sp-proj").value;
       if(np!==st.project){ st.project = np; var di = formInfoDefaults(np==="all"?"":np); document.getElementById("sp-client").value = di.client; document.getElementById("sp-resp").value = di.resp; document.getElementById("sp-author").value = di.author; }
