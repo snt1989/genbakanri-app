@@ -3892,14 +3892,16 @@
     var dayHead = "", wkHead = "", cols = "";
     for(var d=1; d<=dim; d++){
       var dow = new Date(y,m-1,d).getDay(), cl = dow===6 ? "sa" : (dow===0 ? "su" : "");
-      dayHead += '<th class="dy '+cl+'">'+d+'</th>'; wkHead += '<th class="dy w '+cl+'">'+WEEKDAYS[dow]+'</th>'; cols += '<col>';
+      var tdy = (ym+"-"+String(d).padStart(2,"0"))===localToday() ? " tdy" : "";
+      dayHead += '<th class="dy '+cl+tdy+'">'+d+'</th>'; wkHead += '<th class="dy w '+cl+'">'+WEEKDAYS[dow]+'</th>'; cols += '<col>';
     }
     var empty = function(cnt){ var t=""; for(var i=0;i<cnt;i++) t += '<td class="dc'+((i<dim)?'':'')+'"></td>'; return t; };
     var cellsFor = function(r){
       var t = "";
       for(var d=1; d<=dim; d++){
         var iso = ym+"-"+String(d).padStart(2,"0"), dow = new Date(y,m-1,d).getDay();
-        t += '<td class="dc'+(r && iso>=r.s && iso<=r.e ? ' on' : '')+'"'+(r && iso>=r.s && iso<=r.e ? ' style="background:'+COL[r.k]+'"' : (dow===0||dow===6?' style="background:#f4f4f4"':''))+'></td>';
+        var inb = r && iso>=r.s && iso<=r.e, cl = "dc"+(inb?" on"+(iso===r.s?" bs":"")+(iso===r.e?" be":""):"")+(iso===localToday()?" tdy":"")+(dow===0?" su":(dow===6?" sa":""));
+        t += '<td class="'+cl+'"'+(inb ? ' style="background:'+COL[r.k]+';--c:'+COL[r.k]+'"' : (dow===0||dow===6?' style="background:#f4f4f4"':''))+'></td>';
       }
       return t;
     };
@@ -3910,7 +3912,7 @@
         body += '<tr><td class="nm">'+esc(r.label)+'</td><td class="dt">'+esc(fm(r.s))+'</td><td class="dt">'+esc(fm(r.e))+'</td>'+cellsFor(r)+'<td class="nt">'+esc(r.note||"")+'</td></tr>'; lines++;
       });
     });
-    for(var f=lines; f<(o.compact?Math.max(lines,4):14); f++) body += '<tr><td class="nm"></td><td class="dt"></td><td class="dt"></td>'+cellsFor(null)+'<td class="nt"></td></tr>';
+    for(var f=lines; f<(o.compact?Math.max(lines,2):14); f++) body += '<tr><td class="nm"></td><td class="dt"></td><td class="dt"></td>'+cellsFor(null)+'<td class="nt"></td></tr>';
     var infoTbl = o.compact ? "" : '<table class="info"><tr><th style="width:36%">工事名（件名）</th><th>発注者</th><th>開始日</th><th>完了予定日</th><th>責任者</th><th>作成者</th><th>作成日</th></tr>'+
       '<tr><td>'+esc(P.name||"")+'</td><td>'+esc(info.client||"")+'</td><td class="c">'+esc(P.startDate?P.startDate.replace(/-0?/g,"/"):"")+'</td><td class="c">'+esc(P.endDate?P.endDate.replace(/-0?/g,"/"):"")+'</td><td class="c">'+esc(info.resp||"")+'</td><td class="c">'+esc(info.author||"")+'</td><td class="c">'+esc(localToday().replace(/-0?/g,"/"))+'</td></tr></table>';
     return '<section class="pg">'+(o.compact?'':'<h1>工程表</h1>')+'<div class="ym"><b>'+y+'年</b><b>'+m+'月</b></div>'+infoTbl+
@@ -3928,7 +3930,14 @@
       'table.g td{height:21px;padding:0 4px;border-bottom:1px dashed #666}table.g td.dc{padding:0;border-left:1px dashed #666;border-right:0}table.g td.nm{border-left:1.5px solid #000;border-right:1px solid #000;border-bottom:1px solid #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'+
       'table.g td.dt{text-align:center;border-right:1px solid #000;border-bottom:1px solid #000;font-size:10.5px}table.g td.nt{border-left:1px solid #000;border-right:1.5px solid #000;border-bottom:1px solid #000;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'+
       'table.g tr.gr td.nm{font-weight:700;background:#fff}tr{break-inside:avoid}';
-    if(o.compact) css += 'body{min-width:560px;font-size:10px}.ym{margin:2px 0 4px 4px;font-size:13px}table.g col.c1{width:96px}table.g col.c2{width:34px}table.g col.cn{width:60px}table.g td{height:24px}';
+    if(o.compact) css += 'body{min-width:560px;font-size:12px;color:#1f2d27;background:#fff;-webkit-font-smoothing:antialiased}.ym{margin:4px 0 8px 2px;font-size:15px;font-weight:700;color:#1f4d3a}.ym b{margin-right:4px;font-weight:700}'+
+      'table.g{border:1px solid #d5ddd9;border-radius:8px;border-collapse:separate;border-spacing:0;overflow:hidden}table.g col.c1{width:130px}table.g col.c2{width:42px}table.g col.cn{width:70px}'+
+      'table.g th{background:#eef4f1;border:0;border-bottom:1px solid #d5ddd9;color:#40564c;font-weight:600;font-size:11px;padding:3px 0}table.g th.dy{border:0;border-left:1px solid #e6ece9;font-weight:500;font-size:10.5px}table.g th.w{font-size:9.5px;color:#6b7f75}'+
+      'table.g th.sa{background:#dcebf6;color:#2c6a99}table.g th.su{background:#f9dfe7;color:#b0405f}table.g th.tdy{background:#1f7a4d;color:#fff}'+
+      'table.g td{height:34px;border:0;border-bottom:1px solid #edf1ef;font-size:12px}table.g td.dc{position:relative;border-left:1px solid #f0f3f1}table.g td.dc.sa,table.g td.dc.su{background:#f7f9f8!important}table.g td.dc.tdy{background:#f0f8f3!important}'+
+      'table.g td.nm{border:0;border-bottom:1px solid #edf1ef;font-weight:600;padding-left:10px}table.g td.dt{border:0;border-bottom:1px solid #edf1ef;color:#5d7167;font-size:11px}table.g td.nt{border:0;border-bottom:1px solid #edf1ef;border-left:1px solid #f0f3f1;color:#5d7167;font-size:11px}'+
+      'table.g td.on{background:transparent!important}table.g td.on{border-left-color:transparent!important}table.g td.on::after{content:"";position:absolute;left:-1px;right:0;top:8px;bottom:8px;background:var(--c)}table.g td.on.bs::after{left:1px;border-radius:6px 0 0 6px}table.g td.on.be::after{right:2px;border-radius:0 6px 6px 0}table.g td.on.bs.be::after{border-radius:6px}'+
+      'table.g tr.gr td.nm{background:#f7faf8;color:#1f4d3a}table.g tr:last-child td{border-bottom:0}';
     return '<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>工程表</title><style>'+css+'</style></head><body>'+months.map(function(ym){ return scheduleFormMonth(o, ym); }).join("")+'</body></html>';
   }
   function scheduleHtml(o){
