@@ -3569,7 +3569,7 @@
   }
   function renderStepList(){
     var rows = filterSteps().filter(secretVisible).filter(function(x){ return projectVisibleId(x.projectId); });
-    if(!rows.length) return emptyState(iGantt,"工程がありません","「工程を追加」またはCSV入力で登録できます");
+    if(!rows.length) return emptyState(iGantt,"工程がありません","「工程・予定を追加」またはCSV入力で登録できます");
     var h = '<div class="summary-line"><span><b>'+rows.length+'</b>件</span></div><div class="tablewrap"><table><thead><tr><th>案件</th><th>工程名</th><th>開始日</th><th>終了日</th><th>担当者</th><th>進捗</th><th>公開範囲</th><th></th></tr></thead><tbody>';
     h += rows.map(function(x){
       return '<tr class="rowhover" data-row-id="'+esc(x.id)+'"><td><div class="cell-name">'+esc(x.projectName||"—")+'</div></td><td>'+esc(x.name||"（未入力）")+'</td>'+
@@ -3627,7 +3627,7 @@
         '<div style="border-top:1px solid var(--border);margin:6px 0 0"></div>';
     }
     return '<div class="form-section-title" style="flex-wrap:wrap;gap:8px"><span style="white-space:nowrap">工程表</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">'+
-        '<button class="btn sm primary" data-pd-add="step" data-pid="'+esc(p.id)+'">'+iPlus()+' 工程を追加</button></span></div>'+
+        '<button class="btn sm primary" data-pd-add="step" data-pid="'+esc(p.id)+'">'+iPlus()+' 工程・予定を追加</button></span></div>'+
       '<div class="card" style="padding:6px 18px">'+gantt+(rows.length ? rows.slice(0,10).join("")+(rows.length>10?'<div style="font-size:12px;padding:8px 0"><a href="#" data-pd-goto="schedule">すべて見る（'+rows.length+'件）</a></div>':'') : '<div style="font-size:12px;color:var(--ink-faint);padding:12px 0">この案件の工程・予定はまだありません</div>')+'</div>';
   }
   // 新規追加の画面で「工程 / 予定」を切り替える（どちらも同じ入口から追加できるように）
@@ -3669,7 +3669,7 @@
     var s = st || {projectId:projectId||"", progress:0};
     var members = state.members.map(function(m){return m.name;});
     var today = localToday();
-    openModal(st?"工程の編集":"工程の追加",
+    openModal(st?"工程の編集":"工程・予定の追加",
       (st?"":kindSwitchHtml("step"))+
       field("案件",'<select id="f-sproj">'+state.projects.slice().sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");}).map(function(p){ return '<option value="'+esc(p.id)+'"'+(p.id===s.projectId?" selected":"")+'>'+esc(p.name)+'</option>'; }).join("")+'</select>')+
       field("工程名",'<input type="text" id="f-sname" data-ac-all="1" maxlength="60" autocomplete="off" placeholder="自由に入力（候補から選ぶこともできます）" value="'+esc(s.name||"")+'">')+
@@ -3711,7 +3711,7 @@
     var startDow = parseISO(start).getDay();
     var grid = 'background-image:linear-gradient(to right,#EEF1F0 0,#EEF1F0 '+dw+'px,transparent '+dw+'px,transparent '+(6*dw)+'px,#EEF1F0 '+(6*dw)+'px,#EEF1F0 '+(7*dw)+'px),linear-gradient(to right,rgba(0,0,0,.06) 1px,transparent 1px);background-size:'+(7*dw)+'px 100%,'+dw+'px 100%;background-position:'+(-startDow*dw)+'px 0,0 0;';
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">工程表</h1>'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+csvToolbar("steps")+'<button class="btn outline" data-sched-print>'+iDownload()+' 印刷 / PDF</button><button class="btn primary" data-step-add="">'+iPlus()+' 工程を追加</button></div></div><div style="height:12px"></div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+csvToolbar("steps")+'<button class="btn outline" data-sched-print>'+iDownload()+' 印刷 / PDF</button><button class="btn primary" data-step-add="">'+iPlus()+' 工程・予定を追加</button></div></div><div style="height:12px"></div>'+
       schedSwitch();
     if(state.ganttView==="list") return html + renderStepList();
     if(state.ganttView==="people") return html + renderPeopleChart();
@@ -3762,7 +3762,7 @@
     projs.forEach(function(p){
       var sts = (stepsBy[p.id]||[]).slice().sort(function(a,b){ return (a.startDate||"").localeCompare(b.startDate||""); });
       var open = !state.ganttClosed[p.id];
-      rows += '<div class="gt-row prj"><div class="gt-lbl"><button class="gt-tg" data-gantt-toggle="'+esc(p.id)+'" title="担当・工程の開閉">'+(open?'▾':'▸')+'</button><a href="#" class="gt-name" data-open-project="'+esc(p.id)+'" title="'+esc(p.name)+'">'+esc(p.name)+'</a><button class="btn sm gt-add" data-step-add="'+esc(p.id)+'" title="工程を追加">'+iPlus()+'</button></div>'+
+      rows += '<div class="gt-row prj"><div class="gt-lbl"><button class="gt-tg" data-gantt-toggle="'+esc(p.id)+'" title="担当・工程の開閉">'+(open?'▾':'▸')+'</button><a href="#" class="gt-name" data-open-project="'+esc(p.id)+'" title="'+esc(p.name)+'">'+esc(p.name)+'</a><button class="btn sm gt-add" data-step-add="'+esc(p.id)+'" title="工程・予定を追加">'+iPlus()+'</button></div>'+
         '<div class="gt-cols" style="width:'+W+'px;'+grid+'">'+dots(p, sts)+'</div></div>';
       if(!open) return;
       // 担当者ごとの行（工程が重なる場合は段を分ける）
@@ -3782,7 +3782,7 @@
       });
     });
     if(!rows){
-      html += emptyState(iBriefcase,"表示できる工程がありません","「工程を追加」から工程を登録すると、ここに表示されます");
+      html += emptyState(iBriefcase,"表示できる工程がありません","「工程・予定を追加」から登録すると、ここに表示されます");
       return html;
     }
     var todayOff = diffDays(start,today);
@@ -6680,7 +6680,7 @@
     {key:"roles", label:"職種", arr:ROLES, note:"メンバーの「職種」に出ます"},
     {key:"propertyTypes", label:"物件種類", arr:PROPERTY_TYPES, note:"物件情報の「物件種類」に出ます"},
     {key:"propertyStructures", label:"物件構造", arr:PROPERTY_STRUCTURES, note:"物件情報の「構造」に出ます"},
-    {key:"stepNames", label:"工程名", arr:STEP_NAMES, note:"工程表の「工程を追加」で、入力欄の候補として出ます（工程名は自由に入力できます）"},
+    {key:"stepNames", label:"工程名", arr:STEP_NAMES, note:"工程表の「工程・予定を追加」で、入力欄の候補として出ます（工程名は自由に入力できます）"},
     {key:"eventTypes", label:"予定の種類", arr:EVENT_TYPES, note:"カレンダーの「予定を追加」で選ぶ種類に出ます"},
     {key:"reportTypes", label:"報告書の種類", arr:REPORT_TYPES, note:"報告書の「報告書を作成」で選ぶ種類と、一覧の絞り込みに出ます"}
   ];
