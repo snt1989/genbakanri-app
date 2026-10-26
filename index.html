@@ -3977,10 +3977,10 @@
       '<div class="field"><span>期間</span><div style="display:flex;gap:6px;align-items:center"><input type="date" id="sp-from" value="'+st.from+'"><span>〜</span><input type="date" id="sp-to" value="'+st.to+'"></div></div></div>'+
       '<div id="sp-info" class="field-row" style="display:none">'+field("発注者",'<input type="text" id="sp-client" value="">')+field("責任者",'<input type="text" id="sp-resp" value="">')+field("作成者",'<input type="text" id="sp-author" value="">')+'</div>'+
       '<div class="checkgroup" style="margin:2px 0 8px">'+[["proj","施工期間・引渡し"],["step","工程"],["ev","予定"],["task","タスク"]].map(function(x){ return '<label class="checkopt"><input type="checkbox" class="sp-inc" data-k="'+x[0]+'"'+(st.inc[x[0]]?" checked":"")+'>'+x[1]+'</label>'; }).join("")+'</div>'+
-      '<div class="cell-sub" style="margin-bottom:6px">期間は最長120日です。印刷のとき、送信先を「PDFに保存」にするとPDFになります（用紙はA4横）。</div>'+
+      '<div class="cell-sub" style="margin-bottom:6px">期間は最長120日です。用紙はA4横です。「印刷」は印刷画面を開き、「PDFで保存」はPDFファイルをそのままダウンロードします。</div>'+
       (pid?'<div id="sp-edit"></div>':'')+
       '<iframe id="sp-frame" style="width:100%;height:56vh;border:1px solid var(--border);border-radius:8px;background:#fff"></iframe>',
-      '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="sp-print">印刷 / PDFで保存</button>');
+      '<button class="btn" data-close-modal>閉じる</button><button class="btn" id="sp-pdf">PDFで保存</button><button class="btn primary" id="sp-print">印刷</button>');
     document.getElementById("modal-box").style.maxWidth = "980px";
     var fr = document.getElementById("sp-frame");
     var build = function(){
@@ -4000,6 +4000,37 @@
     document.getElementById("sp-proj").value = prevP;
     document.querySelectorAll(".sp-inc").forEach(function(c){ c.addEventListener("change", build); });
     document.getElementById("sp-print").addEventListener("click", function(){ try{ fr.contentWindow.focus(); fr.contentWindow.print(); }catch(e){ toast("印刷できませんでした"); } });
+    var loadJs = function(url){ return new Promise(function(res, rej){ var el = document.createElement("script"); el.src = url; el.onload = res; el.onerror = function(){ rej(new Error("load")); }; document.head.appendChild(el); }); };
+    document.getElementById("sp-pdf").addEventListener("click", function(){
+      var btn = this; if(btn.disabled) return; btn.disabled = true; var old = btn.textContent; btn.textContent = "PDF作成中…";
+      var done = function(){ btn.disabled = false; btn.textContent = old; };
+      var libs = (window.html2canvas && window.jspdf) ? Promise.resolve() : Promise.all([loadJs("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"), loadJs("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js")]);
+      libs.then(function(){
+        var off = document.createElement("iframe"); off.style.cssText = "position:fixed;left:-99999px;top:0;width:1040px;height:800px;border:0;background:#fff";
+        document.body.appendChild(off);
+        return new Promise(function(res){ off.onload = function(){ res(off); }; off.srcdoc = fr.srcdoc; });
+      }).then(function(off){
+        var d = off.contentDocument, secs = Array.prototype.slice.call(d.querySelectorAll("section.pg")); if(!secs.length) secs = [d.body];
+        var PDF = window.jspdf.jsPDF, doc = new PDF({orientation:"landscape", unit:"mm", format:"a4"}), W = 297, H = 210, M = 8, first = true;
+        var chain = Promise.resolve();
+        secs.forEach(function(sec){ chain = chain.then(function(){ return window.html2canvas(sec, {scale:2, backgroundColor:"#fff", useCORS:true}).then(function(cv){
+          var w = W-2*M, h = cv.height*w/cv.width, ph = H-2*M, y = 0;
+          while(y < h-0.5){
+            var sh = Math.min(ph, h-y), sc = document.createElement("canvas"); sc.width = cv.width; sc.height = Math.max(1, Math.round(sh*cv.width/w));
+            sc.getContext("2d").drawImage(cv, 0, Math.round(y*cv.width/w), cv.width, sc.height, 0, 0, cv.width, sc.height);
+            if(!first) doc.addPage(); first = false;
+            doc.addImage(sc.toDataURL("image/jpeg", 0.92), "JPEG", M, M, w, sh);
+            y += ph;
+          }
+        }); }); });
+        return chain.then(function(){
+          document.body.removeChild(off);
+          var pr = state.projects.find(function(x){ return x.id===st.project; });
+          doc.save("工程表_"+(pr?pr.name.replace(/[\\\/:*?"<>|]/g,"")+"_":"")+localToday()+".pdf");
+          toast("PDFを保存しました");
+        });
+      }).then(done, function(){ done(); toast("PDFを作成できませんでした。「印刷」から保存してください"); });
+    });
     var reopen = function(){ setTimeout(function(){ openSchedulePrint(pid); }, 250); };
     var editBox = document.getElementById("sp-edit");
     if(editBox) (function(){
