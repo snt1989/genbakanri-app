@@ -3612,6 +3612,7 @@
     all.sort(function(a,b){ return a.d.localeCompare(b.d); });
     var rows = all.map(function(x){ return x.html; });
     var gantt = "";
+    var narrow = window.innerWidth<600;
     var ginc = {proj:false, step:true, ev:true, task:false};
     var gr = scheduleRowsFor(p.id, ginc);
     if(gr.length){
@@ -3621,9 +3622,9 @@
       if(gms.indexOf(cur)===-1) cur = gms.indexOf(tm)!==-1 ? tm : gms[0];
       var ci = gms.indexOf(cur);
       gantt = (gms.length>1 ? '<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 0 2px"><button class="btn sm" data-pd-gm="'+esc(p.id)+'" data-ym="'+(ci>0?gms[ci-1]:"")+'"'+(ci>0?'':' disabled')+'>◀</button><b style="font-size:13px">'+esc(cur.slice(0,4))+'年'+(+cur.slice(5,7))+'月</b><button class="btn sm" data-pd-gm="'+esc(p.id)+'" data-ym="'+(ci<gms.length-1?gms[ci+1]:"")+'"'+(ci<gms.length-1?'':' disabled')+'>▶</button></div>' : '')+
-        '<div style="overflow-x:auto"><div style="position:relative;min-width:560px"><iframe class="pd-gantt" style="width:100%;height:200px;border:0;display:block;background:#fff" srcdoc="'+esc(scheduleFormDoc({project:p.id, months:[cur], compact:true, inc:ginc, info:formInfoDefaults(p.id)}))+'"></iframe>'+
-        '<a href="#" data-pd-print="'+esc(p.id)+'" title="クリックで大きく表示・印刷 / PDF" style="position:absolute;inset:0;cursor:zoom-in"></a></div></div>'+
-        '<div style="font-size:11px;color:var(--ink-faint);padding:4px 2px 0">工程表をクリックすると、大きく表示して印刷・PDFにできます</div>'+
+        '<div style="'+(narrow?'':'overflow-x:auto')+'"><div style="position:relative;'+(narrow?'':'min-width:560px')+'"><iframe class="pd-gantt" style="width:100%;height:200px;border:0;display:block;background:#fff" srcdoc="'+esc(scheduleFormDoc({project:p.id, months:[cur], compact:true, narrow:narrow, inc:ginc, info:formInfoDefaults(p.id)}))+'"></iframe>'+
+        (narrow?'':'<a href="#" data-pd-print="'+esc(p.id)+'" title="クリックで大きく表示・印刷 / PDF" style="position:absolute;inset:0;cursor:zoom-in"></a>')+'</div></div>'+
+        (narrow?'<div style="padding:6px 0 2px;display:flex;align-items:center;gap:8px"><a href="#" data-pd-print="'+esc(p.id)+'" class="btn sm">大きく表示・印刷</a><span style="font-size:11px;color:var(--ink-faint)">横にスワイプで日付を移動</span></div>':'<div style="font-size:11px;color:var(--ink-faint);padding:4px 2px 0">工程表をクリックすると、大きく表示して印刷・PDFにできます</div>')+
         '<div style="border-top:1px solid var(--border);margin:6px 0 0"></div>';
     }
     return '<div class="form-section-title" style="flex-wrap:wrap;gap:8px"><span style="white-space:nowrap">工程表</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">'+
@@ -3907,17 +3908,18 @@
     };
     var body = "", lines = 0;
     order.forEach(function(g){
-      if(g){ body += '<tr class="gr"><td class="nm" colspan="3">'+esc(g)+'</td>'+cellsFor(null)+'<td class="nt"></td></tr>'; lines++; }
+      if(g){ body += '<tr class="gr"><td class="nm" colspan="'+(o.narrow?1:3)+'">'+esc(g)+'</td>'+cellsFor(null)+(o.narrow?'':'<td class="nt"></td>')+'</tr>'; lines++; }
       by[g].forEach(function(r){
-        body += '<tr><td class="nm">'+esc(r.label)+'</td><td class="dt">'+esc(fm(r.s))+'</td><td class="dt">'+esc(fm(r.e))+'</td>'+cellsFor(r)+'<td class="nt">'+esc(r.note||"")+'</td></tr>'; lines++;
+        body += o.narrow ? '<tr><td class="nm"><div class="n1">'+esc(r.label)+'</div><div class="n2">'+esc(fm(r.s))+(r.e!==r.s?'〜'+esc(fm(r.e)):'')+'</div></td>'+cellsFor(r)+'</tr>'
+          : '<tr><td class="nm">'+esc(r.label)+'</td><td class="dt">'+esc(fm(r.s))+'</td><td class="dt">'+esc(fm(r.e))+'</td>'+cellsFor(r)+'<td class="nt">'+esc(r.note||"")+'</td></tr>'; lines++;
       });
     });
-    for(var f=lines; f<(o.compact?Math.max(lines,2):14); f++) body += '<tr><td class="nm"></td><td class="dt"></td><td class="dt"></td>'+cellsFor(null)+'<td class="nt"></td></tr>';
+    for(var f=lines; f<(o.compact?Math.max(lines,2):14); f++) body += o.narrow ? '<tr><td class="nm"></td>'+cellsFor(null)+'</tr>' : '<tr><td class="nm"></td><td class="dt"></td><td class="dt"></td>'+cellsFor(null)+'<td class="nt"></td></tr>';
     var infoTbl = o.compact ? "" : '<table class="info"><tr><th style="width:36%">工事名（件名）</th><th>発注者</th><th>開始日</th><th>完了予定日</th><th>責任者</th><th>作成者</th><th>作成日</th></tr>'+
       '<tr><td>'+esc(P.name||"")+'</td><td>'+esc(info.client||"")+'</td><td class="c">'+esc(P.startDate?P.startDate.replace(/-0?/g,"/"):"")+'</td><td class="c">'+esc(P.endDate?P.endDate.replace(/-0?/g,"/"):"")+'</td><td class="c">'+esc(info.resp||"")+'</td><td class="c">'+esc(info.author||"")+'</td><td class="c">'+esc(localToday().replace(/-0?/g,"/"))+'</td></tr></table>';
     return '<section class="pg">'+(o.compact?'':'<h1>工程表</h1>')+'<div class="ym"><b>'+y+'年</b><b>'+m+'月</b></div>'+infoTbl+
-      '<table class="g"><colgroup><col class="c1"><col class="c2"><col class="c2">'+cols+'<col class="cn"></colgroup>'+
-      '<thead><tr><th class="nm" rowspan="2">行程内容</th><th class="dt" rowspan="2">開始日</th><th class="dt" rowspan="2">終了日</th>'+dayHead+'<th class="nt" rowspan="2">備考</th></tr><tr>'+wkHead+'</tr></thead><tbody>'+body+'</tbody></table></section>';
+      '<table class="g"><colgroup><col class="c1">'+(o.narrow?'':'<col class="c2"><col class="c2">')+cols+(o.narrow?'':'<col class="cn">')+'</colgroup>'+
+      '<thead><tr><th class="nm" rowspan="2">行程内容</th>'+(o.narrow?'':'<th class="dt" rowspan="2">開始日</th><th class="dt" rowspan="2">終了日</th>')+dayHead+(o.narrow?'':'<th class="nt" rowspan="2">備考</th>')+'</tr><tr>'+wkHead+'</tr></thead><tbody>'+body+'</tbody></table></section>';
   }
   function scheduleFormDoc(o){
     var months = o.months || formMonths(o.from, o.to);
@@ -3938,7 +3940,10 @@
       'table.g td.nm{border:0;border-bottom:1px solid #edf1ef;font-weight:600;padding-left:10px}table.g td.dt{border:0;border-bottom:1px solid #edf1ef;color:#5d7167;font-size:11px}table.g td.nt{border:0;border-bottom:1px solid #edf1ef;border-left:1px solid #f0f3f1;color:#5d7167;font-size:11px}'+
       'table.g td.on{background:transparent!important}table.g td.on{border-left-color:transparent!important}table.g td.on::after{content:"";position:absolute;left:-1px;right:0;top:8px;bottom:8px;background:var(--c)}table.g td.on.bs::after{left:1px;border-radius:6px 0 0 6px}table.g td.on.be::after{right:2px;border-radius:0 6px 6px 0}table.g td.on.bs.be::after{border-radius:6px}'+
       'table.g tr.gr td.nm{background:#f7faf8;color:#1f4d3a}table.g tr:last-child td{border-bottom:0}';
-    return '<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>工程表</title><style>'+css+'</style></head><body>'+months.map(function(ym){ return scheduleFormMonth(o, ym); }).join("")+'</body></html>';
+    if(o.narrow) css += 'body{min-width:0;overflow-x:auto;-webkit-overflow-scrolling:touch}table.g{width:auto;min-width:0;table-layout:fixed;overflow:visible;border-radius:0}table.g col.c1{width:96px}table.g col:not(.c1){width:24px}table.g th.dy{font-size:10px}table.g th.w{font-size:9px}'+
+      'table.g td.nm,table.g th.nm{position:sticky;left:0;z-index:3;background:#fff;box-shadow:1px 0 0 #d5ddd9;padding:0 6px 0 8px}table.g th.nm{background:#eef4f1}table.g tr.gr td.nm{background:#f7faf8}table.g td{height:44px}table.g td.nm{white-space:normal;line-height:1.25}'+
+      '.n1{font-size:12.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:88px}.n2{font-size:10px;font-weight:500;color:#6b7f75}.ym{display:none}';
+    return '<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>工程表</title><style>'+css+'</style></head><body>'+months.map(function(ym){ return scheduleFormMonth(o, ym); }).join("")+(o.narrow?'<script>(function(){var t=document.querySelector("td.on")||document.querySelector("th.tdy");if(t)document.body.scrollLeft=document.documentElement.scrollLeft=Math.max(0,t.offsetLeft-110)})()<\/script>':'')+'</body></html>';
   }
   function scheduleHtml(o){
     if(o.project && o.project!=="all" && !o.legacy) return scheduleFormDoc(o);
