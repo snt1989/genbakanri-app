@@ -1506,6 +1506,7 @@
       {t:"案件から社用車管理アプリを開くと、行先に現場名が入ります", d:"案件の詳細画面の「連携アプリ」で「社用車管理」を押すと、出発登録が開き、行先にその案件の現場名が、事業部が同じ名前で登録されていれば事業部も自動で入ります（運転者としてログインしていない場合は、ログイン後に開きます）。社用車管理アプリ側では、行先の入力は必須ではなくなりました。同じ氏名の運転者が社用車管理アプリにいれば、ログインも引き継ぎます（SSO.md の設定が必要です）。"}
     ]},
     {id:"2026-10-22-1", title:"10月22日の更新", items:[
+      {t:"案件の詳細・案件一覧でも、カレンダーと工程表を「工程表」に統一しました", d:"案件の詳細では「工程表」の1か所に、工程と予定を日付順にまとめて表示し、工程・予定の追加と、その案件だけの印刷 / PDFができます。案件一覧の「工程表」の目印も1つになりました。"},
       {t:"カレンダーを工程表に統一し、工程表を印刷・PDFにできます", d:"メニューは「工程表」だけになり、画面上の切り替えで「横断工程表・担当別・工程一覧・月カレンダー・予定一覧」を見られます（これまでのカレンダーの予定やタスクもそのまま入っています）。「印刷 / PDF」から、案件と期間を選んで、A4横の工程表を印刷またはPDFにできます。"},
       {t:"Instagram投稿文のAIが、案件の施工指示・工程・報告書・メモから具体的に書きます。管理者はそのまま投稿もできます", d:"「Instagram投稿文を作る」で、AIが使う情報が自動で入り、消したり書き足したりできます（お客様名・電話・住所・金額は自動で取り除きます）。管理者がInstagramの連携設定を済ませると、写真を選んで「Instagramに投稿する」で直接投稿できます。", admin:true},
       {t:"案件の情報から、Instagramの投稿文を自動で作れます", d:"案件の詳細画面の「Instagram投稿文を作る」から、工事の種類・場所（市区町村まで）・施工日をもとに投稿文とハッシュタグを自動で作成します。文面は3パターンから選べ、そのまま直してコピーできます。お客様のお名前や詳しい住所は入りません。管理者がAnthropic APIキーを登録すると「AIで作り直す」も使えます。"},
@@ -3602,12 +3603,16 @@
       return '<div class="pf-docrow" style="align-items:center"><div style="flex:1;min-width:0"><a class="nm" href="#" '+attr+'="'+esc(id)+'">'+(lock?iLock()+' ':'')+esc(name)+'</a><div class="d" style="font-size:11.5px;color:var(--ink-faint)">'+sub+'</div></div>'+
         badge+' <button class="btn sm" '+attr+'="'+esc(id)+'">'+iEdit()+' 編集</button></div>';
     };
-    return block("カレンダー","event","予定を追加","calendar","この案件の予定はまだありません", evs.map(function(x){
-        return row("data-pd-event", x.id, x.secret, eventLabel(x), esc(range(x.date,x.endDate)), '');
-      }))+
-      block("工程表","step","工程を追加","schedule","この案件の工程はまだありません", sts.map(function(x){
-        return row("data-pd-step", x.id, x.secret, x.name||"（無題）", esc(range(x.startDate,x.endDate))+(x.assignee?' ・ '+esc(x.assignee):''), '<span class="badge line-gray">進捗 '+esc(String(x.progress||0))+'%</span>');
-      }));
+    var all = [];
+    sts.forEach(function(x){ all.push({d:x.startDate||"", html:row("data-pd-step", x.id, x.secret, x.name||"（無題）", esc(range(x.startDate,x.endDate))+(x.assignee?' ・ '+esc(x.assignee):''), '<span class="badge line-gray">進捗 '+esc(String(x.progress||0))+'%</span>')}); });
+    evs.forEach(function(x){ all.push({d:x.date||"", html:row("data-pd-event", x.id, x.secret, eventLabel(x), esc(range(x.date,x.endDate)), '<span class="badge line-gray">予定</span>')}); });
+    all.sort(function(a,b){ return a.d.localeCompare(b.d); });
+    var rows = all.map(function(x){ return x.html; });
+    return '<div class="form-section-title"><span>工程表</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">'+
+        '<button class="btn sm outline" data-pd-print="'+esc(p.id)+'">'+iDownload()+' 印刷 / PDF</button>'+
+        '<button class="btn sm primary" data-pd-add="step" data-pid="'+esc(p.id)+'">'+iPlus()+' 工程を追加</button>'+
+        '<button class="btn sm" data-pd-add="event" data-pid="'+esc(p.id)+'">'+iPlus()+' 予定を追加</button></span></div>'+
+      '<div class="card" style="padding:6px 18px">'+(rows.length ? rows.slice(0,10).join("")+(rows.length>10?'<div style="font-size:12px;padding:8px 0"><a href="#" data-pd-goto="schedule">すべて見る（'+rows.length+'件）</a></div>':'') : '<div style="font-size:12px;color:var(--ink-faint);padding:12px 0">この案件の工程・予定はまだありません</div>')+'</div>';
   }
   function openEventModal(ev, day, projectId){
     var e = ev || {date:day||localToday(), projectId:projectId||""};
@@ -3871,12 +3876,19 @@
       '<div class="stripes">'+stripes+'</div>'+(total?body:'<div class="empty">この期間に表示する工程・予定・タスクがありません</div>')+'</div>'+
       '<div class="legend"><span><i style="background:'+COL.project+'"></i>施工期間</span><span><i style="background:'+COL.step+'"></i>工程（濃い部分＝進捗）</span><span><i style="background:'+COL.event+'"></i>予定</span><span><i style="background:'+COL.task+'"></i>タスク期限</span><span><i style="background:'+COL.handover+'"></i>引渡し</span><span>赤い縦線＝今日</span></div></body></html>';
   }
-  function openSchedulePrint(){
+  function openSchedulePrint(pid){
+    pid = (typeof pid==="string") ? pid : "";
     var today = localToday(), mon = today.slice(0,8)+"01";
     var st = {project:"all", from:mon, to:addDays(mon,41), inc:{proj:true, step:true, ev:true, task:true}};
+    if(pid){
+      // 案件の詳細から開いたときは、その案件の全期間にあわせる
+      var rs = scheduleRowsFor(pid, st.inc);
+      if(rs.length){ var a = rs.map(function(r){ return r.s; }).sort()[0], b = rs.map(function(r){ return r.e; }).sort().pop(); st.project = pid; st.from = a; st.to = (diffDays(a,b)>119) ? addDays(a,119) : b; }
+      else st.project = pid;
+    }
     var projs = state.projects.filter(function(p){ return p.status!=="失注" && projectVisibleId(p.id); }).sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
     openModal("工程表を印刷 / PDFで保存",
-      '<div class="field-row">'+field("案件",'<select id="sp-proj"><option value="all">すべての案件</option>'+projs.map(function(p){ return '<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>'; }).join("")+'</select>')+
+      '<div class="field-row">'+field("案件",'<select id="sp-proj"><option value="all">すべての案件</option>'+projs.map(function(p){ return '<option value="'+esc(p.id)+'"'+(p.id===st.project?" selected":"")+'>'+esc(p.name)+'</option>'; }).join("")+'</select>')+
       '<div class="field"><span>期間</span><div style="display:flex;gap:6px;align-items:center"><input type="date" id="sp-from" value="'+st.from+'"><span>〜</span><input type="date" id="sp-to" value="'+st.to+'"></div></div></div>'+
       '<div class="checkgroup" style="margin:2px 0 8px">'+[["proj","施工期間・引渡し"],["step","工程"],["ev","予定"],["task","タスク"]].map(function(x){ return '<label class="checkopt"><input type="checkbox" class="sp-inc" data-k="'+x[0]+'" checked>'+x[1]+'</label>'; }).join("")+'</div>'+
       '<div class="cell-sub" style="margin-bottom:6px">期間は最長120日です。印刷のとき、送信先を「PDFに保存」にするとPDFになります（用紙はA4横）。</div>'+
@@ -3905,7 +3917,7 @@
       else { state.ganttView = v; state.tab = "schedule"; }
       render();
     }); });
-    q("[data-sched-print]", function(el){ el.addEventListener("click", openSchedulePrint); });
+    q("[data-sched-print]", function(el){ el.addEventListener("click", function(){ openSchedulePrint(); }); });
     q("[data-gantt-view]", function(el){ el.addEventListener("click", function(){ bulkReset(); state.ganttView = el.getAttribute("data-gantt-view"); render(); }); });
     q("[data-del-event]", function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-del-event"); confirmDelete("この予定を削除しますか？", function(){ deleteDoc("events", id, "予定を削除しました"); }); }); });
     q("[data-del-step]", function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-del-step"); confirmDelete("この工程を削除しますか？", function(){ deleteDoc("steps", id, "工程を削除しました"); }); }); });
@@ -4084,7 +4096,7 @@
       if(n>0) return '<a href="#" class="wchip on" data-open-project="'+esc(p.id)+'" title="'+esc(label)+'は'+n+'件作成済み">'+esc(label)+' '+n+'</a>';
       return canAdd ? '<button type="button" class="wchip off" data-pd-add="'+key+'" data-pid="'+esc(p.id)+'" title="'+esc(label)+'を作成する">'+esc(label)+' 未作成</button>' : '<span class="wchip off">'+esc(label)+' 未作成</span>';
     };
-    return '<div class="wchips">'+chip("工程表",c.steps,"step")+chip("カレンダー",c.events,"event")+chip("報告書",c.reports,"report")+'</div>';
+    return '<div class="wchips">'+chip("工程表",c.steps+c.events,c.steps||!c.events?"step":"event")+chip("報告書",c.reports,"report")+'</div>';
   }
   function renderProjectList(mode){
     if(!state.loaded.projects || !state.loaded.members) return skeleton();
@@ -10183,6 +10195,7 @@
       });
     });
     c.querySelectorAll("[data-pd-goto]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); state.tab = el.getAttribute("data-pd-goto"); render(); }); });
+    c.querySelectorAll("[data-pd-print]").forEach(function(el){ el.addEventListener("click", function(){ openSchedulePrint(el.getAttribute("data-pd-print")); }); });
     c.querySelectorAll("[data-pd-add]").forEach(function(el){ el.addEventListener("click", function(){
       var k = el.getAttribute("data-pd-add"), pid = el.getAttribute("data-pid");
       if(k==="event") openEventModal(null, null, pid); else if(k==="step") openStepModal(null, pid); else openReportModal(null, pid);
