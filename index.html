@@ -1506,6 +1506,7 @@
       {t:"案件から社用車管理アプリを開くと、行先に現場名が入ります", d:"案件の詳細画面の「連携アプリ」で「社用車管理」を押すと、出発登録が開き、行先にその案件の現場名が、事業部が同じ名前で登録されていれば事業部も自動で入ります（運転者としてログインしていない場合は、ログイン後に開きます）。社用車管理アプリ側では、行先の入力は必須ではなくなりました。同じ氏名の運転者が社用車管理アプリにいれば、ログインも引き継ぎます（SSO.md の設定が必要です）。"}
     ]},
     {id:"2026-10-22-1", title:"10月22日の更新", items:[
+      {t:"案件一覧から、案件ごとの工程表を見られます", d:"案件一覧の「作業」の列にある「工程表」の目印を押すと、その案件の工程表（工程・予定・タスク）が開き、そのまま印刷 / PDFにもできます。"},
       {t:"案件の詳細・案件一覧でも、カレンダーと工程表を「工程表」に統一しました", d:"案件の詳細では「工程表」の1か所に、工程と予定を日付順にまとめて表示し、工程・予定の追加と、その案件だけの印刷 / PDFができます。案件一覧の「工程表」の目印も1つになりました。"},
       {t:"カレンダーを工程表に統一し、工程表を印刷・PDFにできます", d:"メニューは「工程表」だけになり、画面上の切り替えで「横断工程表・担当別・工程一覧・月カレンダー・予定一覧」を見られます（これまでのカレンダーの予定やタスクもそのまま入っています）。「印刷 / PDF」から、案件と期間を選んで、A4横の工程表を印刷またはPDFにできます。"},
       {t:"Instagram投稿文のAIが、案件の施工指示・工程・報告書・メモから具体的に書きます。管理者はそのまま投稿もできます", d:"「Instagram投稿文を作る」で、AIが使う情報が自動で入り、消したり書き足したりできます（お客様名・電話・住所・金額は自動で取り除きます）。管理者がInstagramの連携設定を済ませると、写真を選んで「Instagramに投稿する」で直接投稿できます。", admin:true},
@@ -3887,7 +3888,7 @@
       else st.project = pid;
     }
     var projs = state.projects.filter(function(p){ return p.status!=="失注" && projectVisibleId(p.id); }).sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
-    openModal("工程表を印刷 / PDFで保存",
+    openModal(pid ? "この案件の工程表" : "工程表を印刷 / PDFで保存",
       '<div class="field-row">'+field("案件",'<select id="sp-proj"><option value="all">すべての案件</option>'+projs.map(function(p){ return '<option value="'+esc(p.id)+'"'+(p.id===st.project?" selected":"")+'>'+esc(p.name)+'</option>'; }).join("")+'</select>')+
       '<div class="field"><span>期間</span><div style="display:flex;gap:6px;align-items:center"><input type="date" id="sp-from" value="'+st.from+'"><span>〜</span><input type="date" id="sp-to" value="'+st.to+'"></div></div></div>'+
       '<div class="checkgroup" style="margin:2px 0 8px">'+[["proj","施工期間・引渡し"],["step","工程"],["ev","予定"],["task","タスク"]].map(function(x){ return '<label class="checkopt"><input type="checkbox" class="sp-inc" data-k="'+x[0]+'" checked>'+x[1]+'</label>'; }).join("")+'</div>'+
@@ -4093,6 +4094,7 @@
   function workChips(p){
     var c = projectWorkCounts(p), canAdd = state.canWrite && !isExternalViewer();
     var chip = function(label, n, key){
+      if(n>0 && label==="工程表") return '<a href="#" class="wchip on" data-sched-proj="'+esc(p.id)+'" title="この案件の工程表を見る（印刷・PDFもできます）">'+esc(label)+' '+n+'</a>';
       if(n>0) return '<a href="#" class="wchip on" data-open-project="'+esc(p.id)+'" title="'+esc(label)+'は'+n+'件作成済み">'+esc(label)+' '+n+'</a>';
       return canAdd ? '<button type="button" class="wchip off" data-pd-add="'+key+'" data-pid="'+esc(p.id)+'" title="'+esc(label)+'を作成する">'+esc(label)+' 未作成</button>' : '<span class="wchip off">'+esc(label)+' 未作成</span>';
     };
@@ -4146,7 +4148,7 @@
     html += '<div class="filter-line">'+
       '<div class="fitem" style="min-width:220px"><span>案件名・顧客・住所で検索</span><input type="text" id="flt-name" value="'+esc(f.name)+'" placeholder="案件名・顧客名・住所・電話番号"></div>'+
       '<div class="fitem"><span>事業部</span><select id="flt-type"><option value="all">すべて</option>'+DIVISIONS.map(function(t){return '<option value="'+esc(t)+'"'+(f.type===t?" selected":"")+'>'+esc(t)+'</option>';}).join("")+'</select></div>'+
-      '<label class="checkopt" style="align-self:flex-end;padding-bottom:8px"><input type="checkbox" id="flt-nosched"'+(f.noSched?" checked":"")+'>工程表・カレンダー未作成のみ</label>'+
+      '<label class="checkopt" style="align-self:flex-end;padding-bottom:8px"><input type="checkbox" id="flt-nosched"'+(f.noSched?" checked":"")+'>工程表未作成のみ</label>'+
       '<button class="btn primary" id="flt-search">'+iSearch()+' 検索する</button>'+
     '</div>';
     var isPhone = window.matchMedia && window.matchMedia("(max-width:640px)").matches;
@@ -9055,7 +9057,7 @@
   var PROJ_COLS = {
     cust:{label:"顧客", sort:["cust","custr"], html:function(p){ return '<td data-label="顧客">'+(p.customerName?'<div style="font-size:12.5px;font-weight:600">'+esc(p.customerName)+'</div>':'<div style="font-size:12px;color:var(--ink-faint)">未設定</div>')+'<button class="btn sm" data-list-cust="'+esc(p.id)+'" style="margin-top:4px">'+(p.customerName?'顧客を編集':'顧客を設定')+'</button></td>'; }},
     status:{label:"進捗", sort:["status"], html:function(p){ return '<td data-label="進捗">'+(hiddenFor(p,"p_status")?"—":statusBadge(p))+(freeeBadge(p)?'<div style="margin-top:4px">'+freeeBadge(p)+'</div>':'')+'</td>'; }},
-    work:{label:"工程・予定・報告", html:function(p){ return '<td data-label="作業">'+workChips(p)+'</td>'; }},
+    work:{label:"工程表・報告", html:function(p){ return '<td data-label="作業">'+workChips(p)+'</td>'; }},
     division:{label:"事業部", html:function(p){ return '<td data-label="事業部">'+esc(p.division||"—")+'</td>'; }},
     assignees:{label:"担当者", html:function(p, names){ return '<td data-label="担当者">'+(names.length?esc(names.join("、")):"—")+'</td>'; }},
     start:{label:"施工開始日", sort:["start","startr"], html:function(p){ return '<td class="num" data-label="施工開始日">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.startDate))+'</td>'; }},
@@ -10195,6 +10197,7 @@
       });
     });
     c.querySelectorAll("[data-pd-goto]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); state.tab = el.getAttribute("data-pd-goto"); render(); }); });
+    c.querySelectorAll("[data-sched-proj]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); ev.stopPropagation(); openSchedulePrint(el.getAttribute("data-sched-proj")); }); });
     c.querySelectorAll("[data-pd-print]").forEach(function(el){ el.addEventListener("click", function(){ openSchedulePrint(el.getAttribute("data-pd-print")); }); });
     c.querySelectorAll("[data-pd-add]").forEach(function(el){ el.addEventListener("click", function(){
       var k = el.getAttribute("data-pd-add"), pid = el.getAttribute("data-pid");
