@@ -3961,6 +3961,42 @@
       '<div class="stripes">'+stripes+'</div>'+(total?body:'<div class="empty">この期間に表示する工程・予定・タスクがありません</div>')+'</div>'+
       '<div class="legend"><span><i style="background:'+COL.project+'"></i>施工期間</span><span><i style="background:'+COL.step+'"></i>工程（濃い部分＝進捗）</span><span><i style="background:'+COL.event+'"></i>予定</span><span><i style="background:'+COL.task+'"></i>タスク期限</span><span><i style="background:'+COL.handover+'"></i>引渡し</span><span>赤い縦線＝今日</span></div></body></html>';
   }
+  // 工程の直接入力・編集（工程表とは別の画面。工程表のプレビューを狭めないため）
+  function openStepEditor(pid){
+    var today = localToday();
+    var pr0 = state.projects.find(function(y){return y.id===pid;});
+    openModal("工程を直接入力・編集"+(pr0?"："+pr0.name:""), '<div id="sp-edit"></div>', '<button class="btn primary" id="sp-back">工程表に戻る</button>');
+    document.getElementById("sp-back").addEventListener("click", function(){ openSchedulePrint(pid); });
+    var reopen = function(){ setTimeout(function(){ openStepEditor(pid); }, 250); };
+    var editBox = document.getElementById("sp-edit");
+    (function(){
+      var ist = 'font:inherit;font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface,#fff);min-width:0;';
+      var mine = state.steps.filter(function(x){ return x.projectId===pid && secretVisible(x); }).sort(function(a,b){ return (a.startDate||"").localeCompare(b.startDate||""); });
+      editBox.innerHTML = '<div style="font-size:12px;font-weight:700;margin:2px 0 4px">工程を直接入力・編集</div>'+
+        '<div class="pd-qa" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:6px 0"><span style="position:relative;flex:1 1 140px;min-width:0"><input type="text" class="qa-name" maxlength="60" data-ac-all="1" autocomplete="off" placeholder="工程名を直接入力" style="'+ist+'width:100%;box-sizing:border-box;padding:6px 8px"></span><input type="date" class="qa-s" style="'+ist+'width:128px" value="'+esc(today)+'">〜<input type="date" class="qa-e" style="'+ist+'width:128px" value="'+esc(today)+'"><button class="btn sm primary qa-go">'+iPlus()+' 追加</button></div>'+
+        (mine.length?'<div style="max-height:50vh;overflow:auto;border-top:1px solid var(--border)">'+mine.map(function(x){
+          return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:5px 0;border-bottom:1px solid var(--border)"><span style="flex:1 1 110px;min-width:0;font-size:13px">'+esc(x.name||"（無題）")+'</span>'+
+            '<input type="date" style="'+ist+'width:128px" data-qe="startDate" data-qid="'+esc(x.id)+'" value="'+esc(x.startDate||"")+'">〜<input type="date" style="'+ist+'width:128px" data-qe="endDate" data-qid="'+esc(x.id)+'" value="'+esc(x.endDate||"")+'"><input type="number" min="0" max="100" step="5" style="'+ist+'width:58px" data-qe="progress" data-qid="'+esc(x.id)+'" value="'+esc(String(x.progress||0))+'" title="進捗（%）">%</div>'; }).join("")+'</div>':'');
+      editBox.querySelectorAll("[data-qe]").forEach(function(el){ el.addEventListener("change", function(){
+        var id = el.getAttribute("data-qid"), k = el.getAttribute("data-qe"), x = state.steps.find(function(y){return y.id===id;}); if(!x) return;
+        var v = el.value, d = {};
+        if(k==="progress"){ v = Math.max(0, Math.min(100, Math.round(+v||0))); d.progress = v; }
+        else { if(!v){ reopen(); return; } d[k] = v; var st2 = k==="startDate"?v:x.startDate, en = k==="endDate"?v:x.endDate; if(en && st2 && en<st2){ if(k==="startDate") d.endDate = v; else d.startDate = v; } }
+        writeDoc("steps", id, d, "工程を更新しました", reopen);
+      }); });
+      var box = editBox.querySelector(".pd-qa"), nm = box.querySelector(".qa-name"), qs = box.querySelector(".qa-s"), qe = box.querySelector(".qa-e");
+      acDropdown(nm, function(){ return STEP_NAMES.map(function(n){ return {label:n}; }); }, function(it){ nm.value = it.label; });
+      qs.addEventListener("change", function(){ if(!qe.value || qe.value<qs.value) qe.value = qs.value; });
+      var go = function(){
+        var name = nm.value.trim(); if(!name){ nm.focus(); toast("工程名を入力してください"); return; }
+        var pr = state.projects.find(function(y){return y.id===pid;});
+        var st2 = qs.value || today, en = qe.value || st2; if(en<st2) en = st2;
+        writeDoc("steps", null, {projectId:pid, projectName:pr?pr.name:"", name:name, startDate:st2, endDate:en, assignee:"", progress:0, group:"", note:"", secret:false}, "工程を追加しました", reopen);
+      };
+      box.querySelector(".qa-go").addEventListener("click", go);
+      nm.addEventListener("keydown", function(e){ if(e.key==="Enter" && !e.defaultPrevented){ e.preventDefault(); go(); } });
+    })();
+  }
   function openSchedulePrint(pid){
     pid = (typeof pid==="string") ? pid : "";
     var today = localToday(), mon = today.slice(0,8)+"01";
@@ -3978,7 +4014,7 @@
       '<div id="sp-info" class="field-row" style="display:none">'+field("発注者",'<input type="text" id="sp-client" value="">')+field("責任者",'<input type="text" id="sp-resp" value="">')+field("作成者",'<input type="text" id="sp-author" value="">')+'</div>'+
       '<div class="checkgroup" style="margin:2px 0 8px">'+[["proj","施工期間・引渡し"],["step","工程"],["ev","予定"],["task","タスク"]].map(function(x){ return '<label class="checkopt"><input type="checkbox" class="sp-inc" data-k="'+x[0]+'"'+(st.inc[x[0]]?" checked":"")+'>'+x[1]+'</label>'; }).join("")+'</div>'+
       '<div class="cell-sub" style="margin-bottom:6px">期間は最長120日です。用紙はA4横です。「印刷」は印刷画面を開き、「PDFで保存」はPDFファイルをそのままダウンロードします。</div>'+
-      (pid?'<div id="sp-edit"></div>':'')+
+      (pid?'<div style="margin-bottom:6px"><button class="btn sm" id="sp-open-edit">'+iEdit()+' 工程を直接入力・編集</button></div>':'')+
       '<iframe id="sp-frame" style="width:100%;height:56vh;border:1px solid var(--border);border-radius:8px;background:#fff"></iframe>',
       '<button class="btn" data-close-modal>閉じる</button><button class="btn" id="sp-pdf">PDFで保存</button><button class="btn primary" id="sp-print">印刷</button>');
     document.getElementById("modal-box").style.maxWidth = "980px";
@@ -4031,35 +4067,7 @@
         });
       }).then(done, function(){ done(); toast("PDFを作成できませんでした。「印刷」から保存してください"); });
     });
-    var reopen = function(){ setTimeout(function(){ openSchedulePrint(pid); }, 250); };
-    var editBox = document.getElementById("sp-edit");
-    if(editBox) (function(){
-      var ist = 'font:inherit;font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface,#fff);min-width:0;';
-      var mine = state.steps.filter(function(x){ return x.projectId===pid && secretVisible(x); }).sort(function(a,b){ return (a.startDate||"").localeCompare(b.startDate||""); });
-      editBox.innerHTML = '<div style="font-size:12px;font-weight:700;margin:2px 0 4px">工程を直接入力・編集</div>'+
-        '<div class="pd-qa" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:6px 0"><span style="position:relative;flex:1 1 140px;min-width:0"><input type="text" class="qa-name" maxlength="60" data-ac-all="1" autocomplete="off" placeholder="工程名を直接入力" style="'+ist+'width:100%;box-sizing:border-box;padding:6px 8px"></span><input type="date" class="qa-s" style="'+ist+'width:128px" value="'+esc(today)+'">〜<input type="date" class="qa-e" style="'+ist+'width:128px" value="'+esc(today)+'"><button class="btn sm primary qa-go">'+iPlus()+' 追加</button></div>'+
-        (mine.length?'<div style="max-height:150px;overflow:auto;border-top:1px solid var(--border)">'+mine.map(function(x){
-          return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:5px 0;border-bottom:1px solid var(--border)"><span style="flex:1 1 110px;min-width:0;font-size:13px">'+esc(x.name||"（無題）")+'</span>'+
-            '<input type="date" style="'+ist+'width:128px" data-qe="startDate" data-qid="'+esc(x.id)+'" value="'+esc(x.startDate||"")+'">〜<input type="date" style="'+ist+'width:128px" data-qe="endDate" data-qid="'+esc(x.id)+'" value="'+esc(x.endDate||"")+'"><input type="number" min="0" max="100" step="5" style="'+ist+'width:58px" data-qe="progress" data-qid="'+esc(x.id)+'" value="'+esc(String(x.progress||0))+'" title="進捗（%）">%</div>'; }).join("")+'</div>':'');
-      editBox.querySelectorAll("[data-qe]").forEach(function(el){ el.addEventListener("change", function(){
-        var id = el.getAttribute("data-qid"), k = el.getAttribute("data-qe"), x = state.steps.find(function(y){return y.id===id;}); if(!x) return;
-        var v = el.value, d = {};
-        if(k==="progress"){ v = Math.max(0, Math.min(100, Math.round(+v||0))); d.progress = v; }
-        else { if(!v){ reopen(); return; } d[k] = v; var st2 = k==="startDate"?v:x.startDate, en = k==="endDate"?v:x.endDate; if(en && st2 && en<st2){ if(k==="startDate") d.endDate = v; else d.startDate = v; } }
-        writeDoc("steps", id, d, "工程を更新しました", reopen);
-      }); });
-      var box = editBox.querySelector(".pd-qa"), nm = box.querySelector(".qa-name"), qs = box.querySelector(".qa-s"), qe = box.querySelector(".qa-e");
-      acDropdown(nm, function(){ return STEP_NAMES.map(function(n){ return {label:n}; }); }, function(it){ nm.value = it.label; });
-      qs.addEventListener("change", function(){ if(!qe.value || qe.value<qs.value) qe.value = qs.value; });
-      var go = function(){
-        var name = nm.value.trim(); if(!name){ nm.focus(); toast("工程名を入力してください"); return; }
-        var pr = state.projects.find(function(y){return y.id===pid;});
-        var st2 = qs.value || today, en = qe.value || st2; if(en<st2) en = st2;
-        writeDoc("steps", null, {projectId:pid, projectName:pr?pr.name:"", name:name, startDate:st2, endDate:en, assignee:"", progress:0, group:"", note:"", secret:false}, "工程を追加しました", reopen);
-      };
-      box.querySelector(".qa-go").addEventListener("click", go);
-      nm.addEventListener("keydown", function(e){ if(e.key==="Enter" && !e.defaultPrevented){ e.preventDefault(); go(); } });
-    })();
+    var oe = document.getElementById("sp-open-edit"); if(oe) oe.addEventListener("click", function(){ openStepEditor(pid); });
     build();
   }
   function bindScheduleEvents(c){
