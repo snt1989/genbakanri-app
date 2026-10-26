@@ -411,6 +411,10 @@ async function ssoHandler(req, res){
     var a = b.auth || {};
     var me = await F.verifyMember(a.name, a.password);
     if(!me) return res.status(403).json({error: "認証に失敗しました"});
+    if(b.app === "daito"){   // 大東受注アプリへ（大東アプリにアカウントがある人だけが入れる。確認は大東アプリ側）
+      var dbase = (F.env("DAITO_URL") || "https://daito-kanriapp000.vercel.app").replace(/\/+$/, "");
+      return res.status(200).json({url: dbase + "/?sso=" + makeTicket(me.name, secret, null, "d")});
+    }
     var toShayosha = b.app === "shayosha";   // 社用車管理アプリへ（ログイン引き継ぎ＋行先に現場名）
     var base = toShayosha ? (F.env("SHAYOSHA_URL") || "https://shayosha-kanri.vercel.app").replace(/\/+$/, "") : (F.env("BIHIN_URL") || "https://bihinkanriapp.vercel.app").replace(/\/+$/, "");
     var proj = null;
