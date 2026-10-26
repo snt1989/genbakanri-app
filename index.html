@@ -3645,11 +3645,12 @@
     var e = ev || {date:day||localToday(), projectId:projectId||""};
     openModal(ev?"予定の編集":"予定の追加",
       (ev?"":kindSwitchHtml("event"))+field("案件（任意）",'<select id="f-eproj">'+projectOptions(e.projectId)+'</select>')+
-      field("予定名",'<input type="hidden" id="f-ecat" value="'+esc(e.category||"")+'"><input type="text" id="f-etitle" maxlength="60" placeholder="例）〇〇邸 下見、打ち合わせ" value="'+esc(e.title||"")+'">')+
+      field("予定名",'<input type="hidden" id="f-ecat" value="'+esc(e.category||"")+'"><input type="text" id="f-etitle" data-ac-all="1" autocomplete="off" maxlength="60" placeholder="入力、または候補から選択（例：現地調査）" value="'+esc(e.title||"")+'">')+
       '<div class="field-row">'+field("開始日",'<input type="date" id="f-edate" value="'+esc(e.date||"")+'">')+field("終了日（任意）",'<input type="date" id="f-eend" value="'+esc(e.endDate||"")+'">')+'</div>'+
       field("メモ",'<textarea id="f-enote" style="min-height:60px">'+esc(e.note||"")+'</textarea>')+secretRadio(e.secret),
       (ev?'<button class="btn" id="f-edel" style="color:var(--danger)">'+iTrash()+' 削除</button>':'')+'<button class="btn" id="f-egcal" style="margin-right:auto">'+iCalendar()+' Googleカレンダーに追加</button><button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-esave">'+(ev?"保存する":"追加する")+'</button>');
     if(!ev) bindKindSwitch("event", projectId||"", day);
+    (function(){ var ti = document.getElementById("f-etitle"); acDropdown(ti, function(){ return EVENT_TYPES.map(function(n){ return {label:n}; }); }, function(it){ ti.value = it.label; }); })();
     if(ev) document.getElementById("f-edel").addEventListener("click", function(){ confirmDelete("この予定を削除しますか？", function(){ deleteDoc("events", ev.id, "予定を削除しました"); }); });
     document.getElementById("f-egcal").addEventListener("click", function(){
       var cat = document.getElementById("f-ecat").value, t = document.getElementById("f-etitle").value.trim();
