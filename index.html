@@ -4358,7 +4358,8 @@
   /* ページ内のドロップダウン式チェック選択（開閉は state.bgDd）。attr はチェックボックスに付ける属性 */
   function ddPage(key, label, names, sel, attr, extra){
     var open = state.bgDd===key, on = sel.length>0;
-    var txt = !on ? "すべて" : (sel.length<=2 ? sel.join("・") : sel.length+"名を選択");
+    var unit = /進捗/.test(label) ? "件" : "名";
+    var txt = (!on || sel.length>=names.length) ? "すべて" : (sel.length<=2 ? sel.join("・") : sel.length+unit+"を選択");
     return '<div class="fitem bgdd" style="min-width:180px;max-width:280px"><span>'+label+'</span><button type="button" class="bgdd-btn'+(on?' on':'')+'" data-bgdd="'+key+'"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(txt)+'</span><span style="font-size:10px;color:var(--ink-faint)">'+(open?'▲':'▼')+'</span></button>'+
       (open ? '<div class="bgdd-panel">'+(extra||'')+(names.length ? names.map(function(n){ return '<label class="checkopt"><input type="checkbox" '+attr+' value="'+esc(n)+'"'+(sel.indexOf(n)!==-1?' checked':'')+'>'+esc(n)+'</label>'; }).join("") : '<div style="padding:8px 2px">メンバーがいません</div>')+'</div>' : '')+'</div>';
   }
@@ -5075,9 +5076,7 @@
     '</div>';
     var isPhone = window.matchMedia && window.matchMedia("(max-width:640px)").matches;
     html += '<details class="flt-more"'+((!isPhone||state.fltMoreOpen)?' open':'')+'><summary>進捗・担当者で絞り込み</summary><div style="display:flex;flex-direction:column;gap:12px;margin-top:10px">';
-    html += '<div class="fitem"><span>案件の進捗</span><div class="checkgroup">'+STATUS_LIST.map(function(s){
-      return '<label class="checkopt"><input type="checkbox" class="flt-status" value="'+esc(s)+'"'+(f.status.indexOf(s)!==-1?" checked":"")+'>'+esc(s)+'</label>';
-    }).join("")+'</div></div>';
+    html += ddPage("stList-"+state.tab, "案件の進捗", STATUS_LIST, f.status, "data-stchk", '<div style="text-align:right;font-size:11.5px;padding:2px 2px 6px;border-bottom:1px solid var(--border);margin-bottom:4px"><a href="#" data-stall style="font-weight:700">すべて選ぶ</a>　<a href="#" data-stnone style="font-weight:700">解除</a></div>');
     html += (function(){
       var isAd=function(m){ return m.permission==="admin" || m.isAdmin===true; };
       var ad=state.members.filter(isAd), ot=state.members.filter(function(m){ return !isAd(m); });
@@ -11329,10 +11328,13 @@
         f.name = document.getElementById("flt-name").value.trim();
         f.type = document.getElementById("flt-type").value;
         f.noSched = document.getElementById("flt-nosched").checked;
-        f.status = Array.prototype.slice.call(c.querySelectorAll(".flt-status:checked")).map(function(x){return x.value;});
         f.page = 1;
         render();
       });
+      c.querySelectorAll("[data-stchk]").forEach(function(chk){ chk.addEventListener("click", function(){
+        var i = f.status.indexOf(chk.value); if(i===-1) f.status.push(chk.value); else f.status.splice(i,1); f.page = 1; render(); }); });
+      c.querySelectorAll("[data-stall]").forEach(function(a){ a.addEventListener("click", function(e){ e.preventDefault(); f.status = STATUS_LIST.slice(); f.page = 1; render(); }); });
+      c.querySelectorAll("[data-stnone]").forEach(function(a){ a.addEventListener("click", function(e){ e.preventDefault(); f.status = []; f.page = 1; render(); }); });
       c.querySelectorAll("[data-assignee-me]").forEach(function(b){ b.addEventListener("click", function(){ f.assignees = state.myName ? [state.myName] : []; f.page = 1; render(); }); });
       c.querySelectorAll("[data-assignee-all]").forEach(function(b){ b.addEventListener("click", function(){ f.assignees = []; f.page = 1; render(); }); });
       c.querySelectorAll("[data-assignee-grp]").forEach(function(btn){ btn.addEventListener("click", function(){
