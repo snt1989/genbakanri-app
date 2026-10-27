@@ -6621,12 +6621,24 @@
     });
     var fso = state.filesSort || "date_desc";
     var pname = function(x){ var q = state.projects.find(function(p){ return p.id===x.projectId; }); return q ? (q.name||"") : ""; };
+    var pById = {}; state.projects.forEach(function(p){ pById[p.id] = p; });
+    var pAsg = function(x){ var q = pById[x.projectId]; if(!q) return ""; var n = normalizeAssignees(q.assignees).map(function(a){ return a.name; }).filter(Boolean); return n.length ? n.join("、") : ""; };
+    var pDiv = function(x){ var q = pById[x.projectId]; if(!q || !q.division) return 99; var i = DIVISIONS.indexOf(q.division); return i<0 ? 98 : i; };
     list.sort(function(a,b){
       var c;
       if(fso==="date_asc") c = (a.uploadedAt||"").localeCompare(b.uploadedAt||"");
       else if(fso==="name") c = String(a.filename||"").localeCompare(String(b.filename||""), "ja");
       else if(fso==="project") c = pname(a).localeCompare(pname(b), "ja") || (b.uploadedAt||"").localeCompare(a.uploadedAt||"");
       else if(fso==="size") c = (b.size||0)-(a.size||0);
+      else if(fso==="assignee"){   // 案件の担当者（先頭の人）の名前順。担当者がいない案件は最後
+        var xa = pAsg(a), xb = pAsg(b);
+        c = (!xa && !xb) ? 0 : !xa ? 1 : !xb ? -1 : xa.localeCompare(xb, "ja");
+        if(!c) c = (b.uploadedAt||"").localeCompare(a.uploadedAt||"");
+      }
+      else if(fso==="division"){   // 案件の事業部の並び順。未設定は最後
+        var da = pDiv(a), db2 = pDiv(b);
+        c = da-db2 || pname(a).localeCompare(pname(b), "ja") || (b.uploadedAt||"").localeCompare(a.uploadedAt||"");
+      }
       else c = (b.uploadedAt||"").localeCompare(a.uploadedAt||"");
       return c;
     });
@@ -6656,7 +6668,7 @@
     '</div></div>';
 
     html += '<div class="summary-line" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span><b>'+list.length+'</b>件 / 全'+state.files.length+'件</span><label style="font-size:12px;color:var(--ink-soft)">並び替え <select id="files-sort-all" style="margin-left:4px">'+
-      [["date_desc","追加が新しい順"],["date_asc","追加が古い順"],["name","ファイル名順"],["project","案件名順"],["size","サイズが大きい順"]].map(function(o){ return '<option value="'+o[0]+'"'+(o[0]===fso?" selected":"")+'>'+o[1]+'</option>'; }).join("")+'</select></label></div>';
+      [["date_desc","追加が新しい順"],["date_asc","追加が古い順"],["name","ファイル名順"],["project","案件名順"],["size","サイズが大きい順"],["assignee","担当者順（案件の担当者）"],["division","事業部順（案件の事業部）"]].map(function(o){ return '<option value="'+o[0]+'"'+(o[0]===fso?" selected":"")+'>'+o[1]+'</option>'; }).join("")+'</select></label></div>';
 
     if(list.length===0){
       html += emptyState(iImage,"写真・ファイルがありません","案件詳細ページ、またはこのページから追加してください");
