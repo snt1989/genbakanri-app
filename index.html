@@ -2819,13 +2819,20 @@
   var BG_ACTIVE = ["契約済","施工中","施工完了","清算済"];
   function bgDoc(pid){ return (state.budgets||[]).find(function(b){ return b.projectId===pid; }) || null; }
   function bgNum(v){ var n = Number(String(v==null?"":v).replace(/[,，円\s]/g,"")); return isFinite(n) ? n : 0; }
-  function bgCalc(p){
-    var d = bgDoc(p.id) || {}, bud = d.budget || {}, costs = Array.isArray(d.costs) ? d.costs : [];
-    var b = 0, a = 0, byCat = {};
-    Object.keys(bud).forEach(function(k){ b += bgNum(bud[k]); });
-    costs.forEach(function(x){ var n = bgNum(x.amount); a += n; byCat[x.cat] = (byCat[x.cat]||0) + n; });
+  // 予算の明細行：{id, cat(勘定科目), name(項目名), qty, unit, price, amount}。以前の「科目ごとの合計」は、1行の明細として読み替える
+  function bgLines(d){
+    if(d && Array.isArray(d.lines)) return d.lines;
+    var out = []; Object.keys((d && d.budget) || {}).forEach(function(k){ var n = bgNum(d.budget[k]); if(n) out.push({id:"l_"+k, cat:k, name:k, qty:1, unit:"式", price:n, amount:n}); });
+    return out;
+  }
+  function bgCalc(p){ return bgCalcFor(p, bgDoc(p.id) || {}); }
+  function bgCalcFor(p, d){
+    var lines = bgLines(d), costs = Array.isArray(d.costs) ? d.costs : [];
+    var b = 0, a = 0, byCat = {}, bud = {}, byLine = {};
+    lines.forEach(function(l){ var n = bgNum(l.amount); b += n; bud[l.cat] = (bud[l.cat]||0) + n; });
+    costs.forEach(function(x){ var n = bgNum(x.amount); a += n; byCat[x.cat] = (byCat[x.cat]||0) + n; if(x.lineId) byLine[x.lineId] = (byLine[x.lineId]||0) + n; });
     var contract = bgNum(p.amount);
-    return {contract:contract, budget:b, actual:a, remain:b-a, rate:b?a/b:null, profit:contract-a, profitRate:contract?(contract-a)/contract:null, byCat:byCat, bud:bud, costs:costs, has:!!(d.projectId)};
+    return {contract:contract, budget:b, actual:a, remain:b-a, rate:b?a/b:null, profit:contract-a, profitRate:contract?(contract-a)/contract:null, byCat:byCat, bud:bud, lines:lines, byLine:byLine, costs:costs, has:!!(d.projectId)};
   }
   function bgPct(x){ return x==null ? "—" : (Math.round(x*1000)/10)+"%"; }
   function bgYen(n){ return (n||0).toLocaleString("ja-JP")+"円"; }
@@ -2866,7 +2873,7 @@
   function bgSave(pid, patch, msg, after){
     if(!state.isAdmin){ toast("管理者のみ行えます"); return; }
     var p = state.projects.find(function(x){ return x.id===pid; }) || {}, d = bgDoc(pid) || {};
-    var next = Object.assign({projectId:pid, budget:d.budget||{}, costs:d.costs||[]}, patch, {projectName:p.name||d.projectName||"", updatedAt:new Date().toISOString(), updatedBy:state.myName||""});
+    var next = Object.assign({projectId:pid, budget:d.budget||{}, lines:bgLines(d), costs:d.costs||[]}, patch, {projectName:p.name||d.projectName||"", updatedAt:new Date().toISOString(), updatedBy:state.myName||""});
     var arr = state.budgets, i = arr.findIndex(function(x){ return x.projectId===pid; });
     if(i>-1) arr[i] = Object.assign({}, arr[i], next); else arr.push(Object.assign({id:pid}, next));
     if(!db){ toast(msg+"（プレビューのみ）"); if(after) after(); return; }
@@ -2875,44 +2882,93 @@
   function openBudgetModal(pid){
     if(!state.isAdmin) return;
     var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
-    var c = bgCalc(p), reopen = function(){ openBudgetModal(pid); render(); };
+    var reopen = function(){ openBudgetModal(pid); render(); };
+    var L = bgLines(bgDoc(pid)||{}).map(function(l){ return Object.assign({}, l); });   // 編集中の予算明細
+    var editing = null;                                                                  // 編集中の実績ID
+    var newId = function(k){ return k+Date.now().toString(36)+Math.random().toString(36).slice(2,5); };
+    var cur = function(){ var d = Object.assign({}, bgDoc(pid)||{projectId:pid}); d.lines = L; return bgCalcFor(p, d); };
+    var acctOpts = function(sel){ var arr = ACCOUNT_ITEMS.slice(); if(sel && arr.indexOf(sel)===-1) arr.push(sel); return arr.map(function(k){ return '<option'+(k===sel?' selected':'')+'>'+esc(k)+'</option>'; }).join(""); };
     var tile = function(l,v,warn){ return '<div style="flex:1;min-width:120px;border:1px solid var(--border);border-radius:10px;padding:8px 10px"><div style="font-size:11px;color:var(--ink-soft)">'+l+'</div><div class="num" style="font-size:14.5px;font-weight:800;margin-top:2px;'+(warn?'color:var(--danger)':'')+'">'+v+'</div></div>'; };
-    var head = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">'+tile("契約金額",c.contract?bgYen(c.contract):"未入力")+tile("予算合計",bgYen(c.budget))+tile("実績合計",bgYen(c.actual),c.budget>0&&c.actual>c.budget)+tile("残り予算",c.budget?bgYen(c.remain):"—",c.budget>0&&c.remain<0)+tile("粗利（契約−実績）",c.contract?bgYen(c.profit)+"（"+bgPct(c.profitRate)+"）":"—",c.contract>0&&c.profit<0)+'</div>';
-    var catRows = bgCats(c).map(function(k,i){
-      var a = c.byCat[k]||0, b = bgNum(c.bud[k]), diff = b-a;
-      return '<tr><td>'+esc(k)+(ACCOUNT_ITEMS.indexOf(k)===-1?'<div style="font-size:10.5px;color:var(--ink-faint)">マスタにない科目</div>':'')+'</td><td style="width:140px"><input type="text" inputmode="numeric" data-bg-bud="'+esc(k)+'" value="'+(b?b:"")+'" placeholder="0" style="width:100%;text-align:right"></td><td class="num" style="text-align:right">'+(a?bgYen(a):"—")+'</td><td class="num" style="text-align:right;'+(b&&diff<0?'color:var(--danger);font-weight:700':'')+'">'+((b||a)?bgYen(diff):"—")+'</td></tr>';
-    }).join("");
-    var costs = c.costs.slice().sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")); });
-    var costRows = costs.length ? costs.map(function(x){
-      return '<tr><td class="num">'+esc(fmtDate(x.date))+'</td><td>'+esc(x.cat||"")+'</td><td>'+esc(x.vendor||"")+(x.memo?'<div style="font-size:11px;color:var(--ink-faint)">'+esc(x.memo)+'</div>':'')+'</td><td class="num" style="text-align:right">'+bgYen(bgNum(x.amount))+'</td><td><button class="btn sm" data-bg-delcost="'+esc(x.id)+'">削除</button></td></tr>';
-    }).join("") : '<tr><td colspan="5" style="color:var(--ink-faint);text-align:center;padding:14px">まだ実績がありません</td></tr>';
-    var body = head+
-      '<h3 style="font-size:13px;margin:0 0 6px">勘定科目ごとの予算</h3><div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead><tr><th>勘定科目</th><th style="text-align:right">予算（円）</th><th style="text-align:right">実績</th><th style="text-align:right">残り</th></tr></thead><tbody>'+catRows+'</tbody></table></div>'+
-      '<h3 style="font-size:13px;margin:18px 0 6px">実績（実際にかかった費用）を追加</h3>'+
+    var headHtml = function(){ var c = cur();
+      return tile("契約金額",c.contract?bgYen(c.contract):"未入力")+tile("予算合計",bgYen(c.budget))+tile("実績合計",bgYen(c.actual),c.budget>0&&c.actual>c.budget)+tile("残り予算",c.budget?bgYen(c.remain):"—",c.budget>0&&c.remain<0)+tile("粗利（契約−実績）",c.contract?bgYen(c.profit)+"（"+bgPct(c.profitRate)+"）":"—",c.contract>0&&c.profit<0); };
+    var linesHtml = function(){ var c = cur();
+      if(!L.length) return '<tr><td colspan="9" style="color:var(--ink-faint);text-align:center;padding:14px">まだ予算の明細がありません。「明細を追加」から入力してください</td></tr>';
+      var inp = function(i,f,v,w,al){ return '<input type="text" data-l="'+f+'" data-i="'+i+'" value="'+esc(v==null?"":v)+'" style="width:'+w+';'+(al?'text-align:right;':'')+'padding:6px 8px;font-size:12.5px">'; };
+      return L.map(function(l,i){
+        var a = c.byLine[l.id]||0, b = bgNum(l.amount);
+        return '<tr><td><select data-l="cat" data-i="'+i+'" style="padding:6px 6px;font-size:12.5px">'+acctOpts(l.cat)+'</select></td><td>'+inp(i,"name",l.name,"150px")+'</td><td>'+inp(i,"qty",l.qty,"58px",1)+'</td><td>'+inp(i,"unit",l.unit,"48px")+'</td><td>'+inp(i,"price",l.price,"88px",1)+'</td><td>'+inp(i,"amount",b||"","98px",1)+'</td>'+
+          '<td class="num" style="text-align:right;white-space:nowrap">'+(a?bgYen(a):"—")+'</td><td class="num" data-rem style="text-align:right;white-space:nowrap;'+(b&&b-a<0?'color:var(--danger);font-weight:700':'')+'">'+((b||a)?bgYen(b-a):"—")+'</td><td><button class="btn sm" data-l-del="'+i+'" title="この行を削除">✕</button></td></tr>';
+      }).join(""); };
+    var catHtml = function(){ var c = cur();
+      return bgCats(c).filter(function(k){ return c.bud[k] || c.byCat[k]; }).map(function(k){ var a = c.byCat[k]||0, b = c.bud[k]||0;
+        return '<tr><td>'+esc(k)+(ACCOUNT_ITEMS.indexOf(k)===-1?'<div style="font-size:10.5px;color:var(--ink-faint)">マスタにない科目</div>':'')+'</td><td class="num" style="text-align:right">'+(b?bgYen(b):"—")+'</td><td class="num" style="text-align:right">'+(a?bgYen(a):"—")+'</td><td class="num" style="text-align:right;'+(b&&b-a<0?'color:var(--danger);font-weight:700':'')+'">'+bgYen(b-a)+'</td></tr>';
+      }).join("") || '<tr><td colspan="4" style="color:var(--ink-faint);text-align:center;padding:10px">予算・実績を入力すると集計が出ます</td></tr>'; };
+    var lineOpts = function(sel){ return '<option value="">（指定なし）</option>'+L.filter(function(l){ return l.name || bgNum(l.amount); }).map(function(l){ return '<option value="'+esc(l.id)+'"'+(l.id===sel?' selected':'')+'>'+esc((l.cat||"")+"：" + (l.name||"（項目名なし）"))+'</option>'; }).join(""); };
+    var costRows = function(){ var c = cur(), costs = c.costs.slice().sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")); });
+      var nm = {}; L.forEach(function(l){ nm[l.id] = l.name; });
+      return costs.length ? costs.map(function(x){
+        return '<tr><td class="num">'+esc(fmtDate(x.date))+'</td><td>'+esc(x.cat||"")+(x.lineId&&nm[x.lineId]?'<div style="font-size:11px;color:var(--ink-faint)">'+esc(nm[x.lineId])+'</div>':'')+'</td><td>'+esc(x.vendor||"")+(x.memo?'<div style="font-size:11px;color:var(--ink-faint)">'+esc(x.memo)+'</div>':'')+'</td><td class="num" style="text-align:right">'+bgYen(bgNum(x.amount))+'</td><td style="white-space:nowrap"><button class="btn sm" data-bg-editcost="'+esc(x.id)+'">編集</button> <button class="btn sm" data-bg-delcost="'+esc(x.id)+'">削除</button></td></tr>';
+      }).join("") : '<tr><td colspan="5" style="color:var(--ink-faint);text-align:center;padding:14px">まだ実績がありません</td></tr>'; };
+    var body = '<div id="bg-head" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">'+headHtml()+'</div>'+
+      '<h3 style="font-size:13px;margin:0 0 4px">予算の明細</h3><div style="font-size:11.5px;color:var(--ink-faint);margin-bottom:6px">項目ごとに、勘定科目・数量・単価を入力します（金額は数量×単価で自動計算。金額だけを直接入力してもかまいません）。</div>'+
+      '<div style="overflow-x:auto;flex:none"><table class="tbl" style="font-size:12.5px;min-width:700px"><thead><tr><th>勘定科目</th><th>項目名</th><th style="text-align:right">数量</th><th>単位</th><th style="text-align:right">単価</th><th style="text-align:right">金額</th><th style="text-align:right">実績</th><th style="text-align:right">残り</th><th></th></tr></thead><tbody id="bg-lines">'+linesHtml()+'</tbody></table></div>'+
+      '<div style="margin-top:8px"><button class="btn outline" id="bg-l-add">'+iPlus()+' 明細を追加</button></div>'+
+      '<h3 style="font-size:13px;margin:18px 0 6px">勘定科目ごとの集計</h3><div style="overflow-x:auto;flex:none"><table class="tbl" style="font-size:12.5px"><thead><tr><th>勘定科目</th><th style="text-align:right">予算</th><th style="text-align:right">実績</th><th style="text-align:right">残り</th></tr></thead><tbody id="bg-cats">'+catHtml()+'</tbody></table></div>'+
+      '<h3 style="font-size:13px;margin:18px 0 6px" id="bg-c-title">実績（実際にかかった費用）を追加</h3>'+
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;align-items:end">'+
         '<label class="field" style="margin:0">日付<input type="date" id="bg-c-date" value="'+localToday()+'"></label>'+
-        '<label class="field" style="margin:0">勘定科目<select id="bg-c-cat">'+ACCOUNT_ITEMS.map(function(k){ return '<option>'+esc(k)+'</option>'; }).join("")+'</select></label>'+
+        '<label class="field" style="margin:0">勘定科目<select id="bg-c-cat">'+acctOpts("")+'</select></label>'+
+        '<label class="field" style="margin:0">予算の項目（任意）<select id="bg-c-line">'+lineOpts("")+'</select></label>'+
         '<label class="field" style="margin:0">支払先<input type="text" id="bg-c-vendor" placeholder="例：○○建材"></label>'+
         '<label class="field" style="margin:0">金額（円）<input type="text" inputmode="numeric" id="bg-c-amt" placeholder="0"></label>'+
         '<label class="field" style="margin:0;grid-column:1/-1">内容（任意）<input type="text" id="bg-c-memo" placeholder="例：解体材の処分費"></label>'+
-      '</div><div style="margin-top:8px"><button class="btn primary" id="bg-c-add">'+iPlus()+' 実績を追加</button></div>'+
-      '<h3 style="font-size:13px;margin:18px 0 6px">実績の一覧（'+costs.length+'件）</h3><div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead><tr><th>日付</th><th>勘定科目</th><th>支払先・内容</th><th style="text-align:right">金額</th><th></th></tr></thead><tbody>'+costRows+'</tbody></table></div>';
+      '</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="bg-c-add">'+iPlus()+' 実績を追加</button><button class="btn" id="bg-c-cancel" style="display:none">編集をやめる</button></div>'+
+      '<h3 style="font-size:13px;margin:18px 0 6px">実績の一覧（'+cur().costs.length+'件）</h3><div style="overflow-x:auto;flex:none"><table class="tbl" style="font-size:12.5px"><thead><tr><th>日付</th><th>勘定科目・予算の項目</th><th>支払先・内容</th><th style="text-align:right">金額</th><th></th></tr></thead><tbody>'+costRows()+'</tbody></table></div>';
     openModal("予算管理："+(p.name||"案件"), body, (freeeAvailable()?'<button class="btn outline" id="bg-freee" style="margin-right:auto">freeeから実績を取り込む</button>':'')+'<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="bg-save">予算を保存する</button>');
-    var bgF = document.getElementById("bg-freee"); if(bgF) bgF.addEventListener("click", function(){ openBudgetFreee(pid); });
-    var mb = document.getElementById("modal-box"); if(mb) mb.style.maxWidth = "820px";
-    document.getElementById("bg-save").addEventListener("click", function(){
-      var bud = {}; document.querySelectorAll("#modal-box [data-bg-bud]").forEach(function(el){ var n = bgNum(el.value); if(n) bud[el.getAttribute("data-bg-bud")] = n; });
-      bgSave(pid, {budget:bud}, "予算を保存しました", function(){ closeModal(); render(); });
-    });
-    document.getElementById("bg-c-add").addEventListener("click", function(){
-      var amt = bgNum(document.getElementById("bg-c-amt").value);
+    var $ = function(id){ return document.getElementById(id); };
+    var mb = $("modal-box"); if(mb) mb.style.maxWidth = "960px";
+    var bgF = $("bg-freee"); if(bgF) bgF.addEventListener("click", function(){ openBudgetFreee(pid); });
+    var refresh = function(full){
+      $("bg-head").innerHTML = headHtml(); $("bg-cats").innerHTML = catHtml();
+      var ls = $("bg-c-line"), v = ls.value; ls.innerHTML = lineOpts(v);
+      if(full){ $("bg-lines").innerHTML = linesHtml(); bindLines(); }
+    };
+    var cleanLines = function(){ return L.filter(function(l){ return (l.name||"").trim() || bgNum(l.amount); }).map(function(l){ return {id:l.id, cat:l.cat||ACCOUNT_ITEMS[0]||"その他", name:(l.name||"").trim(), qty:bgNum(l.qty), unit:(l.unit||"").trim(), price:bgNum(l.price), amount:Math.round(bgNum(l.amount))}; }); };
+    var bindLines = function(){
+      $("bg-lines").querySelectorAll("[data-l]").forEach(function(el){
+        var ev = el.tagName==="SELECT" ? "change" : "input";
+        el.addEventListener(ev, function(){
+          var i = +el.getAttribute("data-i"), f = el.getAttribute("data-l"), l = L[i]; if(!l) return;
+          l[f] = el.value;
+          if(f==="qty" || f==="price"){ var q = bgNum(l.qty), pr = bgNum(l.price); if(q && pr){ l.amount = Math.round(q*pr); var ai = $("bg-lines").querySelector('[data-l="amount"][data-i="'+i+'"]'); if(ai) ai.value = l.amount; } }
+          refresh(false);
+          var tr = el.closest("tr"), rc = tr && tr.querySelector("[data-rem]");
+          if(rc){ var b2 = bgNum(l.amount), a2 = cur().byLine[l.id]||0; rc.textContent = (b2||a2) ? bgYen(b2-a2) : "—"; rc.style.color = (b2 && b2-a2<0) ? "var(--danger)" : ""; rc.style.fontWeight = (b2 && b2-a2<0) ? "700" : ""; }
+        });
+      });
+      $("bg-lines").querySelectorAll("[data-l-del]").forEach(function(b){ b.addEventListener("click", function(){ L.splice(+b.getAttribute("data-l-del"),1); refresh(true); }); });
+    };
+    bindLines();
+    $("bg-l-add").addEventListener("click", function(){ L.push({id:newId("l"), cat:ACCOUNT_ITEMS[0]||"その他", name:"", qty:"", unit:"", price:"", amount:""}); refresh(true); var ins = $("bg-lines").querySelectorAll('[data-l="name"]'); if(ins.length) ins[ins.length-1].focus(); });
+    $("bg-save").addEventListener("click", function(){ bgSave(pid, {lines:cleanLines(), budget:{}}, "予算を保存しました", function(){ closeModal(); render(); }); });
+    var resetForm = function(){ editing = null; $("bg-c-amt").value = ""; $("bg-c-vendor").value = ""; $("bg-c-memo").value = ""; $("bg-c-add").innerHTML = iPlus()+" 実績を追加"; $("bg-c-cancel").style.display = "none"; $("bg-c-title").textContent = "実績（実際にかかった費用）を追加"; };
+    $("bg-c-cancel").addEventListener("click", resetForm);
+    $("bg-c-add").addEventListener("click", function(){
+      var amt = bgNum($("bg-c-amt").value);
       if(!amt){ toast("金額を入力してください"); return; }
-      var cur = (bgDoc(pid)||{}).costs || [];
-      var item = {id:"c"+Date.now().toString(36)+Math.random().toString(36).slice(2,5), date:document.getElementById("bg-c-date").value||localToday(), cat:document.getElementById("bg-c-cat").value, vendor:document.getElementById("bg-c-vendor").value.trim(), memo:document.getElementById("bg-c-memo").value.trim(), amount:amt};
-      // 入力中の予算も一緒に保存する
-      var bud = {}; document.querySelectorAll("#modal-box [data-bg-bud]").forEach(function(el){ var n = bgNum(el.value); if(n) bud[el.getAttribute("data-bg-bud")] = n; });
-      bgSave(pid, {budget:bud, costs:cur.concat([item])}, "実績を追加しました", reopen);
+      var all = (bgDoc(pid)||{}).costs || [];
+      var item = {id:editing||newId("c"), date:$("bg-c-date").value||localToday(), cat:$("bg-c-cat").value, lineId:$("bg-c-line").value||"", vendor:$("bg-c-vendor").value.trim(), memo:$("bg-c-memo").value.trim(), amount:amt};
+      var next = editing ? all.map(function(x){ return x.id===editing ? Object.assign({}, x, item) : x; }) : all.concat([item]);
+      // 入力中の予算の明細も一緒に保存する
+      bgSave(pid, {lines:cleanLines(), budget:{}, costs:next}, editing?"実績を更新しました":"実績を追加しました", reopen);
     });
+    document.querySelectorAll("#modal-box [data-bg-editcost]").forEach(function(b){ b.addEventListener("click", function(){
+      var x = ((bgDoc(pid)||{}).costs||[]).find(function(y){ return y.id===b.getAttribute("data-bg-editcost"); }); if(!x) return;
+      editing = x.id; $("bg-c-date").value = x.date||localToday();
+      var cs = $("bg-c-cat"); if(!Array.prototype.some.call(cs.options, function(o){ return o.value===x.cat; })) cs.insertAdjacentHTML("beforeend", '<option>'+esc(x.cat||"")+'</option>'); cs.value = x.cat||"";
+      $("bg-c-line").innerHTML = lineOpts(x.lineId||""); $("bg-c-vendor").value = x.vendor||""; $("bg-c-amt").value = x.amount||""; $("bg-c-memo").value = x.memo||"";
+      $("bg-c-add").innerHTML = "実績を更新する"; $("bg-c-cancel").style.display = ""; $("bg-c-title").textContent = "実績を編集"; $("bg-c-title").scrollIntoView({block:"center"});
+    }); });
     document.querySelectorAll("#modal-box [data-bg-delcost]").forEach(function(b){ b.addEventListener("click", function(){
       var id = b.getAttribute("data-bg-delcost");
       confirmDelete("この実績を削除しますか？", function(){
@@ -2920,6 +2976,7 @@
       });
     }); });
   }
+
   /* ---- freee連携：勘定科目の取り込み／実績（経費の取引）の取り込み ---- */
   var AI_EXP_CATS = ["売上原価","販売管理費","営業外費用","特別損失"];
   function openAccountImport(){
@@ -2933,7 +2990,7 @@
         var have = ACCOUNT_ITEMS.indexOf(x.name)!==-1;
         return '<label style="display:flex;gap:8px;align-items:center;padding:6px 2px;border-top:1px solid var(--border);font-size:12.5px"><input type="checkbox" data-ai-pick="'+i+'"'+(have?' checked disabled':'')+'><span style="flex:1">'+esc(x.name)+'</span><span style="font-size:11px;color:var(--ink-faint)">'+(have?'登録済み':esc(x.category||""))+'</span></label>';
       }).join("");
-      var body = '<div style="font-size:12px;color:var(--ink-soft);line-height:1.6;margin-bottom:8px">費用の勘定科目（売上原価・販売管理費など）を表示しています。追加したいものにチェックしてください。</div><div style="max-height:46vh;overflow:auto">'+rows+'</div>';
+      var body = '<div style="font-size:12px;color:var(--ink-soft);line-height:1.6;margin-bottom:8px">費用の勘定科目（売上原価・販売管理費など）を表示しています。追加したいものにチェックしてください。</div><div style="max-height:46vh;overflow:auto;flex:none">'+rows+'</div>';
       openModal("freeeから勘定科目を取り込む", body, '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="ai-add">チェックした科目を追加する</button>');
       document.getElementById("ai-add").addEventListener("click", function(){
         var add = []; document.querySelectorAll("#modal-box [data-ai-pick]:checked:not(:disabled)").forEach(function(el){ add.push(show[+el.getAttribute("data-ai-pick")].name); });
@@ -2969,7 +3026,7 @@
           var done = !!have[x.detailId], hay = [x.description].concat(x.tags).map(bgNormName), hit = !done && toks.length && hay.some(function(h){ return h && toks.some(function(t){ return h.indexOf(t)!==-1 || (h.length>=3 && t.indexOf(h)!==-1); }); });
           return '<tr><td><input type="checkbox" data-bf-pick="'+i+'"'+(done?' disabled':(hit?' checked':''))+'></td><td class="num">'+esc(fmtDate(x.date))+'</td><td>'+esc(x.accountName||"")+'</td><td>'+esc(x.partner||"")+(x.description?'<div style="font-size:11px;color:var(--ink-faint)">'+esc(x.description)+'</div>':'')+(x.tags.length?'<div style="font-size:11px;color:var(--accent)">'+esc(x.tags.join("・"))+'</div>':'')+'</td><td class="num" style="text-align:right">'+bgYen(x.amount)+(done?'<div style="font-size:11px;color:var(--ink-faint)">取込済</div>':'')+'</td></tr>';
         }).join("");
-        res.innerHTML = '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px">'+items.length+'件'+(j.truncated?'（上限のため一部のみ。期間を狭めてください）':'')+'</div><label style="font-size:12px;display:flex;gap:6px;align-items:center;margin-bottom:8px"><input type="checkbox" id="bf-addacct" checked>マスタにない勘定科目は、勘定科目マスタにも追加する</label><div style="max-height:40vh;overflow:auto"><table class="tbl" style="font-size:12.5px"><thead><tr><th></th><th>日付</th><th>勘定科目</th><th>取引先・内容</th><th style="text-align:right">金額</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+        res.innerHTML = '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px">'+items.length+'件'+(j.truncated?'（上限のため一部のみ。期間を狭めてください）':'')+'</div><label style="font-size:12px;display:flex;gap:6px;align-items:center;margin-bottom:8px"><input type="checkbox" id="bf-addacct" checked>マスタにない勘定科目は、勘定科目マスタにも追加する</label><div style="max-height:40vh;overflow:auto;flex:none"><table class="tbl" style="font-size:12.5px"><thead><tr><th></th><th>日付</th><th>勘定科目</th><th>取引先・内容</th><th style="text-align:right">金額</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
         res.querySelectorAll("[data-bf-pick]").forEach(function(el){ el.addEventListener("change", cnt); }); cnt();
       }, function(e){ res.innerHTML = '<div style="color:var(--danger);padding:12px 2px">取得できませんでした：'+esc(e.message||"")+'</div>'; });
     });
@@ -7094,7 +7151,7 @@
     else if(m.key==="reportTypes") n = state.reports.filter(function(x){return x.type===name;}).length;
     else if(m.key==="eventTypes") n = state.events.filter(function(x){return x.category===name;}).length;
     else if(m.key==="propertyStructures") n = rawStore.projects.filter(function(p){return p.propertyStructure===name;}).length;
-    else if(m.key==="accountItems") n = (state.budgets||[]).reduce(function(a,b){ return a + (b.costs||[]).filter(function(x){ return x.cat===name; }).length + ((b.budget||{})[name]?1:0); },0);
+    else if(m.key==="accountItems") n = (state.budgets||[]).reduce(function(a,b){ return a + (b.costs||[]).filter(function(x){ return x.cat===name; }).length + bgLines(b).filter(function(l){ return l.cat===name; }).length; },0);
     return n;
   }
   function renderSettingsTrash(){
