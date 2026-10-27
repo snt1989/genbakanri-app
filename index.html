@@ -163,6 +163,14 @@
   .filter-card{padding:16px 18px;margin-bottom:16px;display:flex;flex-direction:column;gap:12px;}
   .filter-line{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;}
   .filter-line .fitem{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--ink-faint);font-weight:600;min-width:140px;}
+  .bgdd{position:relative;}
+  .filter-line .fitem.bgdd{flex:1 1 calc(50% - 10px);min-width:140px;max-width:260px;}
+  .bgdd:nth-child(even) .bgdd-panel{left:auto;right:0;}
+  @media(min-width:700px){.bgdd:nth-child(even) .bgdd-panel{left:0;right:auto;}}
+  .bgdd-btn{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-width:150px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--ink);font-size:13px;font-weight:600;cursor:pointer;text-align:left;}
+  .bgdd-btn.on{border-color:var(--accent);background:var(--accent-soft);}
+  .bgdd-panel{position:absolute;z-index:40;top:calc(100% + 4px);left:0;min-width:230px;max-width:min(340px,92vw);max-height:320px;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.18);padding:6px 10px 8px;}
+  .bgdd-panel .checkopt{display:flex;padding:6px 2px;font-size:13px;color:var(--ink);white-space:normal;}
   .checkgroup{display:flex;gap:12px;flex-wrap:wrap;}
   .checkopt{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink-soft);white-space:nowrap;}
   .checkopt input{width:auto;}
@@ -2921,8 +2929,12 @@
     html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'+tile("契約金額の合計",bgYen(T.contract),list.length+"件")+tile("予算の合計",bgYen(T.budget))+tile("予算上の粗利（契約−予算）",bgYen(T.contract-T.budget),T.contract?"粗利率 "+bgPct((T.contract-T.budget)/T.contract):"")+tile("実績（支払い）の合計",bgYen(T.actual),T.budget?"予算の"+bgPct(T.actual/T.budget):"")+tile("現時点の粗利（契約−実績）",bgYen(T.contract-T.actual),T.contract?"粗利率 "+bgPct((T.contract-T.actual)/T.contract):"")+'</div>';
     var who = {}; state.projects.forEach(function(p){ normalizeAssignees(p.assignees).forEach(function(a){ if(a.name) who[a.name] = 1; }); });
     var grp = function(key,label,note,items){
-      return '<div class="fitem" style="flex:1 1 100%"><span>'+label+' <span style="font-weight:400;color:var(--ink-faint)">（'+note+'）</span> <a href="#" data-bgc-all="'+key+'" style="font-weight:600;margin-left:6px">すべて選ぶ</a> <a href="#" data-bgc-none="'+key+'" style="font-weight:600;margin-left:6px">解除</a></span>'+
-        '<div class="checkgroup">'+(items.length ? items.map(function(it){ return '<label class="checkopt"><input type="checkbox" data-bgc="'+key+'" value="'+esc(it[0])+'"'+(f[key].indexOf(it[0])!==-1?' checked':'')+'>'+esc(it[1])+'</label>'; }).join("") : '<span style="font-weight:400">担当者の登録がありません</span>')+'</div></div>';
+      var sel = f[key], on = sel.length>0, open = state.bgDd===key;
+      var names = items.filter(function(it){ return sel.indexOf(it[0])!==-1; }).map(function(it){ return it[1]; });
+      var txt = !on ? "すべて" : (names.length<=2 ? names.join("・") : names.length+"件を選択");
+      return '<div class="fitem bgdd" data-bgdd-wrap="'+key+'"><span>'+label+'</span><button type="button" class="bgdd-btn'+(on?' on':'')+'" data-bgdd="'+key+'" aria-expanded="'+open+'"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(txt)+'</span><span style="font-size:10px;color:var(--ink-faint)">'+(open?'▲':'▼')+'</span></button>'+
+        (open ? '<div class="bgdd-panel"><div style="display:flex;justify-content:space-between;gap:10px;font-size:11.5px;padding:2px 2px 6px;border-bottom:1px solid var(--border);margin-bottom:4px;font-weight:400;color:var(--ink-faint)"><span>'+esc(note)+'</span><span><a href="#" data-bgc-all="'+key+'" style="font-weight:700">すべて選ぶ</a>　<a href="#" data-bgc-none="'+key+'" style="font-weight:700">解除</a></span></div>'+
+          (items.length ? items.map(function(it){ return '<label class="checkopt"><input type="checkbox" data-bgc="'+key+'" value="'+esc(it[0])+'"'+(sel.indexOf(it[0])!==-1?' checked':'')+'>'+esc(it[1])+'</label>'; }).join("") : '<div style="padding:8px 2px;font-weight:400">登録がありません</div>')+'</div>' : '')+'</div>';
     };
     var opt = function(v,l,cur){ return '<option value="'+esc(v)+'"'+(String(cur)===String(v)?' selected':'')+'>'+esc(l)+'</option>'; };
     html += '<div class="card filter-card"><div class="filter-line">'+
@@ -3276,6 +3288,8 @@
   document.addEventListener("click", function(e){
     var t = e.target; if(!t.closest || !state.isAdmin) return;
     var x;
+    if((x = t.closest("[data-bgdd]"))){ var dk = x.getAttribute("data-bgdd"); state.bgDd = state.bgDd===dk ? "" : dk; render(); return; }
+    if(state.bgDd && !t.closest(".bgdd-panel")){ state.bgDd = ""; render(); }
     if((x = t.closest("[data-bg-sort]"))){ var so = bgSort(), k = x.getAttribute("data-bg-sort"); if(so.key===k) so.dir = so.dir==="asc"?"desc":"asc"; else { so.key = k; so.dir = (BG_SORTS[k]||{}).str && k!=="created" ? "asc" : "desc"; } render(); return; }
     if(t.closest("[data-bgsort-dir]")){ var so2 = bgSort(); so2.dir = so2.dir==="asc"?"desc":"asc"; render(); return; }
     if(t.closest("[data-bg-clear]")){ state.bgFilter = null; render(); return; }
