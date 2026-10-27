@@ -7955,7 +7955,8 @@
     var enc = (typeof TextEncoder!=="undefined") ? new TextEncoder() : null;
     var rows = STORAGE_COLS.map(function(c){
       var arr = state[c[0]]||[], bytes = 0; if(!arr.length) return {key:c[0], label:c[1], count:0, bytes:0};
-      try{ var str = JSON.stringify(arr); bytes = enc ? enc.encode(str).length : str.length*2; }catch(e){}
+      // 全体を1つの文字列にすると、写真本体を含むデータでメモリが足りなくなる（Out of Memory）ため、1項目ずつ文字数から概算する
+      try{ arr.forEach(function(d){ for(var k in d){ var v = d[k]; if(typeof v==="string") bytes += v.length; else if(v!=null && typeof v==="object"){ try{ bytes += JSON.stringify(v).length; }catch(e){} } else bytes += 8; bytes += k.length; } }); }catch(e){}
       return {key:c[0], label:c[1], count:arr.length, bytes:bytes};
     });
     state.storageCache = {key:key, at:now, rows:rows};
@@ -8043,7 +8044,7 @@
         }
         return '<tr><td>'+esc(r.label)+part+'</td><td class="num" data-label="件数">'+r.count.toLocaleString()+'</td><td class="num" data-label="容量">'+fmtBytes(r.bytes)+'</td></tr>'; }).join("")+'</tbody></table></div>';
     if(db && !(state.lazyOn.files && state.loaded.files && state.lazyScope.files==="" && (!state.lazyLimit.files || state.filesAllLoaded))){
-      h += '<div style="margin-top:8px"><button class="btn outline sm" id="storage-load-all">写真・ファイルを全件読み込んで集計する</button> <span style="font-size:11px;color:var(--ink-faint)">'+(state.filesPaging?'読み込み中… '+state.files.length+'件':'件数が多いと読み取りが増えます')+'</span></div>';
+      h += '<div style="margin-top:8px"><button class="btn outline sm" id="storage-load-all">写真・ファイルを全件読み込んで集計する</button> <span style="font-size:11px;color:var(--ink-faint)">'+(state.filesPaging?'読み込み中… '+state.files.length+'件':'件数が多いと読み取りとメモリが増えます。端末が重くなる場合は押さないでください')+'</span></div>';
     }
     h += '<div style="margin-top:12px;font-size:12.5px;line-height:1.8;color:var(--ink-soft)"><b>読み取り回数の目安：</b>アプリを開くたびに約 <b>'+totalN.toLocaleString()+'</b> 件を読み取ります。Firestoreの無料枠は1日5万件なので、'+(loads?'1日あたり約 <b>'+loads+'</b> 回の読み込みまでが目安です（全員の合計）。':'十分に余裕があります。')+'</div>';
     if(assetsCap){
