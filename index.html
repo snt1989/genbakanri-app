@@ -2167,6 +2167,18 @@
       });
       return;
     }
+    // 読み込みが返ってこない（件数が多すぎて止まる）場合は、件数を半分にして自動でやり直す
+    if(name==="files" && !scope && lim>10){
+      var wd = lim;
+      setTimeout(function(){
+        if(state.lazyOn.files && !state.loaded.files && state.lazyScope.files==="" && (state.lazyLimit.files||0)===wd){
+          var nl2 = Math.max(10, Math.floor(wd/2)); state.filesLimit = nl2; state.lazyOn.files = false;
+          try{ lazyUnsub.files && lazyUnsub.files(); }catch(x){}
+          toast("読み込みに時間がかかるため、件数を減らして再読み込みします");
+          lazyStart("files", "", nl2);
+        }
+      }, 12000);
+    }
     var q = db.collection(name);
     if(name==="files" && scope) q = q.where("projectId","==",scope);
     else if(name==="files" && lim) q = q.orderBy("uploadedAt","desc").limit(lim);
@@ -2197,7 +2209,7 @@
       if(!state.loaded.projects) return;
       var ids = state.projects.filter(function(p){ return isMyProject(p); }).map(function(p){ return p.id; }).sort();
       lazyStart("files", "mine:"+ids.join(","));
-    }else lazyStart("files", "", state.filesLimit||50);
+    }else lazyStart("files", "", state.filesLimit||30);
   }
   // いまの画面に必要なコレクションを開始する（render の先頭で呼ぶ）
   function lazyNeeds(){
@@ -3346,7 +3358,7 @@
   }
   document.addEventListener("click", function(e){
     var t = e.target; if(!t || !t.closest) return;
-    if(t.closest("[data-file-server-more]")){ state.filesLimit = (state.filesLimit||50) + 50; render(); return; }
+    if(t.closest("[data-file-server-more]")){ state.filesLimit = (state.filesLimit||30) + 30; render(); return; }
     var fm = t.closest("[data-file-more]");
     if(fm){ var fk = fm.getAttribute("data-file-more"); state.fileLim = state.fileLim || {}; state.fileLim[fk] = fileLimit(fk) + FILE_PAGE; render(); return; }
     var dd = t.closest("[data-bgdd]");
