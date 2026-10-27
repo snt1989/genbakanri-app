@@ -2832,7 +2832,7 @@
     lines.forEach(function(l){ var n = bgNum(l.amount); b += n; bud[l.cat] = (bud[l.cat]||0) + n; });
     costs.forEach(function(x){ var n = bgNum(x.amount); a += n; byCat[x.cat] = (byCat[x.cat]||0) + n; if(x.lineId) byLine[x.lineId] = (byLine[x.lineId]||0) + n; });
     var contract = bgNum(p.amount);
-    return {contract:contract, budget:b, actual:a, remain:b-a, rate:b?a/b:null, profit:contract-a, profitRate:contract?(contract-a)/contract:null, byCat:byCat, bud:bud, lines:lines, byLine:byLine, costs:costs, has:!!(d.projectId)};
+    return {contract:contract, budget:b, actual:a, remain:b-a, rate:b?a/b:null, profit:contract-a, profitRate:contract?(contract-a)/contract:null, planProfit:contract-b, planProfitRate:contract?(contract-b)/contract:null, byCat:byCat, bud:bud, lines:lines, byLine:byLine, costs:costs, has:!!(d.projectId)};
   }
   function bgPct(x){ return x==null ? "—" : (Math.round(x*1000)/10)+"%"; }
   function bgYen(n){ return (n||0).toLocaleString("ja-JP")+"円"; }
@@ -2856,6 +2856,7 @@
       return '<tr data-bg-open="'+esc(p.id)+'" style="cursor:pointer"><td><b>'+esc(p.name||"")+'</b><div style="font-size:11px;color:var(--ink-faint)">'+esc(p.status||"")+'</div></td>'+
         '<td class="num" style="text-align:right">'+(c.contract?bgYen(c.contract):"—")+'</td>'+
         '<td class="num" style="text-align:right">'+(c.budget?bgYen(c.budget):'<span style="color:var(--ink-faint)">未設定</span>')+'</td>'+
+        '<td class="num" style="text-align:right;'+(c.contract&&c.budget&&c.planProfit<0?'color:var(--danger);font-weight:700':'')+'">'+((c.contract&&c.budget)?bgYen(c.planProfit)+'<div style="font-size:11px;color:var(--ink-faint)">'+bgPct(c.planProfitRate)+'</div>':"—")+'</td>'+
         '<td class="num" style="text-align:right">'+(c.actual?bgYen(c.actual):"—")+'</td>'+
         '<td class="num" style="text-align:right;'+(c.budget&&c.remain<0?'color:var(--danger);font-weight:700':'')+'">'+(c.budget?bgYen(c.remain):"—")+'</td>'+
         '<td style="min-width:110px"><div style="height:8px;border-radius:99px;background:var(--border);overflow:hidden"><div style="height:100%;width:'+w+'%;background:'+(over?'var(--danger)':'var(--accent)')+'"></div></div><div style="font-size:11px;margin-top:2px;color:'+(over?'var(--danger)':'var(--ink-faint)')+'">'+bgPct(c.rate)+'</div></td>'+
@@ -2863,11 +2864,11 @@
     }).join("");
     var tile = function(l,v,sub){ return '<div class="card" style="padding:12px 16px;flex:1;min-width:150px"><div style="font-size:11.5px;color:var(--ink-soft)">'+l+'</div><div class="num" style="font-size:18px;font-weight:800;margin-top:4px">'+v+'</div>'+(sub?'<div style="font-size:11px;color:var(--ink-faint);margin-top:2px">'+sub+'</div>':'')+'</div>'; };
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><div><h1 class="pagetitle">予算管理<span class="admin-chip">'+iAdmin()+'管理者専用</span></h1><div style="font-size:12px;color:var(--ink-faint);margin-top:4px">現場（案件）ごとの予算と、実際にかかった費用を管理します。行をタップすると、予算と実績を入力できます。</div></div></div><div style="height:14px"></div>';
-    html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'+tile("契約金額の合計",bgYen(T.contract),list.length+"件")+tile("予算の合計",bgYen(T.budget))+tile("実績（支払い）の合計",bgYen(T.actual),T.budget?"予算の"+bgPct(T.actual/T.budget):"")+tile("見込みの粗利（契約−実績）",bgYen(T.contract-T.actual),T.contract?"粗利率 "+bgPct((T.contract-T.actual)/T.contract):"")+'</div>';
+    html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'+tile("契約金額の合計",bgYen(T.contract),list.length+"件")+tile("予算の合計",bgYen(T.budget))+tile("予算上の粗利（契約−予算）",bgYen(T.contract-T.budget),T.contract?"粗利率 "+bgPct((T.contract-T.budget)/T.contract):"")+tile("実績（支払い）の合計",bgYen(T.actual),T.budget?"予算の"+bgPct(T.actual/T.budget):"")+tile("現時点の粗利（契約−実績）",bgYen(T.contract-T.actual),T.contract?"粗利率 "+bgPct((T.contract-T.actual)/T.contract):"")+'</div>';
     html += '<div class="card filter-card"><div class="filter-line"><div class="fitem"><span>表示する案件</span><select id="bg-mode">'+[["active","契約済〜清算済（施工中を含む）"],["nobudget","予算が未設定"],["all","すべて"]].map(function(x){ return '<option value="'+x[0]+'"'+(f.mode===x[0]?" selected":"")+'>'+x[1]+'</option>'; }).join("")+'</select></div>'+
       '<div class="fitem" style="min-width:220px"><span>案件名で検索</span><input type="text" id="bg-q" value="'+esc(f.q||"")+'"></div></div></div>';
     if(!list.length) return html+emptyState(iYenIcon,"該当する案件がありません","表示する案件の条件を変えてください");
-    html += '<div class="card" style="padding:0;overflow-x:auto"><table class="tbl" style="font-size:12.5px;min-width:760px"><thead><tr><th>案件</th><th style="text-align:right">契約金額</th><th style="text-align:right">予算</th><th style="text-align:right">実績</th><th style="text-align:right">残り予算</th><th>消化率</th><th style="text-align:right">粗利（契約−実績）</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    html += '<div class="card" style="padding:0;overflow-x:auto"><table class="tbl" style="font-size:12.5px;min-width:900px"><thead><tr><th>案件</th><th style="text-align:right">契約金額</th><th style="text-align:right">予算</th><th style="text-align:right">予算上の粗利<div style="font-weight:400;font-size:10.5px">契約−予算</div></th><th style="text-align:right">実績</th><th style="text-align:right">残り予算</th><th>消化率</th><th style="text-align:right">現時点の粗利<div style="font-weight:400;font-size:10.5px">契約−実績</div></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
     return html;
   }
   // 案件のページに出す予算の欄（管理者のみ）
@@ -2878,7 +2879,7 @@
     var c = bgCalc(p), over = c.budget>0 && c.actual>c.budget, w = c.rate==null ? 0 : Math.min(100, Math.round(c.rate*100));
     var stat = function(l,v,warn){ return '<div style="flex:1;min-width:110px"><div style="font-size:11px;color:var(--ink-soft)">'+l+'</div><div class="num" style="font-size:14px;font-weight:800;margin-top:2px;'+(warn?'color:var(--danger)':'')+'">'+v+'</div></div>'; };
     if(!c.has && !c.budget && !c.actual) return head+'<div class="card" style="padding:14px 18px;font-size:12.5px;color:var(--ink-faint);line-height:1.7">この案件の予算はまだ登録されていません。「予算・実績を入力する」から、項目ごとの予算と、実際にかかった費用を登録できます。</div>';
-    return head+'<div class="card" style="padding:14px 18px"><div style="display:flex;gap:10px;flex-wrap:wrap">'+stat("契約金額",c.contract?bgYen(c.contract):"未入力")+stat("予算",c.budget?bgYen(c.budget):"未設定")+stat("実績",bgYen(c.actual),over)+stat("残り予算",c.budget?bgYen(c.remain):"—",c.budget>0&&c.remain<0)+stat("粗利（契約−実績）",c.contract?bgYen(c.profit)+"（"+bgPct(c.profitRate)+"）":"—",c.contract>0&&c.profit<0)+'</div>'+
+    return head+'<div class="card" style="padding:14px 18px"><div style="display:flex;gap:10px;flex-wrap:wrap">'+stat("契約金額",c.contract?bgYen(c.contract):"未入力")+stat("予算",c.budget?bgYen(c.budget):"未設定")+stat("予算上の粗利（契約−予算）",(c.contract&&c.budget)?bgYen(c.planProfit)+"（"+bgPct(c.planProfitRate)+"）":"—",c.contract>0&&c.budget>0&&c.planProfit<0)+stat("実績",bgYen(c.actual),over)+stat("残り予算",c.budget?bgYen(c.remain):"—",c.budget>0&&c.remain<0)+stat("現時点の粗利（契約−実績）",c.contract?bgYen(c.profit)+"（"+bgPct(c.profitRate)+"）":"—",c.contract>0&&c.profit<0)+'</div>'+
       '<div style="height:8px;border-radius:99px;background:var(--border);overflow:hidden;margin-top:12px"><div style="height:100%;width:'+w+'%;background:'+(over?'var(--danger)':'var(--accent)')+'"></div></div><div style="font-size:11px;margin-top:3px;color:'+(over?'var(--danger)':'var(--ink-faint)')+'">予算の消化率 '+bgPct(c.rate)+'（明細 '+c.lines.length+'件・実績 '+c.costs.length+'件）</div></div>';
   }
   function bgSave(pid, patch, msg, after){
@@ -2900,7 +2901,7 @@
     var acctOpts = function(sel){ var arr = ACCOUNT_ITEMS.slice(); if(sel && arr.indexOf(sel)===-1) arr.push(sel); return arr.map(function(k){ return '<option'+(k===sel?' selected':'')+'>'+esc(k)+'</option>'; }).join(""); };
     var tile = function(l,v,warn){ return '<div style="flex:1;min-width:120px;border:1px solid var(--border);border-radius:10px;padding:8px 10px"><div style="font-size:11px;color:var(--ink-soft)">'+l+'</div><div class="num" style="font-size:14.5px;font-weight:800;margin-top:2px;'+(warn?'color:var(--danger)':'')+'">'+v+'</div></div>'; };
     var headHtml = function(){ var c = cur();
-      return tile("契約金額",c.contract?bgYen(c.contract):"未入力")+tile("予算合計",bgYen(c.budget))+tile("実績合計",bgYen(c.actual),c.budget>0&&c.actual>c.budget)+tile("残り予算",c.budget?bgYen(c.remain):"—",c.budget>0&&c.remain<0)+tile("粗利（契約−実績）",c.contract?bgYen(c.profit)+"（"+bgPct(c.profitRate)+"）":"—",c.contract>0&&c.profit<0); };
+      return tile("契約金額",c.contract?bgYen(c.contract):"未入力")+tile("予算合計",bgYen(c.budget))+tile("予算上の粗利（契約−予算）",(c.contract&&c.budget)?bgYen(c.planProfit)+"（"+bgPct(c.planProfitRate)+"）":"—",c.contract>0&&c.budget>0&&c.planProfit<0)+tile("実績合計",bgYen(c.actual),c.budget>0&&c.actual>c.budget)+tile("残り予算",c.budget?bgYen(c.remain):"—",c.budget>0&&c.remain<0)+tile("現時点の粗利（契約−実績）",c.contract?bgYen(c.profit)+"（"+bgPct(c.profitRate)+"）":"—",c.contract>0&&c.profit<0); };
     var linesHtml = function(){ var c = cur();
       if(!L.length) return '<tr><td colspan="9" style="color:var(--ink-faint);text-align:center;padding:14px">まだ予算の明細がありません。「明細を追加」から入力してください</td></tr>';
       var inp = function(i,f,v,w,al){ return '<input type="text" data-l="'+f+'" data-i="'+i+'" value="'+esc(v==null?"":v)+'" style="width:'+w+';'+(al?'text-align:right;':'')+'padding:6px 8px;font-size:12.5px">'; };
