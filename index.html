@@ -3392,6 +3392,7 @@
   document.addEventListener("click", function(e){
     var t = e.target; if(!t || !t.closest) return;
     if(t.closest("[data-file-server-more]")){ state.filesLimit = (state.filesLimit||30) + 30; render(); return; }
+    if(t.closest("[data-unlight]")){ state.filesFilter.unlight = !state.filesFilter.unlight; state.fileLim = {}; render(); return; }
     var fm = t.closest("[data-file-more]");
     if(fm){ var fk = fm.getAttribute("data-file-more"); state.fileLim = state.fileLim || {}; state.fileLim[fk] = fileLimit(fk) + FILE_PAGE; render(); return; }
     var dd = t.closest("[data-bgdd]");
@@ -6615,6 +6616,7 @@
       if(f.project!=="all" && x.projectId!==f.project) return false;
       if(f.kind==="image" && !isMediaFile(x)) return false;
       if(f.kind==="other" && isMediaFile(x)) return false;
+      if(f.unlight && !notLightened(x)) return false;
       return true;
     });
     var fso = state.filesSort || "date_desc";
@@ -6650,6 +6652,7 @@
           return '<option value="'+p.id+'"'+(f.project===p.id?" selected":"")+'>'+esc(p.name)+'</option>';
         }).join("")+
       '</select></div>'+
+      '<div class="fitem"><span>軽量化</span><button type="button" class="btn sm'+(f.unlight?' primary':' outline')+'" data-unlight="files">'+(f.unlight?'✓ ':'')+'軽量化していない写真のみ（'+state.files.filter(function(x){ return fileVisible(x) && projectVisibleId(x.projectId) && notLightened(x); }).length+'枚）</button></div>'+
     '</div></div>';
 
     html += '<div class="summary-line" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span><b>'+list.length+'</b>件 / 全'+state.files.length+'件</span><label style="font-size:12px;color:var(--ink-soft)">並び替え <select id="files-sort-all" style="margin-left:4px">'+
@@ -6825,6 +6828,7 @@
     // 「写真」「書類」で絞るときは、フォルダの中身も含めて種類ごとにまとめて表示する
     var list = all.filter(function(x){ return kind!=="all" ? (kindOf(x)===kind && (!cur || x.folderId===cur.id)) : (cur ? x.folderId===cur.id : inRoot(x)); });
     if(state.pfMine) list = list.filter(function(x){ return x.uploadedBy===state.myName; });
+    if(state.pfUnlight) list = list.filter(notLightened);
     var sort = state.pfSort;
     list = list.slice().sort(function(a,b){
       if(sort==="name") return (a.filename||"").localeCompare(b.filename||"","ja");
@@ -6849,6 +6853,7 @@
     html += '<div class="pf-kind" role="tablist">'+[["all","すべて",all.length],["photo","写真・動画",nPhoto],["doc","書類",nDoc]].map(function(k){ return '<button type="button" data-pf-kind="'+k[0]+'" class="'+(kind===k[0]?'on':'')+'">'+k[1]+'<i>'+k[2]+'</i></button>'; }).join("")+'</div>';
     html += '<div class="pf-bar">'+
       '<label><input type="checkbox" id="pf-selall"'+(list.length && list.every(function(x){return state.pfSel[x.id];})?" checked":"")+'> ファイル一括選択</label>'+
+      '<label><input type="checkbox" id="pf-unlight"'+(state.pfUnlight?" checked":"")+'> 軽量化していない写真のみ表示</label>'+
       '<label><input type="checkbox" id="pf-mine"'+(state.pfMine?" checked":"")+'> 自分のファイルのみ表示</label>'+
       '<select id="pf-sort"><option value="date_desc"'+(sort==="date_desc"?" selected":"")+'>アップロード日（新しい順）</option><option value="date_asc"'+(sort==="date_asc"?" selected":"")+'>アップロード日（古い順）</option><option value="name"'+(sort==="name"?" selected":"")+'>ファイル名順</option><option value="size_desc"'+(sort==="size_desc"?" selected":"")+'>サイズ（大きい順）</option><option value="size_asc"'+(sort==="size_asc"?" selected":"")+'>サイズ（小さい順）</option></select>'+
       '<select id="pf-view"><option value="thumb"'+(state.pfView==="thumb"?" selected":"")+'>サムネイル表示</option><option value="list"'+(state.pfView==="list"?" selected":"")+'>リスト表示</option></select>'+
@@ -6906,6 +6911,8 @@
       field("対象", '<select id="pc-min">'+ltMinOpts(c.min)+'</select>')+
       '<div><button class="btn primary" id="pc-save">'+iAdmin()+'写真の設定を保存する</button></div></div>';
   }
+  // 軽量化していない写真（画像で、「写真を軽量化」を実行した記録がないもの）
+  function notLightened(f){ return isImageFile(f) && !f.lightenedAt; }
   function lightenCandidates(projectId, minKB, only){
     return state.files.filter(function(f){ return (!projectId || f.projectId===projectId) && (!only || only[f.id]) && isImageFile(f) && f.url && String(f.url).indexOf("data:image/")===0 && String(f.url).length>minKB*1024 && f.contentType!=="image/gif" && f.contentType!=="image/svg+xml"; });
   }
@@ -10185,6 +10192,7 @@
       if(f.project!=="all" && x.projectId!==f.project) return false;
       if(f.kind==="image" && !isImageFile(x)) return false;
       if(f.kind==="other" && isImageFile(x)) return false;
+      if(f.unlight && !notLightened(x)) return false;
       return true;
     }).sort(function(a,b){return (b.uploadedAt||"").localeCompare(a.uploadedAt||"");});
   }
@@ -11310,6 +11318,8 @@
     c.querySelectorAll("[data-pf-kind]").forEach(function(b){ b.addEventListener("click", function(){ state.projectFilesKind = b.getAttribute("data-pf-kind"); state.pfSel = {}; render(); }); });
     var pfMine = document.getElementById("pf-mine");
     if(pfMine) pfMine.addEventListener("change", function(){ state.pfMine = pfMine.checked; render(); });
+    var pfUnl = document.getElementById("pf-unlight");
+    if(pfUnl) pfUnl.addEventListener("change", function(){ state.pfUnlight = pfUnl.checked; render(); });
     var pfSort = document.getElementById("pf-sort");
     if(pfSort) pfSort.addEventListener("change", function(){ state.pfSort = pfSort.value; render(); });
     var pfView = document.getElementById("pf-view");
