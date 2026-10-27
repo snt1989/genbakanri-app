@@ -1476,14 +1476,18 @@
     var x = u.last;
     return (x.by||"")+"さんが"+(x.a==="登録" ? "新しく登録しました" : ((x.f&&x.f.length ? x.f.join("・")+"を" : "")+"編集しました"))+(u.n>1?"（ほか"+(u.n-1)+"件の更新）":"")+" ／ "+fmtAgo(x.at);
   }
+  var __homeNotices = [];
   function projUpdatesHomeHtml(){
-    var ups = projUpdates(); if(!ups.length) return "";
-    var rows = ups.slice(0,5).map(function(u){
-      return '<a href="#" data-open-project="'+esc(u.p.id)+'" style="display:block;padding:9px 0;border-top:1px solid var(--border);text-decoration:none;color:inherit"><div style="font-size:13px;font-weight:700">'+esc(u.p.name||"案件")+'</div><div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px">'+esc(projUpdateText(u))+'</div></a>';
+    var items = noticeItems(); __homeNotices = items;
+    if(!items.length) return "";
+    var ic = {update:"🆕", task:"✓", project:"🏗", chat:"💬"};
+    var rows = items.slice(0,5).map(function(it,i){
+      return '<a href="#" data-home-notice="'+i+'" style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--border);text-decoration:none;color:inherit"><span style="flex:none;width:20px;text-align:center">'+(ic[it.grp]||"•")+'</span><span style="min-width:0"><div style="font-size:13px;font-weight:700">'+esc(it.title)+'</div><div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px">'+esc(it.sub||"")+'</div></span></a>';
     }).join("");
+    var hasProj = projUpdates().length>0;
     return '<div class="card" style="padding:12px 18px 6px;margin-bottom:16px;border-color:var(--accent);background:var(--accent-soft)">'+
-      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="font-size:14px;margin:0;flex:1">'+iBell()+' 自分の案件が更新されました（'+ups.length+'件）</h2><button class="btn sm" id="pu-readall">すべて既読にする</button></div>'+
-      '<div style="margin-top:6px">'+rows+'</div>'+(ups.length>5?'<div style="font-size:11.5px;color:var(--ink-faint);padding:8px 0">ほか'+(ups.length-5)+'件は、右上のベルのお知らせで確認できます</div>':'')+'</div>';
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="font-size:14px;margin:0;flex:1">'+iBell()+' お知らせ（'+items.length+'件）</h2>'+(hasProj?'<button class="btn sm" id="pu-readall">案件の更新を既読にする</button>':'')+'<button class="btn sm" id="hn-all">すべて見る</button></div>'+
+      '<div style="margin-top:6px">'+rows+'</div>'+(items.length>5?'<div style="font-size:11.5px;color:var(--ink-faint);padding:8px 0">ほか'+(items.length-5)+'件は「すべて見る」で確認できます</div>':'')+'</div>';
   }
   /* ---- お知らせ（ベルマーク） ---- */
   function noticeItems(){
@@ -10689,6 +10693,8 @@
     }); });
     c.querySelectorAll("[data-edit-customer]").forEach(function(el){ el.addEventListener("click", function(){ openCustomerForm(el.getAttribute("data-edit-customer")); }); });
     c.querySelectorAll("[data-del-customer]").forEach(function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-del-customer"); confirmDelete("この顧客を削除しますか？",function(){deleteDoc("customers",id,"顧客を削除しました");}); }); });
+    c.querySelectorAll("[data-home-notice]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var it = __homeNotices[+el.getAttribute("data-home-notice")]; if(it && it.go) it.go(); }); });
+    var hnAll = document.getElementById("hn-all"); if(hnAll) hnAll.addEventListener("click", openNotices);
     var puAll = document.getElementById("pu-readall"); if(puAll) puAll.addEventListener("click", function(){ markProjSeen(projUpdates().map(function(u){ return u.p.id; })); render(); });
     c.querySelectorAll("[data-done-task]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.stopPropagation(); setTaskDone(el.getAttribute("data-done-task"), true); }); });
     c.querySelectorAll("[data-task-done]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.stopPropagation(); setTaskDone(el.getAttribute("data-task-done"), el.getAttribute("data-to")==="1"); }); });
