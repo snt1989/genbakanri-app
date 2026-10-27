@@ -972,13 +972,14 @@
       var memMode = false;
       try{
         var crashed = localStorage.getItem("gc_boot")==="1";
+        if(localStorage.getItem("gc_clean_v")!=="3"){ crashed = true; localStorage.setItem("gc_clean_v","3"); }   // 1回だけ、この端末の古いキャッシュを消す（巨大な写真データが残っていると起動後に落ちるため）
         var nCrash = Number(localStorage.getItem("gc_crashes")||0);
         if(crashed){ nCrash++; localStorage.setItem("gc_crashes", String(nCrash)); }
         // 落ちたら、まずキャッシュを消して作り直す。2回続けて落ちた場合だけ、メモリのみの方式にする（毎回全件を読むので遅くなるため）
         if(nCrash>=2) localStorage.setItem("gc_memcache","1");
         memMode = localStorage.getItem("gc_memcache")==="1";
         localStorage.setItem("gc_boot","1");
-        setTimeout(function(){ try{ localStorage.removeItem("gc_boot"); localStorage.setItem("gc_crashes","0"); if(localStorage.getItem("gc_memcache")==="1"){ localStorage.setItem("gc_okboots", String(Number(localStorage.getItem("gc_okboots")||0)+1)); if(Number(localStorage.getItem("gc_okboots"))>=3){ localStorage.removeItem("gc_memcache"); localStorage.setItem("gc_okboots","0"); } } }catch(e){} }, 10000);
+        setTimeout(function(){ try{ localStorage.removeItem("gc_boot"); localStorage.setItem("gc_crashes","0"); if(localStorage.getItem("gc_memcache")==="1"){ localStorage.setItem("gc_okboots", String(Number(localStorage.getItem("gc_okboots")||0)+1)); if(Number(localStorage.getItem("gc_okboots"))>=3){ localStorage.removeItem("gc_memcache"); localStorage.setItem("gc_okboots","0"); } } }catch(e){} }, 45000);
         if(crashed && indexedDB && indexedDB.databases){
           var dbs = await indexedDB.databases();
           await Promise.all((dbs||[]).filter(function(d){ return d && d.name && /^firestore\//.test(d.name); }).map(function(d){ return new Promise(function(r){ var q = indexedDB.deleteDatabase(d.name); q.onsuccess = q.onerror = q.onblocked = function(){ r(); }; setTimeout(r, 3000); }); }));
@@ -989,6 +990,15 @@
                      : fsMod.initializeFirestore(app, {localCache: fsMod.persistentLocalCache({tabManager: fsMod.persistentMultipleTabManager()})});
       }catch(e){ fs = fsMod.getFirestore(app); }
 
+      // 写真・ファイル・ごみ箱は本体データが大きい。端末のキャッシュ（IndexedDB）に入れると、検索のたびに全部をメモリへ読み込んでOut of Memoryになるため、
+      // この3つだけは「メモリだけのキャッシュ」の別接続で読み書きする
+      var fs2 = null;
+      function fsFor(path){
+        var top = String(path).split("/")[0];
+        if(top!=="files" && top!=="fileChunks" && top!=="trash") return fs;
+        if(!fs2){ try{ fs2 = fsMod.initializeFirestore(appMod.initializeApp(cfg, "mem"), {localCache: fsMod.memoryLocalCache()}); }catch(e){ fs2 = fs; } }
+        return fs2;
+      }
       function wrapSnap(qs){
         return { docs: qs.docs.map(function(d){ return { id: d.id, data: function(){ return d.data(); } }; }) };
       }
@@ -1015,12 +1025,12 @@
           if(orderField) constraints.push(fsMod.orderBy(orderField, orderDir));
           if(afterV!==undefined) constraints.push(fsMod.startAfter(afterV));
           if(limitN) constraints.push(fsMod.limit(limitN));
-          return constraints.length ? fsMod.query.apply(null, [fsMod.collection(fs, path)].concat(constraints)) : fsMod.collection(fs, path);
+          return constraints.length ? fsMod.query.apply(null, [fsMod.collection(fsFor(path), path)].concat(constraints)) : fsMod.collection(fsFor(path), path);
         };
         var api = {
           doc: function(id){ return makeDocRef(path+"/"+id); },
           add: function(data){
-            var nref = fsMod.doc(fsMod.collection(fs, path));   // IDは端末で先に決まる
+            var nref = fsMod.doc(fsMod.collection(fsFor(path), path));   // IDは端末で先に決まる
             var ar = ackRace(fsMod.setDoc(nref, data)), out = ar.then(function(){ return { id: nref.id }; });
             out.__ack = ar.__ack.then(function(){ return { id: nref.id }; });
             return out;
@@ -1045,7 +1055,7 @@
         return api;
       }
       function makeDocRef(path){
-        var ref = fsMod.doc(fs, path);
+        var ref = fsMod.doc(fsFor(path), path);
         return {
           id: path.split("/").pop(),
           get: function(){
