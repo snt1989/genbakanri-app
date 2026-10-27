@@ -4015,7 +4015,7 @@
       if(p.handoverDate && !hiddenFor(p,"p_handover")) items.push({group:"project",kind:"handover",id:p.id,title:"引渡し："+p.name,start:p.handoverDate,end:p.handoverDate,cls:"k-handover"});
     });
     state.steps.filter(secretVisible).filter(function(s){ return projectVisibleId(s.projectId); }).forEach(function(s){
-      if(mineOnly && s.assignee!==me) return;
+      if(mineOnly && stepWho(s).indexOf(me)===-1) return;
       if(s.startDate) items.push({group:"step",kind:"step",id:s.id,title:(s.projectName?s.projectName+"：":"")+(s.name||"工程"),start:s.startDate,end:(s.endDate&&s.endDate>=s.startDate)?s.endDate:s.startDate,cls:"k-step"});
     });
     state.tasks.forEach(function(t){
@@ -4319,6 +4319,26 @@
       writeDoc("events", ev?ev.id:null, {title:title, category:document.getElementById("f-ecat").value, date:date, endDate:end||"", projectId:pid||"", projectName:pr?pr.name:"", note:document.getElementById("f-enote").value.trim(), secret:document.querySelector('input[name="f-sscope"]:checked').value==="secret", createdBy:(ev&&ev.createdBy)||state.myName||""}, ev?"予定を更新しました":"予定を追加しました");
     });
   }
+  function stepWho(x){
+    if(!x) return [];
+    if(Array.isArray(x.assignees) && x.assignees.length) return x.assignees.filter(Boolean);
+    return x.assignee ? String(x.assignee).split("、").filter(Boolean) : [];
+  }
+  /* モーダル内で使う、ドロップダウン式の複数選択（チェック） */
+  function ddMultiHtml(id, items, selected){
+    var sum = function(sel){ return !sel.length ? "（未設定）" : (sel.length<=2 ? sel.join("・") : sel.length+"名を選択"); };
+    return '<div class="ddm" id="'+id+'" data-ddm-sum="1"><button type="button" class="bgdd-btn'+(selected.length?' on':'')+'" data-ddm-btn><span class="ddm-sum" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(sum(selected))+'</span><span class="ddm-arrow" style="font-size:10px;color:var(--ink-faint)">▼</span></button>'+
+      '<div class="bgdd-panel ddm-panel" hidden style="position:static;box-shadow:none;margin-top:6px;max-height:210px;max-width:none">'+
+      (items.length ? items.map(function(n){ return '<label class="checkopt"><input type="checkbox" value="'+esc(n)+'"'+(selected.indexOf(n)!==-1?' checked':'')+'>'+esc(n)+'</label>'; }).join("") : '<div style="padding:8px 2px">メンバーが登録されていません</div>')+'</div></div>';
+  }
+  function ddMultiBind(id){
+    var root = document.getElementById(id); if(!root) return;
+    var btn = root.querySelector("[data-ddm-btn]"), panel = root.querySelector(".ddm-panel");
+    var upd = function(){ var v = ddMultiVal(id); root.querySelector(".ddm-sum").textContent = !v.length ? "（未設定）" : (v.length<=2 ? v.join("・") : v.length+"名を選択"); btn.classList.toggle("on", v.length>0); };
+    btn.addEventListener("click", function(){ var o = panel.hidden; panel.hidden = !o; root.querySelector(".ddm-arrow").textContent = o ? "▲" : "▼"; });
+    panel.addEventListener("change", upd);
+  }
+  function ddMultiVal(id){ return Array.prototype.map.call(document.querySelectorAll("#"+id+" .ddm-panel input:checked"), function(i){ return i.value; }); }
   function openStepModal(st, projectId){
     var s = st || {projectId:projectId||"", progress:0};
     var members = state.members.map(function(m){return m.name;});
@@ -4328,12 +4348,12 @@
       field("案件",'<select id="f-sproj">'+state.projects.slice().sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");}).map(function(p){ return '<option value="'+esc(p.id)+'"'+(p.id===s.projectId?" selected":"")+'>'+esc(p.name)+'</option>'; }).join("")+'</select>')+
       field("工程名",'<input type="text" id="f-sname" data-ac-all="1" maxlength="60" autocomplete="off" placeholder="自由に入力（候補から選ぶこともできます）" value="'+esc(s.name||"")+'">')+
       '<div class="field-row">'+field("開始日",'<input type="date" id="f-sstart" value="'+esc(s.startDate||(st?"":today))+'">')+field("終了日",'<input type="date" id="f-send" value="'+esc(s.endDate||(st?"":today))+'">')+'</div>'+
-      '<div class="field-row">'+field("担当者",'<select id="f-sassg"><option value="">（未設定）</option>'+members.map(function(n){ return '<option value="'+esc(n)+'"'+(n===s.assignee?" selected":"")+'>'+esc(n)+'</option>'; }).join("")+'</select>')+
+      '<div class="field-row">'+field("担当者（複数選択できます）", ddMultiHtml("f-sassg", members, stepWho(s)))+
       field("進捗（%）",'<input type="number" id="f-sprog" min="0" max="100" step="5" value="'+(+s.progress||0)+'">')+'</div>'+
       '<div class="field-row">'+field("区分（任意・工程表で見出しになります）",'<input type="text" id="f-sgroup" maxlength="30" placeholder="例：除草工" value="'+esc(s.group||"")+'">')+field("備考（任意）",'<input type="text" id="f-snote" maxlength="40" placeholder="例：予備日含む" value="'+esc(s.note||"")+'">')+'</div>'+secretRadio(s.secret),
       (st?'<button class="btn" id="f-sdel" style="color:var(--danger)">'+iTrash()+' 削除</button>':'')+'<button class="btn" id="f-sgcal" style="margin-right:auto">'+iCalendar()+' Googleカレンダーに追加</button><button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-ssave">'+(st?"保存する":"追加する")+'</button>');
     (function(){ var ni = document.getElementById("f-sname"); acDropdown(ni, function(){ return STEP_NAMES.map(function(n){ return {label:n}; }); }, function(it){ ni.value = it.label; });
-      var as = document.getElementById("f-sassg"); if(as) acSelect(as); })();
+      ddMultiBind("f-sassg"); })();
     if(!st) bindKindSwitch("step", projectId||"");
     if(st) document.getElementById("f-sdel").addEventListener("click", function(){ confirmDelete("この工程を削除しますか？", function(){ deleteDoc("steps", st.id, "工程を削除しました"); }); });
     document.getElementById("f-sgcal").addEventListener("click", function(){
@@ -4349,7 +4369,7 @@
       if(end<start){ toast("終了日は開始日以降にしてください"); return; }
       var pr = state.projects.find(function(x){return x.id===pid;});
       var prog = Math.max(0, Math.min(100, parseInt(document.getElementById("f-sprog").value||"0",10)||0));
-      writeDoc("steps", st?st.id:null, {projectId:pid, projectName:pr?pr.name:"", name:name, startDate:start, endDate:end, assignee:document.getElementById("f-sassg").value, progress:prog, group:document.getElementById("f-sgroup").value.trim(), note:document.getElementById("f-snote").value.trim(), secret:document.querySelector('input[name="f-sscope"]:checked').value==="secret"}, st?"工程を更新しました":"工程を追加しました");
+      writeDoc("steps", st?st.id:null, {projectId:pid, projectName:pr?pr.name:"", name:name, startDate:start, endDate:end, assignees:ddMultiVal("f-sassg"), assignee:ddMultiVal("f-sassg").join("、"), progress:prog, group:document.getElementById("f-sgroup").value.trim(), note:document.getElementById("f-snote").value.trim(), secret:document.querySelector('input[name="f-sscope"]:checked').value==="secret"}, st?"工程を更新しました":"工程を追加しました");
     });
   }
 
@@ -4421,7 +4441,7 @@
       if(!open) return;
       // 担当者ごとの行（工程が重なる場合は段を分ける）
       var byP = {}, order = [];
-      sts.forEach(function(x){ var n = x.assignee||"（担当未設定）"; if(!byP[n]){ byP[n]=[]; order.push(n); } byP[n].push(x); });
+      sts.forEach(function(x){ var w = stepWho(x); if(!w.length) w = ["（担当未設定）"]; w.forEach(function(n){ if(!byP[n]){ byP[n]=[]; order.push(n); } byP[n].push(x); }); });
       order.forEach(function(n){
         var lanes = [];
         byP[n].forEach(function(x){
@@ -4457,7 +4477,8 @@
     var items = [];
     state.steps.filter(secretVisible).forEach(function(x){
       if(!x.startDate || !projectVisibleId(x.projectId)) return;
-      items.push({kind:"step", id:x.id, who:x.assignee||"", s:x.startDate, e:(x.endDate&&x.endDate>=x.startDate)?x.endDate:x.startDate, title:x.name||"（未入力）", sub:x.projectName||"", pid:x.projectId, done:(+x.progress||0)>=100, prog:+x.progress||0});
+      var w = stepWho(x); if(!w.length) w = [""];
+      w.forEach(function(nm){ items.push({kind:"step", id:x.id, who:nm, s:x.startDate, e:(x.endDate&&x.endDate>=x.startDate)?x.endDate:x.startDate, title:x.name||"（未入力）", sub:x.projectName||"", pid:x.projectId, done:(+x.progress||0)>=100, prog:+x.progress||0}); });
     });
     state.tasks.forEach(function(t){
       if(!t.dueDate) return;
