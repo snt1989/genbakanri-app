@@ -2130,12 +2130,16 @@
   state.lazyLimit = state.lazyLimit || {};
   // 最新の一部を先に表示し、古い分は裏で100件ずつ読み足す（全件を一度に読むと時間切れ・メモリ不足になるため）
   state.filesOlder = state.filesOlder || [];
-  function filesPageOlder(){
+  // 読み込み済みの写真の文字数の合計（写真本体を含むため、増えすぎるとブラウザのメモリが足りなくなる）
+  function filesHeavy(){ var n = 0; state.files.forEach(function(x){ if(typeof x.url==="string") n += x.url.length; }); return n; }
+  var FILES_AUTO_MAX = 60000000;   // 自動の読み足しはここまで（約60MB分）。それ以上は「さらに古い…」ボタンで手動
+  function filesPageOlder(force){
     if(state.filesPaging || state.filesAllLoaded || !db) return;
     if(state.filesPageErrAt && Date.now()-state.filesPageErrAt<20000) return;   // 失敗した直後は少し待つ（読み取りを無駄に増やさない）
     state.filesPaging = true;
     var step = function(){
       if(state.lazyScope.files!=="" || !state.lazyOn.files){ state.filesPaging = false; return; }
+      if(force!==true && filesHeavy()>FILES_AUTO_MAX+(state.filesExtraMax||0)){ state.filesPaging = false; state.filesCapped = true; bgRender(); return; }   // メモリ保護
       var oldest = null; state.files.forEach(function(x){ var u = x.uploadedAt; if(typeof u==="string" && u && (oldest===null || u<oldest)) oldest = u; });
       if(oldest===null){ state.filesPaging = false; return; }
       db.collection("files").orderBy("uploadedAt","desc").startAfter(oldest).limit(100).get().then(function(snap){
@@ -2269,7 +2273,7 @@
     wait.forEach(function(k){
       if(k==="files"){
         if(state.lazyScope.files!=="" || !state.lazyOn.files) lazyStart("files", "", state.filesLimit||30);   // 新しい順に読み始め、古い分は裏で読み足す
-        else filesPageOlder();
+        else filesPageOlder(true);
       }else lazyStart(k);
     });
     if(!quiet) toast("バックアップ用にデータを読み込んでいます。数秒後にもう一度押してください");
@@ -3438,7 +3442,7 @@
   document.addEventListener("click", function(e){ window.__shiftDown = !!e.shiftKey; }, true);
   document.addEventListener("click", function(e){
     var t = e.target; if(!t || !t.closest) return;
-    if(t.closest("[data-file-server-more]")){ state.filesLimit = (state.filesLimit||30) + 30; render(); return; }
+    if(t.closest("[data-file-server-more]")){ state.filesLimit = (state.filesLimit||30) + 30; state.filesExtraMax = (state.filesExtraMax||0) + 40000000; state.filesPageErrAt = 0; filesPageOlder(); render(); return; }
     var fcl = t.closest("[data-ffclear]");
     if(fcl){ e.preventDefault(); filesFlt()[fcl.getAttribute("data-ffclear")] = []; state.fileLim = {}; render(); return; }
     if(t.closest("[data-files-view-toggle]")){ state.filesView = state.filesView==="project" ? "all" : "project"; render(); return; }
@@ -3723,7 +3727,7 @@
     if(state.tab==="sns") bindSns();
     c.querySelectorAll("[data-report-open]").forEach(function(a){ a.addEventListener("click", function(ev){ if(!db || window.claude || !myMember()) return; ev.preventDefault(); openReportApp("", a.getAttribute("href")); }); });   // 連携アプリのページから開くときも、ログイン情報つきで開く（アプリの中で案件を選べる）
     c.querySelectorAll("[data-report-project]").forEach(function(el){ el.addEventListener("click", function(){ openReportApp(el.getAttribute("data-report-project")); }); });
-    var sla = document.getElementById("storage-load-all"); if(sla) sla.addEventListener("click", function(){ state.filesPageErrAt = 0; if(state.lazyScope.files!==""||!state.lazyOn.files) lazyStart("files","",state.filesLimit||30); filesPageOlder(); toast("写真・ファイルを順に読み込みます"); });
+    var sla = document.getElementById("storage-load-all"); if(sla) sla.addEventListener("click", function(){ state.filesPageErrAt = 0; if(state.lazyScope.files!==""||!state.lazyOn.files) lazyStart("files","",state.filesLimit||30); filesPageOlder(true); toast("写真・ファイルを順に読み込みます"); });
     var ur = document.getElementById("usage-refresh"); if(ur) ur.addEventListener("click", function(){ usageLoad(); });
     c.querySelectorAll("[data-bihin-link],[data-shayosha-link],[data-daito-link]").forEach(function(a){ a.addEventListener("click", function(ev){ openBihinApp(ev); }); });
     applyBulkUi();
