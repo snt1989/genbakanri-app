@@ -197,6 +197,33 @@ async function run(b, req){
       return {results: rs};
     }
 
+    // 経費（支出）の取引の明細を期間で取得する。予算管理の「実績」として取り込むため。 { start, end } → { items:[{dealId, detailId, date, accountName, amount, description, partner, tags}] }
+    case "deals.expenses": {
+      t = await need(); cid = t.companyId;
+      var s0 = isoDate(b.start), e0 = isoDate(b.end);
+      if(!s0 || !e0 || s0 > e0) throw F.httpErr(400, "期間を正しく指定してください");
+      var acc = {}, tagMap = {}, partnerMap = {};
+      var ai = await F.freee("GET", "/api/1/account_items", {query: {company_id: cid}});
+      (ai.account_items || []).forEach(function(x){ acc[x.id] = x.name; });
+      try{ var tg = await F.freee("GET", "/api/1/tags", {query: {company_id: cid, limit: 3000}}); (tg.tags || []).forEach(function(x){ tagMap[x.id] = x.name; }); }catch(e){ if(e.status === 401) throw e; }
+      try{ var pr = await F.freee("GET", "/api/1/partners", {query: {company_id: cid, limit: 3000}}); (pr.partners || []).forEach(function(x){ partnerMap[x.id] = x.name; }); }catch(e){ if(e.status === 401) throw e; }
+      var out = [], off = 0, truncated = false;
+      for(var pg = 0; pg < 10; pg++){
+        var r = await F.freee("GET", "/api/1/deals", {query: {company_id: cid, type: "expense", start_issue_date: s0, end_issue_date: e0, limit: 100, offset: off}});
+        var ds = r.deals || [];
+        ds.forEach(function(d){
+          (d.details || []).forEach(function(x){
+            out.push({dealId: d.id, detailId: x.id, date: isoDate(d.issue_date), accountName: acc[x.account_item_id] || "", amount: Number(x.amount) || 0, description: String(x.description || ""),
+              partner: d.partner_id ? (partnerMap[d.partner_id] || "") : "", tags: (x.tag_ids || []).map(function(i){ return tagMap[i]; }).filter(Boolean)});
+          });
+        });
+        if(ds.length < 100) break; off += 100;
+        if(pg === 9) truncated = true;
+      }
+      out.sort(function(a, b){ return String(b.date).localeCompare(String(a.date)); });
+      return {items: out.slice(0, 500), truncated: truncated || out.length > 500};
+    }
+
     case "deals.status": {
       t = await need(); cid = t.companyId;
       var ids = (b.deals || []).slice(0, 60), st = [];
