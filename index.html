@@ -1201,7 +1201,7 @@
     settingsSeg:"company",
     freee:{settings:{}, status:null, master:null, loading:false, busy:false, error:""},
     works:{status:null, loading:false, error:"", code:null},
-    mobileNav:(function(){ try{ var v = JSON.parse(localStorage.getItem("gc_mobilenav")||"null"); return Array.isArray(v) ? v : null; }catch(e){ return null; } })(), navDraft:null, listDefaults:null,
+    mobileNav:(function(){ try{ var v = JSON.parse(localStorage.getItem("gc_mobilenav")||"null"); return Array.isArray(v) ? v : null; }catch(e){ return null; } })(), navDraft:null, brand:brandRead(), brandDraft:null, listDefaults:null,
     editingMember:null,
     activeChat:null,
     chatMsgs:{},
@@ -1954,6 +1954,7 @@
     loadMasters();
     loadFreeeSettings();
     loadMobileNav();
+    loadBrand();
     loadListDefaults();
     loadPhotoCfg();
   }
@@ -2660,6 +2661,103 @@
     var sv = document.getElementById("nav-save"); if(sv) sv.addEventListener("click", function(){ if(draft()) save(draft().slice(), "メニューバーを保存しました"); });
     var rs = document.getElementById("nav-reset"); if(rs) rs.addEventListener("click", function(){ save(MOBILE_NAV_DEFAULT.slice(), "初期設定に戻しました"); });
   }
+
+  /* ============ ロゴ・アイコンの登録 ============ */
+  // 管理者が「設定 > 管理画面 > 画面の設定」で、アプリのロゴ（画面左上・ログイン画面）とアイコン（ブラウザのタブ・ホーム画面）を差し替える。全員共通。保存先: settings/brand
+  var BRAND_DEFAULT_LOGO = "icons/icon-192.png";
+  function brandRead(){ try{ var v = JSON.parse(localStorage.getItem("gc_brand")||"null"); return v && typeof v==="object" ? v : null; }catch(e){ return null; } }
+  function applyBrand(b){
+    b = b || state.brand || {};
+    var logo = b.logo || "", icon = b.icon || b.logo || "";
+    var st = document.getElementById("brand-style");
+    if(!st){ st = document.createElement("style"); st.id = "brand-style"; document.head.appendChild(st); }
+    st.textContent = logo ? '.brand-mark{background-image:url("'+logo+'") !important;background-size:cover !important}' : "";
+    var set = function(sel, url, def){ var l = document.querySelector(sel); if(l) l.setAttribute("href", url || def); };
+    set('link[rel="icon"]', icon, "icons/icon-192.png");
+    set('link[rel="apple-touch-icon"]', icon, "icons/apple-touch-icon.png");
+  }
+  function loadBrand(){
+    if(!db) return;
+    db.doc("settings/brand").get().then(function(snap){
+      var d = snap.exists ? (snap.data()||{}) : {};
+      var nb = {logo:d.logo||"", icon:d.icon||""};
+      var changed = JSON.stringify(state.brand||null)!==JSON.stringify(nb);
+      state.brand = nb; try{ localStorage.setItem("gc_brand", JSON.stringify(nb)); }catch(e){}
+      if(changed){ applyBrand(nb); bgRender(); }
+    }).catch(function(){});
+  }
+  // 画像を正方形に切り抜いて縮小し、PNGのデータURLにする。大きすぎるときは小さくして収める
+  function brandFit(file, size, opaque, cb){
+    var fr = new FileReader();
+    fr.onerror = function(){ cb(null); };
+    fr.onload = function(){
+      var img = new Image();
+      img.onerror = function(){ cb(null); };
+      img.onload = function(){
+        var w = img.naturalWidth || img.width || size, h = img.naturalHeight || img.height || size, out = "", sz = size;
+        for(var i=0;i<3;i++){
+          var cv = document.createElement("canvas"); cv.width = cv.height = sz;
+          var cx = cv.getContext("2d"); if(opaque){ cx.fillStyle = "#fff"; cx.fillRect(0,0,sz,sz); }
+          var m = Math.min(w,h); cx.drawImage(img, (w-m)/2, (h-m)/2, m, m, 0, 0, sz, sz);
+          try{ out = cv.toDataURL("image/png"); }catch(e){ out = ""; break; }
+          if(out.length <= 380000) break;
+          sz = Math.round(sz*0.7);
+        }
+        cb(out || null);
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  }
+  function brandEditorHtml(){
+    var cur = state.brand || {};
+    var d = state.brandDraft || (state.brandDraft = {logo:cur.logo||"", icon:cur.icon||""});
+    var dirty = d.logo!==(cur.logo||"") || d.icon!==(cur.icon||"");
+    var box = function(url, size, radius){ return '<div style="width:'+size+'px;height:'+size+'px;border-radius:'+radius+'px;border:1px solid var(--border);background:#fff url('+JSON.stringify(url||BRAND_DEFAULT_LOGO).replace(/"/g,"'")+') center/cover no-repeat;flex:none"></div>'; };
+    var slot = function(key, title, note, size, radius){
+      var url = d[key];
+      return '<div style="display:flex;gap:14px;align-items:center;padding:12px 0;border-top:1px solid var(--border)">'+box(url||(key==="icon"?d.logo:""), size, radius)+
+        '<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:700">'+title+(url?'':' <span style="font-weight:400;color:var(--ink-faint)">'+(key==="icon"&&d.logo?'（ロゴと同じ画像を使用）':'（標準）')+'</span>')+'</div>'+
+        '<div style="font-size:11.5px;color:var(--ink-faint);line-height:1.6;margin:2px 0 8px">'+note+'</div>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap"><label class="btn sm outline" style="cursor:pointer">画像を選ぶ<input type="file" accept="image/*" data-brand-file="'+key+'" style="display:none"></label>'+
+        (url?'<button class="btn sm" data-brand-clear="'+key+'">この画像を外す</button>':'')+'</div></div></div>';
+    };
+    return '<h2 style="font-size:13.5px;margin:4px 0 10px">ロゴ・アイコン</h2>'+
+      '<div class="card" style="padding:16px 18px;max-width:520px;margin-bottom:18px">'+
+      '<div style="font-size:11.5px;color:var(--ink-faint);line-height:1.6">アプリのロゴとアイコンを、自社のものに差し替えます（全員に共通）。画像は正方形に切り抜かれます。PNG・JPEG・SVGなどが使えます。</div>'+
+      '<div style="margin-top:8px">'+
+      slot("logo","ロゴ","画面の左上とログイン画面に表示されます。正方形の画像がおすすめです。",56,12)+
+      slot("icon","アイコン","ブラウザのタブと、ホーム画面に追加するときのアイコンです。未登録のときはロゴを使います。",56,12)+
+      '</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><button class="btn primary" id="brand-save"'+(dirty?'':' disabled')+'>'+iAdmin()+'ロゴ・アイコンを保存する</button>'+
+      '<button class="btn outline" id="brand-reset">'+iAdmin()+'標準に戻す</button></div>'+
+      '<div style="font-size:11px;color:var(--ink-faint);line-height:1.6;margin-top:10px">※ すでにホーム画面に追加済みのアイコンは、いったん削除して追加し直すと新しくなります（Androidの「インストール済みアプリ」のアイコンは、標準のままの場合があります）。</div></div>';
+  }
+  function bindBrandEvents(c){
+    c.querySelectorAll("[data-brand-file]").forEach(function(inp){ inp.addEventListener("change", function(){
+      var f = inp.files && inp.files[0]; if(!f) return;
+      if(!state.isAdmin){ toast("管理者のみ行えます"); return; }
+      var key = inp.getAttribute("data-brand-file");
+      if(!/^image\//.test(f.type||"")){ toast("画像ファイルを選んでください"); return; }
+      if(f.size > 10*1024*1024){ toast("画像が大きすぎます（10MBまで）"); return; }
+      brandFit(f, key==="icon"?512:256, key==="icon", function(url){
+        if(!url){ toast("この画像は読み込めませんでした"); return; }
+        if(!state.brandDraft) state.brandDraft = {logo:"", icon:""};
+        state.brandDraft[key] = url; render();
+      });
+    }); });
+    c.querySelectorAll("[data-brand-clear]").forEach(function(b){ b.addEventListener("click", function(){
+      if(!state.brandDraft) return; state.brandDraft[b.getAttribute("data-brand-clear")] = ""; render();
+    }); });
+    var save = function(val, msg){
+      if(!state.isAdmin){ toast("管理者のみ行えます"); return; }
+      var done = function(){ state.brand = {logo:val.logo, icon:val.icon}; try{ localStorage.setItem("gc_brand", JSON.stringify(state.brand)); }catch(e){} state.brandDraft = null; applyBrand(state.brand); toast(msg); render(); };
+      if(!db){ done(); return; }
+      db.doc("settings/brand").set({logo:val.logo, icon:val.icon, updatedAt:new Date().toISOString(), updatedBy:state.myName||""}).then(done).catch(function(){ toast("保存に失敗しました"); });
+    };
+    var sv = document.getElementById("brand-save"); if(sv) sv.addEventListener("click", function(){ if(state.brandDraft) save({logo:state.brandDraft.logo||"", icon:state.brandDraft.icon||""}, "ロゴ・アイコンを保存しました"); });
+    var rs = document.getElementById("brand-reset"); if(rs) rs.addEventListener("click", function(){ save({logo:"", icon:""}, "標準に戻しました"); });
+  }
+  (function(){ var b = brandRead(); if(b){ try{ applyBrand(b); }catch(e){} } })();
 
   /* ============ 案件一覧の初期チェック（進捗） ============ */
   // 管理者が「設定 > 管理画面」で、営業・施工それぞれの案件一覧を開いたときに最初からチェックされている進捗を決める。全員共通。保存先: settings/listDefaults
@@ -7170,6 +7268,7 @@
     html += '</div>';
 
     sec.security = html; html = '';
+    html += brandEditorHtml();
     html += mobileNavEditorHtml();
 
     html += listDefaultsEditorHtml();
@@ -7178,7 +7277,7 @@
     var AT = [["overview","📊","概要","メンバー数・データベースの使用量・サーバーの容量など、全体の状況を確認します。"],
       ["members","👥","メンバー権限","メンバーごとの権限（管理者・一般・外部）の変更と、パスワードの初期化を行います。"],
       ["security","🔒","セキュリティ","削除用パスワードと、社外秘の初期設定を管理します。"],
-      ["display","🖥️","画面の設定","スマホ下部のメニューと、一覧画面の初期の表示内容を決めます。"],
+      ["display","🖥️","画面の設定","ロゴ・アイコン、スマホ下部のメニュー、一覧画面の初期の表示内容を決めます。"],
       ["photo","📷","写真・メール","アップロードする写真のサイズ（全員共通）と、Gmail連携を設定します。"]];
     if(!sec[state.adminTab]) state.adminTab = "overview";
     var cur = AT.filter(function(x){ return x[0]===state.adminTab; })[0];
@@ -10862,8 +10961,9 @@
     c.querySelectorAll("[data-llf]").forEach(function(el){ el.addEventListener("change", function(){ state.loginLogs[el.getAttribute("data-llf")] = el.value; render(); }); });
     var llr = document.getElementById("ll-reload"); if(llr) llr.addEventListener("click", function(){ loginLogsLoad(true); render(); });
     bindNavEvents(c);
+    bindBrandEvents(c);
     bindListDefEvents(c);
-    c.querySelectorAll("[data-admtab]").forEach(function(el){ el.addEventListener("click", function(){ state.adminTab = el.getAttribute("data-admtab"); state.navDraft = null; render(); }); });
+    c.querySelectorAll("[data-admtab]").forEach(function(el){ el.addEventListener("click", function(){ state.adminTab = el.getAttribute("data-admtab"); state.navDraft = null; state.brandDraft = null; render(); }); });
     c.querySelectorAll("[data-setseg]").forEach(function(el){ el.addEventListener("click", function(){
       var v = el.getAttribute("data-setseg");
       if(v==="integ") v = (state.integLast==="works" && worksAvailable()) ? "works" : (state.integLast==="freee" ? "freee" : (worksAvailable() ? "works" : "freee"));
