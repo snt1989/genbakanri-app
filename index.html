@@ -2265,12 +2265,12 @@
   }
   // バックアップ前：未読み込みのコレクションがあれば読み込みを始めて false を返す（欠けたまま保存しない）
   // quiet=true のときは案内を出さない（待機中の確認用）。戻り値：準備できたか
-  function lazyReady(quiet){
+  function lazyReady(quiet, noFiles){
     if(!db) return true;
     if(state.projMode!=="full"){ loadAllProjects(); if(!quiet) toast("バックアップ用に、過去の案件も含めて読み込んでいます。数秒後にもう一度押してください"); return false; }
     // 写真・ファイルは「全件そろった」ときだけ準備完了（新しい順の一部だけ・自分の案件だけ・1案件だけの読み込みでは、バックアップが欠けてしまう）
     var filesFull = state.lazyOn.files && state.loaded.files && state.lazyScope.files==="" && (!state.lazyLimit.files || state.filesAllLoaded);
-    var wait = Object.keys(LAZY_COLS).filter(function(k){ return k==="files" ? !filesFull : !(state.lazyOn[k] && state.loaded[k]); });
+    var wait = Object.keys(LAZY_COLS).filter(function(k){ if(k==="files" && noFiles) return false; return k==="files" ? !filesFull : !(state.lazyOn[k] && state.loaded[k]); });
     if(!wait.length) return true;
     wait.forEach(function(k){
       if(k==="files"){
@@ -2283,7 +2283,7 @@
   }
   // バックアップの前に、全データがそろうまで自動で待つ（そろったら自動で続きを実行する）
   var BK_LABELS = {files:"写真・ファイル", folders:"フォルダ", trash:"ごみ箱", cards:"名刺", budgets:"予算", snsPosts:"SNS投稿"};
-  function backupWait(retry){
+  function backupWait(retry, noFiles){
     if(state.backupWaiting) return;
     state.backupWaiting = true;
     var t0 = Date.now(), cancelled = false;
@@ -2294,10 +2294,11 @@
     if(cb) cb.addEventListener("click", function(){ cancelled = true; state.backupWaiting = false; closeModal(); });
     var tick = function(){
       if(cancelled) return;
-      if(lazyReady(true)){ state.backupWaiting = false; closeModal(); retry(); return; }
+      if(lazyReady(true, noFiles)){ state.backupWaiting = false; closeModal(); retry(); return; }
       var parts = [];
       parts.push("案件："+(state.projMode==="full" ? state.projects.length+"件" : "読み込み中"));
       Object.keys(LAZY_COLS).forEach(function(k){
+        if(k==="files" && noFiles) return;
         var ok = k==="files" ? (state.lazyOn.files && state.loaded.files && state.lazyScope.files==="" && (!state.lazyLimit.files || state.filesAllLoaded)) : (state.lazyOn[k] && state.loaded[k]);
         parts.push((BK_LABELS[k]||k)+"："+(ok?"✓":(k==="files" && state.loaded.files ? "読み込み中（"+state.files.length+"件）" : "読み込み中")));
       });
@@ -9121,22 +9122,111 @@
     };
     return next().then(function(){ payload.blobs = blobs; payload.includesFiles = true; return failed; });
   }
-  function backupAllData(includePw, withFiles){
-    if(!lazyReady(true)){ backupWait(function(){ backupAllData(includePw, withFiles); }); return; }
-    var payload = buildBackup(includePw===true);
-    if(withFiles === true){
-      return collectFileBlobs(payload).then(function(failed){ saveBackupPayload(payload, failed); });
+  // メモリを使い切らないバックアップ：写真・ファイルは数件ずつ取得して、そのつどBlob（ブラウザ側の保存領域）へ書き出す
+  function streamBackup(opts){
+    var includePw = opts.includePw===true, withBlobs = opts.withFiles===true, projectId = opts.projectId||null, filesOnly = !!opts.filesOnly;
+    var chunks = [], batch = [], batchLen = 0, counts = {}, failed = [], blobCount = 0, blobBatch = [];
+    var push = function(str){ batch.push(str); batchLen += str.length; if(batchLen>6000000){ chunks.push(new Blob(batch)); batch = []; batchLen = 0; } };
+    var pushBlob = function(str){ blobBatch.push(str); };
+    var cols = filesOnly ? [["files","ファイル"],["folders","フォルダ"]] : BACKUP_COLS;
+    var master = {}; MASTERS.forEach(function(m){ master[m.key] = m.arr.slice(); });
+    push('{"format":"genba-backup","version":2,'+(filesOnly?'"scope":"files",':'')+'"exportedAt":'+JSON.stringify(new Date().toISOString())+',"exportedBy":'+JSON.stringify(state.myName||"")+',"includesPasswords":'+(includePw?"true":"false"));
+    if(!filesOnly) push(',"settings":'+JSON.stringify({org:state.orgSettings, secret:{defaults:secretDefaults()}, master:master}));
+    push(',"data":{');
+    var first = true;
+    var openCol = function(c){ push((first?'':',')+JSON.stringify(c)+':['); first = false; counts[c] = 0; };
+    var addDoc = function(c, o, nc){ push((counts[c]?',':'')+JSON.stringify(o)); counts[c]++; };
+    var fileStep = null;
+    var doFiles = function(){
+      openCol("files");
+      var cursor = null, seen = {}, total = 0;
+      var handle = function(docs){
+        var p = Promise.resolve();
+        docs.forEach(function(d){
+          p = p.then(function(){
+            var o = toObj(d); if(seen[o.id]) return; seen[o.id] = 1;
+            if(projectId && o.projectId!==projectId) return;
+            addDoc("files", o);
+            total++; toast("写真・ファイルを書き出し中… "+total+"件");
+            if(withBlobs && !o.chunked){
+              return fetch(fileUrl(o)).then(function(r){ if(!r.ok) throw 0; return r.blob(); }).then(blobToB64).then(function(b64){
+                pushBlob((blobCount?',':'')+JSON.stringify(o.id)+':'+JSON.stringify({contentType:o.contentType||"", b64:b64})); blobCount++;
+              }).catch(function(){ failed.push(o.filename||o.id); });
+            }
+          });
+        });
+        return p;
+      };
+      var page = function(){
+        var q = projectId ? db.collection("files").where("projectId","==",projectId) : db.collection("files").orderBy("uploadedAt","desc");
+        if(!projectId && cursor!==null) q = q.startAfter(cursor);
+        return q.limit(projectId ? 5000 : 20).get().then(function(snap){
+          var docs = snap.docs;
+          return handle(docs).then(function(){
+            if(projectId || docs.length<20) return;
+            var last = toObj(docs[docs.length-1]).uploadedAt; if(typeof last!=="string" || !last || last===cursor) return;
+            cursor = last;
+            return new Promise(function(r){ setTimeout(r, 150); }).then(page);
+          });
+        });
+      };
+      // 先に、すでに読み込み済みの分で、uploadedAtを持たないものがあれば取りこぼさないよう追加
+      var ready = db ? page() : Promise.resolve().then(function(){ return handle(rawOf("files").map(function(x){ return {id:x.id, data:function(){ var y=Object.assign({},x); delete y.id; return y; }}; })); });
+      return ready.then(function(){
+        (state.files||[]).forEach(function(x){ if(!seen[x.id] && (!projectId || x.projectId===projectId)){ seen[x.id]=1; addDoc("files", x); } });
+        push(']');
+      });
+    };
+    var chain = Promise.resolve();
+    cols.forEach(function(cc){
+      var c = cc[0];
+      chain = chain.then(function(){
+        if(c==="files") return doFiles();
+        openCol(c);
+        rawOf(c).forEach(function(o){
+          if(projectId && c==="folders" && o.projectId!==projectId) return;
+          var x = Object.assign({}, o); if(c==="members" && !includePw) delete x.password; addDoc(c, x);
+        });
+        push(']');
+      });
+    });
+    return chain.then(function(){
+      push('}');
+      if(withBlobs){ push(',"includesFiles":true,"blobs":{'); chunks.push(new Blob(batch)); batch = []; batchLen = 0; chunks.push(new Blob(blobBatch)); blobBatch = []; push('}'); }
+      push(',"counts":'+JSON.stringify(counts)+'}');
+      chunks.push(new Blob(batch));
+      return {blob:new Blob(chunks, {type:"application/json"}), counts:counts, failed:failed, blobCount:blobCount};
+    });
+  }
+  function finishBackup(r, filesOnly, withFiles){
+    var filename = (filesOnly?"genba-files-backup-":"genba-backup-"+(withFiles?"full-":""))+todayISO()+".json";
+    var total = Object.keys(r.counts).reduce(function(n,k){ return n+(r.counts[k]||0); },0);
+    var done = function(){ markBackup(); toast("バックアップを保存しました（"+total+"件"+(withFiles?"・写真/ファイル"+r.blobCount+"点":"")+"）"+(r.failed.length?" 取得できなかったファイル: "+r.failed.length+"点":"")); render(); };
+    if(downloadsCap){
+      downloadsCap.save({filename:filename, data:r.blob}).then(done).catch(function(){ toast("ダウンロードがキャンセルされました"); });
+    } else {
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(r.blob); a.download = filename;
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+      done();
     }
-    saveBackupPayload(payload, []);
+  }
+  function backupAllData(includePw, withFiles){
+    if(!lazyReady(true, true)){ backupWait(function(){ backupAllData(includePw, withFiles); }, true); return; }
+    if(state.backupRunning){ toast("バックアップを実行中です"); return; }
+    state.backupRunning = true; toast("バックアップを作成しています…");
+    return streamBackup({includePw:includePw, withFiles:withFiles}).then(function(r){ state.backupRunning = false; finishBackup(r, false, withFiles===true); })
+      .catch(function(e){ state.backupRunning = false; toast("バックアップに失敗しました"+(e&&e.code?"（"+e.code+"）":"")); });
   }
   // 写真・ファイル画面用：ファイル情報・フォルダ・本体だけのバックアップ（projectId指定でその案件のみ）
   function backupFilesOnly(projectId){
-    if(!lazyReady(true)){ backupWait(function(){ backupFilesOnly(projectId); }); return; }
-    var pick = function(col){ return rawOf(col).filter(function(x){ return !projectId || x.projectId===projectId; }).map(function(o){ return Object.assign({},o); }); };
-    var payload = {format:"genba-backup", version:2, scope:"files", exportedAt:new Date().toISOString(), exportedBy:state.myName||"", data:{files:pick("files"), folders:pick("folders")}};
-    payload.counts = {files:payload.data.files.length, folders:payload.data.folders.length};
-    if(!payload.data.files.length && !payload.data.folders.length){ toast("バックアップするファイルがありません"); return; }
-    return collectFileBlobs(payload).then(function(failed){ saveBackupPayload(payload, failed); });
+    if(!lazyReady(true, true)){ backupWait(function(){ backupFilesOnly(projectId); }, true); return; }
+    if(state.backupRunning){ toast("バックアップを実行中です"); return; }
+    state.backupRunning = true; toast("バックアップを作成しています…");
+    return streamBackup({filesOnly:true, projectId:projectId, withFiles:true}).then(function(r){ state.backupRunning = false;
+      if(!r.counts.files && !r.counts.folders){ toast("バックアップするファイルがありません"); return; } finishBackup(r, true, true); })
+      .catch(function(e){ state.backupRunning = false; toast("バックアップに失敗しました"+(e&&e.code?"（"+e.code+"）":"")); });
   }
   function saveBackupPayload(payload, failed){
     var blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
