@@ -1205,7 +1205,7 @@
     salesFilter:{name:"",status:STATUS_LIST.slice(),type:"all",assignees:[],page:1},
     constFilter:{name:"",status:["契約済","施工中"],type:"all",assignees:[],page:1},
     filesFilter:{project:"all",kind:"all"},
-    masterTab:"project", taskFilter:{status:"open",project:"all",assignee:"all",q:"",scope:"all"}, calView:"grid", ganttView:"chart", calMonth:null, calFilter:{project:true,step:true,task:true,event:true}, ganttStart:null, ganttScale:"2w", ganttHideDone:true, ganttClosed:{}, filesView:"all", pfFolder:"", pfSort:"date_desc", pfView:"thumb", pfMine:false, pfSel:{}, filesProjectId:null, projectFilesKind:"all", filesBack:"detail",
+    masterTab:"project", taskFilter:{status:"open",project:"all",assignees:[],q:"",scope:"all"}, calView:"grid", ganttView:"chart", calMonth:null, calFilter:{project:true,step:true,task:true,event:true}, ganttStart:null, ganttScale:"2w", ganttHideDone:true, ganttClosed:{}, filesView:"all", pfFolder:"", pfSort:"date_desc", pfView:"thumb", pfMine:false, pfSel:{}, filesProjectId:null, projectFilesKind:"all", filesBack:"detail",
     memberSeg:"all",
     bulk:{on:false,entity:null,selected:{},field:"",value:""},
     settingsSeg:"company",
@@ -1503,7 +1503,7 @@
   function noticeItems(){
     var items = [], today = todayISO(), tmr = addDays(today,1), me = state.myName;
     if(!me) return items;
-    var mine = function(t){ return t.assignee===me; };   // タスクのお知らせは、管理者でも自分が担当のものだけ
+    var mine = function(t){ return taskWho(t).indexOf(me)!==-1; };   // タスクのお知らせは、管理者でも自分が担当のものだけ
     state.tasks.filter(function(t){ return !t.done && t.dueDate && t.dueDate<=today && mine(t); }).sort(function(a,b){ return a.dueDate<b.dueDate?-1:1; }).forEach(function(t){
       items.push({grp:"task", urgent:true, title:t.title||"タスク", sub:(t.dueDate<today?"期限切れ（"+fmtDate(t.dueDate)+"）":"今日が期限")+(t.projectName?" ／ "+t.projectName:"")+"", go:function(){ setTab("tasks"); }});
     });
@@ -3286,11 +3286,20 @@
     });
   }
   document.addEventListener("click", function(e){
+    var t = e.target; if(!t || !t.closest) return;
+    var dd = t.closest("[data-bgdd]");
+    if(dd){ var dk = dd.getAttribute("data-bgdd"); state.bgDd = state.bgDd===dk ? "" : dk; render(); return; }
+    if(t.closest("[data-tkasg-none]")){ e.preventDefault(); state.taskFilter.assignees = []; render(); return; }
+    if(state.bgDd && !t.closest(".bgdd-panel")){ state.bgDd = ""; render(); }
+  });
+  document.addEventListener("change", function(e){
+    var t = e.target; if(!t || !t.hasAttribute) return;
+    if(t.hasAttribute("data-tkasg")){ var a = state.taskFilter.assignees = state.taskFilter.assignees||[], i = a.indexOf(t.value); if(t.checked && i===-1) a.push(t.value); else if(!t.checked && i>-1) a.splice(i,1); render(); }
+  });
+  document.addEventListener("click", function(e){
     var t = e.target; if(!t.closest || !state.isAdmin) return;
     var x;
     if((x = t.closest("[data-spk-none]"))){ e.preventDefault(); state.stepPick = []; render(); return; }
-    if((x = t.closest("[data-bgdd]"))){ var dk = x.getAttribute("data-bgdd"); state.bgDd = state.bgDd===dk ? "" : dk; render(); return; }
-    if(state.bgDd && !t.closest(".bgdd-panel")){ state.bgDd = ""; render(); }
     if((x = t.closest("[data-bg-sort]"))){ var so = bgSort(), k = x.getAttribute("data-bg-sort"); if(so.key===k) so.dir = so.dir==="asc"?"desc":"asc"; else { so.key = k; so.dir = (BG_SORTS[k]||{}).str && k!=="created" ? "asc" : "desc"; } render(); return; }
     if(t.closest("[data-bgsort-dir]")){ var so2 = bgSort(); so2.dir = so2.dir==="asc"?"desc":"asc"; render(); return; }
     if(t.closest("[data-bg-clear]")){ state.bgFilter = null; render(); return; }
@@ -4022,7 +4031,7 @@
       if(s.startDate) items.push({group:"step",kind:"step",id:s.id,title:(s.projectName?s.projectName+"：":"")+(s.name||"工程"),start:s.startDate,end:(s.endDate&&s.endDate>=s.startDate)?s.endDate:s.startDate,cls:"k-step"});
     });
     state.tasks.forEach(function(t){
-      if(mineOnly && t.assignee!==me) return;
+      if(mineOnly && taskWho(t).indexOf(me)===-1) return;
       if(t.dueDate) items.push({group:"task",kind:"task",id:t.id,title:t.title||"タスク",start:t.dueDate,end:t.dueDate,cls:"k-task"+(t.done?" done":"")});
     });
     state.events.filter(secretVisible).filter(function(e){ return projectVisibleId(e.projectId); }).forEach(function(e){
@@ -4346,10 +4355,18 @@
       writeDoc("events", ev?ev.id:null, {title:title, category:document.getElementById("f-ecat").value, date:date, endDate:end||"", projectId:pid||"", projectName:pr?pr.name:"", note:document.getElementById("f-enote").value.trim(), secret:document.querySelector('input[name="f-sscope"]:checked').value==="secret", createdBy:(ev&&ev.createdBy)||state.myName||""}, ev?"予定を更新しました":"予定を追加しました");
     });
   }
+  /* ページ内のドロップダウン式チェック選択（開閉は state.bgDd）。attr はチェックボックスに付ける属性 */
+  function ddPage(key, label, names, sel, attr, extra){
+    var open = state.bgDd===key, on = sel.length>0;
+    var txt = !on ? "すべて" : (sel.length<=2 ? sel.join("・") : sel.length+"名を選択");
+    return '<div class="fitem bgdd" style="min-width:180px;max-width:280px"><span>'+label+'</span><button type="button" class="bgdd-btn'+(on?' on':'')+'" data-bgdd="'+key+'"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(txt)+'</span><span style="font-size:10px;color:var(--ink-faint)">'+(open?'▲':'▼')+'</span></button>'+
+      (open ? '<div class="bgdd-panel">'+(extra||'')+(names.length ? names.map(function(n){ return '<label class="checkopt"><input type="checkbox" '+attr+' value="'+esc(n)+'"'+(sel.indexOf(n)!==-1?' checked':'')+'>'+esc(n)+'</label>'; }).join("") : '<div style="padding:8px 2px">メンバーがいません</div>')+'</div>' : '')+'</div>';
+  }
+  function taskWho(t){ return stepWho(t); }
   function stepWho(x){
     if(!x) return [];
-    if(Array.isArray(x.assignees) && x.assignees.length) return x.assignees.filter(Boolean);
-    return x.assignee ? String(x.assignee).split("、").filter(Boolean) : [];
+    if(x.assignee) return String(x.assignee).split("、").map(function(n){ return n.trim(); }).filter(Boolean);
+    return Array.isArray(x.assignees) ? x.assignees.filter(Boolean) : [];
   }
   /* モーダル内で使う、ドロップダウン式の複数選択（チェック） */
   function ddMultiHtml(id, items, selected){
@@ -4508,8 +4525,9 @@
       w.forEach(function(nm){ items.push({kind:"step", id:x.id, who:nm, s:x.startDate, e:(x.endDate&&x.endDate>=x.startDate)?x.endDate:x.startDate, title:x.name||"（未入力）", sub:x.projectName||"", pid:x.projectId, done:(+x.progress||0)>=100, prog:+x.progress||0}); });
     });
     state.tasks.forEach(function(t){
-      if(!t.dueDate || !scopeOkWho(t.assignee?[t.assignee]:[])) return;
-      items.push({kind:"task", id:t.id, who:t.assignee||"", s:t.dueDate, e:t.dueDate, title:t.title||"", sub:t.projectName||"", pid:t.projectId, done:!!t.done, prog:t.done?100:0});
+      if(!t.dueDate || !scopeOkWho(taskWho(t))) return;
+      var tw = taskWho(t); if(!tw.length) tw = [""];
+      tw.forEach(function(nm){ items.push({kind:"task", id:t.id, who:nm, s:t.dueDate, e:t.dueDate, title:t.title||"", sub:t.projectName||"", pid:t.projectId, done:!!t.done, prog:t.done?100:0}); });
     });
     items = items.filter(function(it){ return it.e>=start && it.s<=end; });
     var names = state.members.map(function(m){ return m.name; });
@@ -4878,7 +4896,7 @@
     html += '<div class="card filter-card"><div class="filter-line">'+
       '<div class="fitem"><span>検索</span><input type="text" id="tk-q" placeholder="タイトル・案件名・メモ" value="'+esc(f.q)+'"></div>'+
       '<div class="fitem" style="min-width:200px"><span>案件</span><select id="tk-project"><option value="all">すべての案件</option>'+projs.map(function(p){ return '<option value="'+esc(p.id)+'"'+(f.project===p.id?' selected':'')+'>'+esc(p.name)+'</option>'; }).join("")+'</select></div>'+
-      '<div class="fitem"><span>担当者</span><select id="tk-assignee"><option value="all">すべて</option>'+names.map(function(n){ return '<option value="'+esc(n)+'"'+(f.assignee===n?' selected':'')+'>'+esc(n)+'</option>'; }).join("")+'</select></div>'+
+      ddPage("tkAsg","担当者",names,state.taskFilter.assignees||[],'data-tkasg','<div style="text-align:right;font-size:11.5px;padding:2px 2px 6px;border-bottom:1px solid var(--border);margin-bottom:4px"><a href="#" data-tkasg-none style="font-weight:700">解除</a></div>')+
     '</div></div>';
     html += '<div class="summary-line"><span><b>'+list.length+'</b>件 / 全'+all.length+'件</span></div>';
     if(!list.length){ return html + emptyState(iTaskList,"タスクがありません","「タスクを追加」から登録できます"); }
@@ -4909,18 +4927,19 @@
     openModal(t?"タスクの編集":"タスクの追加",
       field("タイトル",'<input type="text" id="f-ttitle" maxlength="80" placeholder="例）見積書送付、現地確認" value="'+esc(x.title||"")+'">')+
       '<div class="field-row">'+field("期限",'<input type="date" id="f-tdue" value="'+esc(x.dueDate||"")+'">')+
-      field("担当者",'<select id="f-tassg"><option value="">（未設定）</option>'+state.members.map(function(m){ return '<option value="'+esc(m.name)+'"'+(m.name===x.assignee?' selected':'')+'>'+esc(m.name)+'</option>'; }).join("")+'</select>')+'</div>'+
+      field("担当者（複数選択できます）", ddMultiHtml("f-tassg", state.members.map(function(m){ return m.name; }), taskWho(x)))+'</div>'+
       field("案件（任意）",'<select id="f-tproj">'+projectOptions(x.projectId)+'</select>')+
       field("メモ",'<textarea id="f-tnote" style="min-height:60px">'+esc(x.note||"")+'</textarea>')+
       '<label class="radioopt" style="margin-top:4px"><input type="checkbox" id="f-tdone"'+(x.done?' checked':'')+'> 完了にする</label>',
       (t?'<button class="btn" id="f-tdel" style="color:var(--danger);margin-right:auto">'+iTrash()+' 削除</button>':'')+'<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-tsave">'+(t?"保存する":"追加する")+'</button>');
     if(t) document.getElementById("f-tdel").addEventListener("click", function(){ confirmDelete("このタスクを削除しますか？", function(){ deleteDoc("tasks", t.id, "タスクを削除しました"); }); });
+    ddMultiBind("f-tassg");
     document.getElementById("f-tsave").addEventListener("click", function(){
       var title = document.getElementById("f-ttitle").value.trim(), due = document.getElementById("f-tdue").value;
       if(!title){ toast("タイトルを入力してください"); return; }
       if(!due){ toast("期限を入力してください"); return; }   // tasks are listed ordered by dueDate
       var pid = document.getElementById("f-tproj").value, pr = state.projects.find(function(y){return y.id===pid;});
-      writeDoc("tasks", t?t.id:null, {title:title, dueDate:due, assignee:document.getElementById("f-tassg").value, projectId:pid||"", projectName:pr?pr.name:"", note:document.getElementById("f-tnote").value.trim(), done:document.getElementById("f-tdone").checked}, t?"タスクを更新しました":"タスクを追加しました");
+      writeDoc("tasks", t?t.id:null, {title:title, dueDate:due, assignee:ddMultiVal("f-tassg").join("、"), projectId:pid||"", projectName:pr?pr.name:"", note:document.getElementById("f-tnote").value.trim(), done:document.getElementById("f-tdone").checked}, t?"タスクを更新しました":"タスクを追加しました");
     });
   }
 
@@ -5059,13 +5078,13 @@
     html += '<div class="fitem"><span>案件の進捗</span><div class="checkgroup">'+STATUS_LIST.map(function(s){
       return '<label class="checkopt"><input type="checkbox" class="flt-status" value="'+esc(s)+'"'+(f.status.indexOf(s)!==-1?" checked":"")+'>'+esc(s)+'</label>';
     }).join("")+'</div></div>';
-    html += '<div class="fitem"><span>担当者で絞り込み</span><div style="display:flex;gap:6px;margin:2px 0 6px"><button type="button" class="btn sm" data-assignee-me>自分の案件のみ</button><button type="button" class="btn sm" data-assignee-all>全員を表示</button></div>'+(function(){
-      var chip=function(m){ return '<span class="chip-toggle'+(f.assignees.indexOf(m.name)!==-1?" on":"")+'" data-assignee-chip="'+esc(m.name)+'">'+esc(m.name)+'</span>'; };
+    html += (function(){
       var isAd=function(m){ return m.permission==="admin" || m.isAdmin===true; };
       var ad=state.members.filter(isAd), ot=state.members.filter(function(m){ return !isAd(m); });
-      var grp=function(label,list,key){ return list.length ? '<div style="margin-top:6px"><div style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--ink-soft);margin-bottom:4px">'+label+'（'+list.length+'）<button type="button" class="btn sm" data-assignee-grp="'+key+'">この区分をまとめて選択</button></div><div class="checkgroup">'+list.map(chip).join("")+'</div></div>' : ""; };
-      return grp("管理者",ad,"admin")+grp("その他",ot,"other");
-    })()+'</div>';
+      var extra = '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:2px 0 8px;border-bottom:1px solid var(--border);margin-bottom:4px"><button type="button" class="btn sm" data-assignee-me>自分の案件のみ</button><button type="button" class="btn sm" data-assignee-all>全員を表示</button>'+
+        (ad.length?'<button type="button" class="btn sm" data-assignee-grp="admin">管理者をまとめて選択</button>':'')+(ot.length?'<button type="button" class="btn sm" data-assignee-grp="other">その他をまとめて選択</button>':'')+'</div>';
+      return ddPage("asgList-"+state.tab, "担当者で絞り込み", ad.concat(ot).map(function(m){ return m.name; }), f.assignees, "data-assignee-chip", extra);
+    })();
     html += '</div></details>';
     html += '</div>';
 
@@ -5155,12 +5174,8 @@
 
     html += '<div class="form-section-title"><span>案件メンバー</span></div>';
     html += '<div class="form-card">';
-    html += formRow("自社の案件メンバー", false, false, '<div class="member-picker"><div class="assignee-pick" id="pick-internal">'+internalMembers.map(function(m){
-      return '<span class="chip-toggle'+(internalPicked.indexOf(m.name)!==-1?" on":"")+'" data-pick-internal="'+esc(m.name)+'">'+esc(m.name)+'</span>';
-    }).join("")+(internalMembers.length===0?'<span style="font-size:11.5px;color:var(--ink-faint)">自社メンバーが登録されていません</span>':'')+'</div></div>');
-    html += formRow("社外の案件メンバー", false, false, '<div class="member-picker"><div class="assignee-pick" id="pick-external">'+externalMembers.map(function(m){
-      return '<span class="chip-toggle'+(externalPicked.indexOf(m.name)!==-1?" on":"")+'" data-pick-external="'+esc(m.name)+'">'+esc(m.name)+'</span>';
-    }).join("")+(externalMembers.length===0?'<span style="font-size:11.5px;color:var(--ink-faint)">社外メンバーが登録されていません</span>':'')+'</div></div>');
+    html += formRow("自社の案件メンバー", false, false, ddMultiHtml("pick-internal", internalMembers.map(function(m){return m.name;}), internalPicked));
+    html += formRow("社外の案件メンバー", false, false, ddMultiHtml("pick-external", externalMembers.map(function(m){return m.name;}), externalPicked));
     html += '</div>';
 
     html += '<div class="form-section-title"><span>案件情報</span><span class="lockhint">'+iLock()+' 「社外秘」にチェックした項目は社外に表示されません</span></div>';
@@ -5351,24 +5366,8 @@
   }
 
   function bindProjectFormPicks(){
-    var internalPicked = [], externalPicked = [];
     var c = document.getElementById("content");
-    var ip = c.querySelector("#pick-internal");
-    if(ip) ip.querySelectorAll(".chip-toggle").forEach(function(chip){
-      if(chip.classList.contains("on")) internalPicked.push(chip.getAttribute("data-pick-internal"));
-      chip.addEventListener("click", function(){
-        var n = chip.getAttribute("data-pick-internal"); var idx = internalPicked.indexOf(n);
-        if(idx===-1){internalPicked.push(n);chip.classList.add("on");} else {internalPicked.splice(idx,1);chip.classList.remove("on");}
-      });
-    });
-    var ep = c.querySelector("#pick-external");
-    if(ep) ep.querySelectorAll(".chip-toggle").forEach(function(chip){
-      if(chip.classList.contains("on")) externalPicked.push(chip.getAttribute("data-pick-external"));
-      chip.addEventListener("click", function(){
-        var n = chip.getAttribute("data-pick-external"); var idx = externalPicked.indexOf(n);
-        if(idx===-1){externalPicked.push(n);chip.classList.add("on");} else {externalPicked.splice(idx,1);chip.classList.remove("on");}
-      });
-    });
+    ddMultiBind("pick-internal"); ddMultiBind("pick-external");
     var pickBtn = document.getElementById("pick-customer-btn");
     if(pickBtn) pickBtn.addEventListener("click", openCustomerPicker);
     bindCustomerFormEvents();
@@ -5384,8 +5383,8 @@
 
       var existingAssignees = normalizeAssignees((state.editingProject&&state.editingProject.assignees)||[]);
       var statusMap = {}; existingAssignees.forEach(function(a){ statusMap[a.name]=a.status; });
-      var assignees = internalPicked.map(function(n){return {name:n, kind:"internal", status:statusMap[n]||"未確認"};})
-        .concat(externalPicked.map(function(n){return {name:n, kind:"external", status:statusMap[n]||"未確認"};}));
+      var assignees = ddMultiVal("pick-internal").map(function(n){return {name:n, kind:"internal", status:statusMap[n]||"未確認"};})
+        .concat(ddMultiVal("pick-external").map(function(n){return {name:n, kind:"external", status:statusMap[n]||"未確認"};}));
       // 自分しか見られない設定でも、新規登録した案件が消えないよう登録者を案件メンバーに加える
       if(!state.editingProject && !seesAllProjects() && !assignees.some(function(x){ return x.name===state.myName; })){
         var meM = myMember(); assignees.push({name:state.myName, kind:(meM&&meM.kind)||"internal", status:"確認済"});
@@ -5531,26 +5530,20 @@
     else if(kind==="members"){
       var cur = normalizeAssignees(p.assignees);
       var picked = cur.map(function(a){ return a.name; });
-      var chips = function(list, attr){
-        return list.map(function(m){ return '<span class="chip-toggle'+(picked.indexOf(m.name)!==-1?" on":"")+'" '+attr+'="'+esc(m.name)+'">'+esc(m.name)+'</span>'; }).join("") || '<span style="font-size:11.5px;color:var(--ink-faint)">登録されていません</span>';
-      };
       var internal = state.members.filter(function(m){ return m.kind==="internal"; });
       var external = state.members.filter(function(m){ return m.kind==="external"; });
-      // names on the project that are no longer in the member list stay selectable too
       var known = {}; state.members.forEach(function(m){ known[m.name]=true; });
       var orphans = cur.filter(function(a){ return !known[a.name]; });
-      var body = '<div><div class="cf-label" style="margin-bottom:6px">自社の案件メンバー</div><div class="assignee-pick">'+chips(internal,"data-sec-pick")+'</div></div>'+
-        '<div><div class="cf-label" style="margin-bottom:6px">社外の案件メンバー</div><div class="assignee-pick">'+chips(external,"data-sec-pick")+'</div></div>'+
-        (orphans.length ? '<div><div class="cf-label" style="margin-bottom:6px">登録のないメンバー</div><div class="assignee-pick">'+chips(orphans,"data-sec-pick")+'</div></div>' : '');
+      var nm = function(l){ return l.map(function(m){ return m.name; }); };
+      var pickIn = function(list){ return picked.filter(function(n){ return nm(list).indexOf(n)!==-1; }); };
+      var body = '<div><div class="cf-label" style="margin-bottom:6px">自社の案件メンバー</div>'+ddMultiHtml("sec-in", nm(internal), pickIn(internal))+'</div>'+
+        '<div><div class="cf-label" style="margin-bottom:6px">社外の案件メンバー</div>'+ddMultiHtml("sec-ex", nm(external), pickIn(external))+'</div>'+
+        (orphans.length ? '<div><div class="cf-label" style="margin-bottom:6px">登録のないメンバー</div>'+ddMultiHtml("sec-or", orphans.map(function(a){return a.name;}), orphans.map(function(a){return a.name;}))+'</div>' : '');
       openModal("案件メンバーの編集", body, cancel+'<button class="btn primary" id="sec-save">保存する</button>');
-      box().querySelectorAll("[data-sec-pick]").forEach(function(chip){
-        chip.addEventListener("click", function(){
-          var n = chip.getAttribute("data-sec-pick"), i = picked.indexOf(n);
-          if(i===-1){ picked.push(n); chip.classList.add("on"); } else { picked.splice(i,1); chip.classList.remove("on"); }
-        });
-      });
+      ddMultiBind("sec-in"); ddMultiBind("sec-ex"); if(orphans.length) ddMultiBind("sec-or");
       document.getElementById("sec-save").onclick = function(){
         var old = {}; cur.forEach(function(a){ old[a.name] = a; });
+        picked = ddMultiVal("sec-in").concat(ddMultiVal("sec-ex"), orphans.length ? ddMultiVal("sec-or") : []);
         var list = picked.map(function(n){
           if(old[n]) return old[n];                       // keep 確認ステータス
           var m = memberByName(n);
@@ -7027,7 +7020,7 @@
     (state.cards||[]).forEach(function(c){ add(c.company); });
     return out.sort(function(a,b){ return a.label.localeCompare(b.label, "ja"); });
   }
-  var AC_SELECT_IDS = ["f-tproj","f-sproj","f-rproj","f-eproj","tk-project","rp-project","files-flt-project","tk-assignee","f-rauthor"];
+  var AC_SELECT_IDS = ["f-tproj","f-sproj","f-rproj","f-eproj","tk-project","rp-project","files-flt-project","f-rauthor"];
   var AC_COMPANY_IDS = ["f-mcompany","me-company","set-company","iv-company","wi-company","f-ccompany","card-company"];
   function acEnhance(){
     try{
@@ -8494,7 +8487,7 @@
       if(data.status==="提出済" && prev!=="提出済"){ kind="report"; title="報告書が提出されました"; body=(data.type||"")+" "+(data.title||"")+"（"+(data.projectName||"—")+"）"; names=asg(projOf(data.projectId, data.projectName)); }
     }else if(col==="tasks"){
       if(old && data.done===true && !old.done && old.createdBy && old.createdBy!==state.myName && old.assignee){ kind="task"; title="依頼したタスクが完了しました"; body=(old.title||data.title||"")+"（"+(state.myName||"")+"さんが完了）"; names=[old.createdBy]; }
-      else if(!old){ kind="task"; title="タスクが追加されました"; body=(data.title||"")+(data.dueDate?"（期限 "+data.dueDate+"）":""); names=[data.assignee].filter(Boolean); }
+      else if(!old){ kind="task"; title="タスクが追加されました"; body=(data.title||"")+(data.dueDate?"（期限 "+data.dueDate+"）":""); names=taskWho({assignee:data.assignee}); }
     }
     if(!kind) return;
     pushCall("event", {kind:kind, title:title, text:body, names:names}).catch(function(){});
@@ -10058,14 +10051,14 @@
       return true;
     }).sort(function(a,b){return (b.uploadedAt||"").localeCompare(a.uploadedAt||"");});
   }
-  function taskRequestedByMe(t){ return !!state.myName && t.createdBy===state.myName && !!t.assignee && t.assignee!==state.myName; }
+  function taskRequestedByMe(t){ return !!state.myName && t.createdBy===state.myName && taskWho(t).some(function(n){ return n!==state.myName; }); }
   function taskMatches(t, f){
-    if(f.scope==="mine" && t.assignee!==state.myName) return false;
+    if(f.scope==="mine" && taskWho(t).indexOf(state.myName)===-1) return false;
     if(f.scope==="requested" && !taskRequestedByMe(t)) return false;
     if(f.status==="open" && t.done) return false;
     if(f.status==="done" && !t.done) return false;
     if(f.project!=="all" && t.projectId!==f.project) return false;
-    if(f.assignee!=="all" && (t.assignee||"")!==f.assignee) return false;
+    if((f.assignees||[]).length && !taskWho(t).some(function(n){ return f.assignees.indexOf(n)!==-1; })) return false;
     if(f.q && ((t.title||"")+(t.projectName||"")+(t.note||"")).indexOf(f.q)===-1) return false;
     return true;
   }
@@ -11146,7 +11139,7 @@
       c.querySelectorAll("[data-task-status]").forEach(function(el){ el.addEventListener("click", function(){ tf.status = el.getAttribute("data-task-status"); render(); }); });
       var tq = document.getElementById("tk-q"); if(tq) tq.addEventListener("keydown", function(e){ if(e.key==="Enter"){ tf.q = tq.value.trim(); render(); } }), tq.addEventListener("change", function(){ tf.q = tq.value.trim(); render(); });
       var tp = document.getElementById("tk-project"); if(tp) tp.addEventListener("change", function(){ tf.project = tp.value; render(); });
-      var ta = document.getElementById("tk-assignee"); if(ta) ta.addEventListener("change", function(){ tf.assignee = ta.value; render(); });
+      
       c.querySelectorAll("[data-task-add]").forEach(function(el){ el.addEventListener("click", function(){ openTaskModal(null); }); });
       c.querySelectorAll("[data-task-edit]").forEach(function(el){ el.addEventListener("click", function(){ var t=state.tasks.find(function(x){return x.id===el.getAttribute("data-task-edit");}); if(t) openTaskModal(t); }); });
       c.querySelectorAll("[data-task-del]").forEach(function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-task-del"); confirmDelete("このタスクを削除しますか？", function(){ deleteDoc("tasks", id, "タスクを削除しました"); }); }); });
@@ -11349,7 +11342,7 @@
       }); });
       c.querySelectorAll("[data-assignee-chip]").forEach(function(chip){
         chip.addEventListener("click", function(){
-          var name = chip.getAttribute("data-assignee-chip");
+          var name = chip.getAttribute("data-assignee-chip") || chip.value;
           var idx = f.assignees.indexOf(name);
           if(idx===-1) f.assignees.push(name); else f.assignees.splice(idx,1);
           f.page = 1; render();
