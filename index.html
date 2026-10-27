@@ -2177,7 +2177,11 @@
       if(name==="files") state.filesCapped = !!lim && snap.size>=lim;
       state.loaded[name] = true; bgRender();
     }, function(e){
-      if(name==="files" && e && e.code==="deadline-exceeded" && !lim){ state.filesLimit = 100; state.lazyOn.files = false; try{ lazyUnsub.files && lazyUnsub.files(); }catch(x){} state.loaded.files = false; lazyStart("files", "", 100); return; }
+      if(name==="files" && !scope && e && (e.code==="deadline-exceeded"||e.code==="unavailable"||e.code==="aborted") && (lim===0 || lim>20)){
+        // 時間切れのときは、読み込む件数を半分にして自動でやり直す
+        var nl = lim ? Math.max(20, Math.floor(lim/2)) : 50;
+        state.filesLimit = nl; state.lazyOn.files = false; try{ lazyUnsub.files && lazyUnsub.files(); }catch(x){} state.loaded.files = false; lazyStart("files", "", nl); return;
+      }
       if(name==="files"){ state.loaded.files = true; state.files = state.files||[]; state.syncError = (e&&e.code)||"unknown"; if(e&&e.code==="resource-exhausted") quotaMark(); toast(e&&e.code==="resource-exhausted" ? "Firestoreの無料枠（1日の読み取り上限）を超えました。日本時間の夕方（16時前後）にリセットされます" : "写真・ファイルの読み込みエラー: "+(e&&e.code||"unknown")+(e&&e.message?"（"+String(e.message).slice(0,80)+"）":"")); render(); return; }
       state.loaded[name] = true; state[name] = []; bgRender();
     });
@@ -2193,7 +2197,7 @@
       if(!state.loaded.projects) return;
       var ids = state.projects.filter(function(p){ return isMyProject(p); }).map(function(p){ return p.id; }).sort();
       lazyStart("files", "mine:"+ids.join(","));
-    }else lazyStart("files", "", state.filesLimit||150);
+    }else lazyStart("files", "", state.filesLimit||50);
   }
   // いまの画面に必要なコレクションを開始する（render の先頭で呼ぶ）
   function lazyNeeds(){
@@ -3342,7 +3346,7 @@
   }
   document.addEventListener("click", function(e){
     var t = e.target; if(!t || !t.closest) return;
-    if(t.closest("[data-file-server-more]")){ state.filesLimit = (state.filesLimit||150) + 150; render(); return; }
+    if(t.closest("[data-file-server-more]")){ state.filesLimit = (state.filesLimit||50) + 50; render(); return; }
     var fm = t.closest("[data-file-more]");
     if(fm){ var fk = fm.getAttribute("data-file-more"); state.fileLim = state.fileLim || {}; state.fileLim[fk] = fileLimit(fk) + FILE_PAGE; render(); return; }
     var dd = t.closest("[data-bgdd]");
