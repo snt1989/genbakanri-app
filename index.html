@@ -6798,6 +6798,8 @@
     var sort = state.pfSort;
     list = list.slice().sort(function(a,b){
       if(sort==="name") return (a.filename||"").localeCompare(b.filename||"","ja");
+      if(sort==="size_desc") return (b.size||0)-(a.size||0) || (b.uploadedAt||"").localeCompare(a.uploadedAt||"");
+      if(sort==="size_asc") return (a.size||0)-(b.size||0) || (b.uploadedAt||"").localeCompare(a.uploadedAt||"");
       var r = (a.uploadedAt||"").localeCompare(b.uploadedAt||"");
       return sort==="date_asc" ? r : -r;
     });
@@ -6818,7 +6820,7 @@
     html += '<div class="pf-bar">'+
       '<label><input type="checkbox" id="pf-selall"'+(list.length && list.every(function(x){return state.pfSel[x.id];})?" checked":"")+'> ファイル一括選択</label>'+
       '<label><input type="checkbox" id="pf-mine"'+(state.pfMine?" checked":"")+'> 自分のファイルのみ表示</label>'+
-      '<select id="pf-sort"><option value="date_desc"'+(sort==="date_desc"?" selected":"")+'>アップロード日（新しい順）</option><option value="date_asc"'+(sort==="date_asc"?" selected":"")+'>アップロード日（古い順）</option><option value="name"'+(sort==="name"?" selected":"")+'>ファイル名順</option></select>'+
+      '<select id="pf-sort"><option value="date_desc"'+(sort==="date_desc"?" selected":"")+'>アップロード日（新しい順）</option><option value="date_asc"'+(sort==="date_asc"?" selected":"")+'>アップロード日（古い順）</option><option value="name"'+(sort==="name"?" selected":"")+'>ファイル名順</option><option value="size_desc"'+(sort==="size_desc"?" selected":"")+'>サイズ（大きい順）</option><option value="size_asc"'+(sort==="size_asc"?" selected":"")+'>サイズ（小さい順）</option></select>'+
       '<select id="pf-view"><option value="thumb"'+(state.pfView==="thumb"?" selected":"")+'>サムネイル表示</option><option value="list"'+(state.pfView==="list"?" selected":"")+'>リスト表示</option></select>'+
     '</div>';
     if(selIds.length){
