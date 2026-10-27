@@ -1449,6 +1449,42 @@
     if(!add.length) return;
     try{ localStorage.setItem(tkAckKey(), JSON.stringify(cur.concat(add).slice(-300))); }catch(e){}
   }
+  /* ---- 自分の案件が更新されたときのお知らせ（他の人が登録・編集したもの。開くまで残る） ---- */
+  function pseenKey(){ return "gc_pseen_"+normName(state.myName); }
+  function pseenMap(){
+    var m = null; try{ m = JSON.parse(localStorage.getItem(pseenKey())||"null"); }catch(e){}
+    if(!m || typeof m!=="object"){ m = {_since:new Date().toISOString()}; try{ localStorage.setItem(pseenKey(), JSON.stringify(m)); }catch(e){} }
+    return m;
+  }
+  function markProjSeen(ids){
+    if(!state.myName) return;
+    var m = pseenMap(), now = new Date().toISOString();
+    [].concat(ids).forEach(function(id){ if(id) m[id] = now; });
+    try{ localStorage.setItem(pseenKey(), JSON.stringify(m)); }catch(e){}
+  }
+  function projUpdates(){
+    if(!state.myName || !state.loaded.projects) return [];
+    var m = pseenMap(), me = normName(state.myName);
+    return state.projects.filter(function(p){ return isMyProject(p) && Array.isArray(p.history); }).map(function(p){
+      var since = m[p.id] || m._since;
+      var h = p.history.filter(function(x){ return x && x.at && x.by && normName(x.by)!==me && String(x.at)>String(since); });
+      if(!h.length) return null;
+      return {p:p, last:h[h.length-1], n:h.length};
+    }).filter(Boolean).sort(function(a,b){ return String(b.last.at).localeCompare(String(a.last.at)); });
+  }
+  function projUpdateText(u){
+    var x = u.last;
+    return (x.by||"")+"さんが"+(x.a==="登録" ? "新しく登録しました" : ((x.f&&x.f.length ? x.f.join("・")+"を" : "")+"編集しました"))+(u.n>1?"（ほか"+(u.n-1)+"件の更新）":"")+" ／ "+fmtAgo(x.at);
+  }
+  function projUpdatesHomeHtml(){
+    var ups = projUpdates(); if(!ups.length) return "";
+    var rows = ups.slice(0,5).map(function(u){
+      return '<a href="#" data-open-project="'+esc(u.p.id)+'" style="display:block;padding:9px 0;border-top:1px solid var(--border);text-decoration:none;color:inherit"><div style="font-size:13px;font-weight:700">'+esc(u.p.name||"案件")+'</div><div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px">'+esc(projUpdateText(u))+'</div></a>';
+    }).join("");
+    return '<div class="card" style="padding:12px 18px 6px;margin-bottom:16px;border-color:var(--accent);background:var(--accent-soft)">'+
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="font-size:14px;margin:0;flex:1">'+iBell()+' 自分の案件が更新されました（'+ups.length+'件）</h2><button class="btn sm" id="pu-readall">すべて既読にする</button></div>'+
+      '<div style="margin-top:6px">'+rows+'</div>'+(ups.length>5?'<div style="font-size:11.5px;color:var(--ink-faint);padding:8px 0">ほか'+(ups.length-5)+'件は、右上のベルのお知らせで確認できます</div>':'')+'</div>';
+  }
   /* ---- お知らせ（ベルマーク） ---- */
   function noticeItems(){
     var items = [], today = todayISO(), tmr = addDays(today,1), me = state.myName;
@@ -1463,6 +1499,9 @@
     });
     state.tasks.filter(function(t){ return !t.done && t.dueDate===tmr && mine(t); }).forEach(function(t){
       items.push({grp:"task", title:t.title||"タスク", sub:"明日が期限"+(t.projectName?" ／ "+t.projectName:""), go:function(){ setTab("tasks"); }});
+    });
+    projUpdates().forEach(function(u){
+      items.push({grp:"project", urgent:true, title:(u.p.name||"案件")+"が更新されました", sub:projUpdateText(u), go:function(){ goProjectDetail(u.p.id); }});
     });
     var lim = addDays(today,3);
     state.projects.filter(function(p){ return p.endDate && p.endDate>=today && p.endDate<=lim && (p.status==="施工中"||p.status==="契約済") && (state.isAdmin || isMyProject(p)); }).forEach(function(p){
@@ -2887,7 +2926,7 @@
     bulkReset(); state.personalOpen=false; state.tab=id; state.sidebarOpen=false; if(!SUBPAGES[id]) state.returnTab=id; render();
   }
   function goProjectForm(mode, project){ state.formMode=mode||state.returnTab; state.editingProject=project||null; state.tab="project-form"; render(); }
-  function goProjectDetail(id){ state.viewingProjectId=id; state.tab="project-detail"; render(); ensureProject(id, function(){ if(state.viewingProjectId===id) render(); }); }
+  function goProjectDetail(id){ markProjSeen(id); state.viewingProjectId=id; state.tab="project-detail"; render(); ensureProject(id, function(){ if(state.viewingProjectId===id) render(); }); }
   // 案件別ファイル管理ページ. from: "detail" (案件詳細) or "files" (写真・ファイル一覧)
   function goProjectFiles(id, from, kind){ bulkReset(); state.filesProjectId=id; state.filesBack=from||"detail"; state.projectFilesKind=(kind==="photo"||kind==="doc")?kind:"all"; state.pfFolder=""; state.pfSel={}; state.pfMine=false; state.tab="project-files"; render(); }
   function goMemberForm(ext){
@@ -4331,6 +4370,7 @@
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">ホーム</h1><div style="display:flex;gap:8px;flex-wrap:wrap">'+csvToolbar("tasks")+'</div></div><div style="height:16px"></div>';
     html += '<div class="home-grid">';
     html += '<div>';
+    html += projUpdatesHomeHtml();
     html += '<div class="card" style="padding:6px 18px 2px"><h2 style="font-size:14px;padding:12px 0">担当案件のTODO</h2>';
     if(todo.length===0){
       html += '<div class="empty">未完了のタスクはありません</div>';
@@ -10649,6 +10689,7 @@
     }); });
     c.querySelectorAll("[data-edit-customer]").forEach(function(el){ el.addEventListener("click", function(){ openCustomerForm(el.getAttribute("data-edit-customer")); }); });
     c.querySelectorAll("[data-del-customer]").forEach(function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-del-customer"); confirmDelete("この顧客を削除しますか？",function(){deleteDoc("customers",id,"顧客を削除しました");}); }); });
+    var puAll = document.getElementById("pu-readall"); if(puAll) puAll.addEventListener("click", function(){ markProjSeen(projUpdates().map(function(u){ return u.p.id; })); render(); });
     c.querySelectorAll("[data-done-task]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.stopPropagation(); setTaskDone(el.getAttribute("data-done-task"), true); }); });
     c.querySelectorAll("[data-task-done]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.stopPropagation(); setTaskDone(el.getAttribute("data-task-done"), el.getAttribute("data-to")==="1"); }); });
     c.querySelectorAll("[data-csv-export]").forEach(function(el){ el.addEventListener("click", function(){ csvExport(el.getAttribute("data-csv-export")); }); });
