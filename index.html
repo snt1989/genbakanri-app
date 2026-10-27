@@ -1009,10 +1009,11 @@
         return early;
       }
       function makeCollectionRef(path){
-        var orderField = null, orderDir = "asc", limitN = null, whereC = [];
+        var orderField = null, orderDir = "asc", limitN = null, whereC = [], afterV;
         var buildQ = function(){
           var constraints = whereC.map(function(w){ return fsMod.where(w[0], w[1], w[2]); });
           if(orderField) constraints.push(fsMod.orderBy(orderField, orderDir));
+          if(afterV!==undefined) constraints.push(fsMod.startAfter(afterV));
           if(limitN) constraints.push(fsMod.limit(limitN));
           return constraints.length ? fsMod.query.apply(null, [fsMod.collection(fs, path)].concat(constraints)) : fsMod.collection(fs, path);
         };
@@ -1027,6 +1028,7 @@
           orderBy: function(f, dir){ orderField = f; orderDir = dir==="desc" ? "desc" : "asc"; return api; },
           get: function(){ return fsMod.getDocs(buildQ()).then(wrapSnap); },
           limit: function(n){ limitN = n; return api; },
+          startAfter: function(v){ afterV = v; return api; },
           where: function(f, op, v){ whereC.push([f, op, v]); return api; },
           onSnapshot: function(cb, errCb){
             var q = buildQ();
@@ -2126,6 +2128,27 @@
   var lazyUnsub = {};
   state.lazyScope = state.lazyScope || {};
   state.lazyLimit = state.lazyLimit || {};
+  // 最新の一部を先に表示し、古い分は裏で100件ずつ読み足す（全件を一度に読むと時間切れ・メモリ不足になるため）
+  state.filesOlder = state.filesOlder || [];
+  function filesPageOlder(){
+    if(state.filesPaging || state.filesAllLoaded || !db) return;
+    state.filesPaging = true;
+    var step = function(){
+      if(state.lazyScope.files!=="" || !state.lazyOn.files){ state.filesPaging = false; return; }
+      var oldest = null; state.files.forEach(function(x){ var u = x.uploadedAt; if(typeof u==="string" && u && (oldest===null || u<oldest)) oldest = u; });
+      if(oldest===null){ state.filesPaging = false; return; }
+      db.collection("files").orderBy("uploadedAt","desc").startAfter(oldest).limit(100).get().then(function(snap){
+        var add = snap.docs.map(toObj), have = {};
+        state.filesOlder = state.filesOlder.concat(add);
+        state.files.forEach(function(x){ have[x.id] = 1; });
+        state.files = state.files.concat(add.filter(function(x){ return !have[x.id]; }));
+        if(add.length<100){ state.filesPaging = false; state.filesAllLoaded = true; state.filesCapped = false; }
+        else setTimeout(step, 400);
+        bgRender();
+      }).catch(function(){ state.filesPaging = false; });
+    };
+    step();
+  }
   function lazyStart(name, scopeId, limit){
     if(!db) return;
     var scope = scopeId || "";
@@ -2185,8 +2208,12 @@
     else if(LAZY_COLS[name].order) q = q.orderBy(LAZY_COLS[name].order);
     lazyUnsub[name] = q.onSnapshot(function(snap){
       state[name] = snap.docs.map(toObj);
+      if(name==="files" && lim && (state.filesOlder||[]).length){
+        var have = {}; state.files.forEach(function(x){ have[x.id] = 1; });
+        state.files = state.files.concat(state.filesOlder.filter(function(x){ return !have[x.id]; }));
+      }
       if(name==="files" && scope) state.files.sort(function(a,b){ return String(a.uploadedAt||"").localeCompare(String(b.uploadedAt||"")); });
-      if(name==="files") state.filesCapped = !!lim && snap.size>=lim;
+      if(name==="files"){ state.filesCapped = !!lim && snap.docs.length>=lim && !state.filesAllLoaded; if(lim && !state.filesAllLoaded) filesPageOlder(); }
       state.loaded[name] = true; bgRender();
     }, function(e){
       if(name==="files" && !scope && e && (e.code==="deadline-exceeded"||e.code==="unavailable"||e.code==="aborted") && (lim===0 || lim>20)){
@@ -2199,6 +2226,7 @@
     });
   }
   function lazyReset(){
+    state.filesOlder = []; state.filesAllLoaded = false; state.filesPaging = false;
     Object.keys(lazyUnsub).forEach(function(k){ try{ if(typeof lazyUnsub[k]==="function") lazyUnsub[k](); }catch(e){} });
     lazyUnsub = {}; state.lazyOn = {}; state.lazyScope = {};
   }
