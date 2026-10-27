@@ -2246,7 +2246,7 @@
     var t = state.tab, seg = state.settingsSeg;
     if(t==="project-detail"||t==="project-files"){ lazyStart("files", t==="project-files" ? state.filesProjectId : state.viewingProjectId); lazyStart("folders"); }
     else if(["files","reports"].indexOf(t)!==-1){ startListFiles(); lazyStart("folders"); }
-    if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1){ lazyStart("files"); lazyStart("folders"); lazyStart("trash"); }
+    if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1){ startListFiles(); lazyStart("folders"); lazyStart("trash"); }   // 写真・ファイルは件数を絞って読む（全件は時間切れになる）
     if(t==="settings" && seg==="trash") lazyStart("trash");
     if(t==="cards" && cardsAllowed()) lazyStart("cards");
     if((t==="budget" || t==="project-detail") && state.isAdmin) lazyStart("budgets");
@@ -3711,6 +3711,7 @@
     if(state.tab==="sns") bindSns();
     c.querySelectorAll("[data-report-open]").forEach(function(a){ a.addEventListener("click", function(ev){ if(!db || window.claude || !myMember()) return; ev.preventDefault(); openReportApp("", a.getAttribute("href")); }); });   // 連携アプリのページから開くときも、ログイン情報つきで開く（アプリの中で案件を選べる）
     c.querySelectorAll("[data-report-project]").forEach(function(el){ el.addEventListener("click", function(){ openReportApp(el.getAttribute("data-report-project")); }); });
+    var sla = document.getElementById("storage-load-all"); if(sla) sla.addEventListener("click", function(){ state.filesPageErrAt = 0; if(state.lazyScope.files!==""||!state.lazyOn.files) lazyStart("files","",state.filesLimit||30); filesPageOlder(); toast("写真・ファイルを順に読み込みます"); });
     var ur = document.getElementById("usage-refresh"); if(ur) ur.addEventListener("click", function(){ usageLoad(); });
     c.querySelectorAll("[data-bihin-link],[data-shayosha-link],[data-daito-link]").forEach(function(a){ a.addEventListener("click", function(ev){ openBihinApp(ev); }); });
     applyBulkUi();
@@ -8034,7 +8035,16 @@
     h += '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap"><div><span class="num" style="font-size:22px;font-weight:700">'+fmtBytes(totalB)+'</span> <span style="font-size:12px;color:var(--ink-soft)">／ 無料枠 1 GB（'+pct.toFixed(2)+'%）</span></div><div style="font-size:12px;color:var(--ink-soft)">データ件数 <b>'+totalN.toLocaleString()+'</b> 件</div></div>';
     h += '<div style="height:10px;border-radius:99px;background:var(--surface-2);overflow:hidden;margin:10px 0 12px"><div style="height:100%;width:'+Math.max(pct,0.5)+'%;background:'+barColor+'"></div></div>';
     h += '<div class="tablewrap"><table><thead><tr><th>項目</th><th>件数</th><th>容量（概算）</th></tr></thead><tbody>'+
-      rows.map(function(r){ return '<tr><td>'+esc(r.label)+'</td><td class="num" data-label="件数">'+r.count.toLocaleString()+'</td><td class="num" data-label="容量">'+fmtBytes(r.bytes)+'</td></tr>'; }).join("")+'</tbody></table></div>';
+      rows.map(function(r){
+        var part = "";
+        if(r.key==="files" && db){
+          var full = state.lazyOn.files && state.loaded.files && state.lazyScope.files==="" && (!state.lazyLimit.files || state.filesAllLoaded);
+          if(!full) part = !state.loaded.files ? ' <span style="color:var(--ink-faint);font-size:11px">（読み込み中…）</span>' : ' <span style="color:var(--warning);font-size:11px">（一部のみ・全件ではありません）</span>';
+        }
+        return '<tr><td>'+esc(r.label)+part+'</td><td class="num" data-label="件数">'+r.count.toLocaleString()+'</td><td class="num" data-label="容量">'+fmtBytes(r.bytes)+'</td></tr>'; }).join("")+'</tbody></table></div>';
+    if(db && !(state.lazyOn.files && state.loaded.files && state.lazyScope.files==="" && (!state.lazyLimit.files || state.filesAllLoaded))){
+      h += '<div style="margin-top:8px"><button class="btn outline sm" id="storage-load-all">写真・ファイルを全件読み込んで集計する</button> <span style="font-size:11px;color:var(--ink-faint)">'+(state.filesPaging?'読み込み中… '+state.files.length+'件':'件数が多いと読み取りが増えます')+'</span></div>';
+    }
     h += '<div style="margin-top:12px;font-size:12.5px;line-height:1.8;color:var(--ink-soft)"><b>読み取り回数の目安：</b>アプリを開くたびに約 <b>'+totalN.toLocaleString()+'</b> 件を読み取ります。Firestoreの無料枠は1日5万件なので、'+(loads?'1日あたり約 <b>'+loads+'</b> 回の読み込みまでが目安です（全員の合計）。':'十分に余裕があります。')+'</div>';
     if(assetsCap){
       loadAssetUsage();
