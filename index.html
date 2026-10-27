@@ -2132,6 +2132,7 @@
   state.filesOlder = state.filesOlder || [];
   function filesPageOlder(){
     if(state.filesPaging || state.filesAllLoaded || !db) return;
+    if(state.filesPageErrAt && Date.now()-state.filesPageErrAt<20000) return;   // 失敗した直後は少し待つ（読み取りを無駄に増やさない）
     state.filesPaging = true;
     var step = function(){
       if(state.lazyScope.files!=="" || !state.lazyOn.files){ state.filesPaging = false; return; }
@@ -2145,7 +2146,7 @@
         if(add.length<100){ state.filesPaging = false; state.filesAllLoaded = true; state.filesCapped = false; }
         else setTimeout(step, 400);
         bgRender();
-      }).catch(function(){ state.filesPaging = false; });
+      }).catch(function(e){ state.filesPaging = false; state.filesPageErrAt = Date.now(); state.syncError = (e&&e.code)||"paging"; if(e&&e.code==="resource-exhausted") quotaMark(); });
     };
     step();
   }
@@ -2257,9 +2258,10 @@
     if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1 && state.isAdmin) lazyStart("cards");
   }
   // バックアップ前：未読み込みのコレクションがあれば読み込みを始めて false を返す（欠けたまま保存しない）
-  function lazyReady(){
+  // quiet=true のときは案内を出さない（待機中の確認用）。戻り値：準備できたか
+  function lazyReady(quiet){
     if(!db) return true;
-    if(state.projMode!=="full"){ loadAllProjects(); toast("バックアップ用に、過去の案件も含めて読み込んでいます。数秒後にもう一度押してください"); return false; }
+    if(state.projMode!=="full"){ loadAllProjects(); if(!quiet) toast("バックアップ用に、過去の案件も含めて読み込んでいます。数秒後にもう一度押してください"); return false; }
     // 写真・ファイルは「全件そろった」ときだけ準備完了（新しい順の一部だけ・自分の案件だけ・1案件だけの読み込みでは、バックアップが欠けてしまう）
     var filesFull = state.lazyOn.files && state.loaded.files && state.lazyScope.files==="" && (!state.lazyLimit.files || state.filesAllLoaded);
     var wait = Object.keys(LAZY_COLS).filter(function(k){ return k==="files" ? !filesFull : !(state.lazyOn[k] && state.loaded[k]); });
@@ -2270,9 +2272,34 @@
         else filesPageOlder();
       }else lazyStart(k);
     });
-    if(wait.indexOf("files")!==-1 && state.lazyOn.files && state.loaded.files) toast("バックアップ用に写真・ファイルを読み込んでいます（現在 "+state.files.length+"件）。完了後にもう一度押してください");
-    else toast("バックアップ用にデータを読み込んでいます。数秒後にもう一度押してください");
+    if(!quiet) toast("バックアップ用にデータを読み込んでいます。数秒後にもう一度押してください");
     return false;
+  }
+  // バックアップの前に、全データがそろうまで自動で待つ（そろったら自動で続きを実行する）
+  var BK_LABELS = {files:"写真・ファイル", folders:"フォルダ", trash:"ごみ箱", cards:"名刺", budgets:"予算", snsPosts:"SNS投稿"};
+  function backupWait(retry){
+    if(state.backupWaiting) return;
+    state.backupWaiting = true;
+    var t0 = Date.now(), cancelled = false;
+    openModal("バックアップの準備中",
+      '<div id="bk-prog" style="font-size:13px;line-height:1.9">データを読み込んでいます…</div><div style="font-size:11.5px;color:var(--ink-faint);margin-top:8px">そろったら自動でバックアップを始めます。写真・ファイルが多いと数分かかります。</div>',
+      '<button class="btn" id="bk-cancel">やめる</button>');
+    var cb = document.getElementById("bk-cancel");
+    if(cb) cb.addEventListener("click", function(){ cancelled = true; state.backupWaiting = false; closeModal(); });
+    var tick = function(){
+      if(cancelled) return;
+      if(lazyReady(true)){ state.backupWaiting = false; closeModal(); retry(); return; }
+      var parts = [];
+      parts.push("案件："+(state.projMode==="full" ? state.projects.length+"件" : "読み込み中"));
+      Object.keys(LAZY_COLS).forEach(function(k){
+        var ok = k==="files" ? (state.lazyOn.files && state.loaded.files && state.lazyScope.files==="" && (!state.lazyLimit.files || state.filesAllLoaded)) : (state.lazyOn[k] && state.loaded[k]);
+        parts.push((BK_LABELS[k]||k)+"："+(ok?"✓":(k==="files" && state.loaded.files ? "読み込み中（"+state.files.length+"件）" : "読み込み中")));
+      });
+      var el = document.getElementById("bk-prog"); if(el) el.innerHTML = parts.map(esc).join("<br>")+(state.syncError?'<br><span style="color:var(--danger)">読み込みエラー: '+esc(state.syncError)+'</span>':"");
+      if(Date.now()-t0>300000){ state.backupWaiting = false; toast("時間内にデータをそろえられませんでした。通信状況を確認して、もう一度お試しください"); return; }
+      setTimeout(tick, 1200);
+    };
+    tick();
   }
   /* 最新版に更新：この端末の古いアプリのキャッシュだけを消して読み込み直す（ログイン・データは消えない） */
   function appRefresh(){
@@ -9067,7 +9094,7 @@
     return next().then(function(){ payload.blobs = blobs; payload.includesFiles = true; return failed; });
   }
   function backupAllData(includePw, withFiles){
-    if(!lazyReady()) return;
+    if(!lazyReady(true)){ backupWait(function(){ backupAllData(includePw, withFiles); }); return; }
     var payload = buildBackup(includePw===true);
     if(withFiles === true){
       return collectFileBlobs(payload).then(function(failed){ saveBackupPayload(payload, failed); });
@@ -9076,7 +9103,7 @@
   }
   // 写真・ファイル画面用：ファイル情報・フォルダ・本体だけのバックアップ（projectId指定でその案件のみ）
   function backupFilesOnly(projectId){
-    if(!lazyReady()) return;
+    if(!lazyReady(true)){ backupWait(function(){ backupFilesOnly(projectId); }); return; }
     var pick = function(col){ return rawOf(col).filter(function(x){ return !projectId || x.projectId===projectId; }).map(function(o){ return Object.assign({},o); }); };
     var payload = {format:"genba-backup", version:2, scope:"files", exportedAt:new Date().toISOString(), exportedBy:state.myName||"", data:{files:pick("files"), folders:pick("folders")}};
     payload.counts = {files:payload.data.files.length, folders:payload.data.folders.length};
