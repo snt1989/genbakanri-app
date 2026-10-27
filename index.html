@@ -2134,6 +2134,7 @@
     if(state.lazyOn[name]){
       var cur = state.lazyLimit[name]||0;
       var limitChange = name==="files" && !scope && state.lazyScope.files==="" && cur>0 && (lim===0 || lim>cur);
+      if(name==="files" && scope.indexOf("mine:")===0 && state.lazyScope.files==="" && cur>0) limitChange = true;
       // 案件内の画面で絞り込み読み込み中に全件が必要になった（またはその逆で別案件になった）場合は読み込み直す
       if(!limitChange && (name!=="files" || (state.lazyScope.files||"")===scope || (state.lazyScope.files==="" ))) return;
       try{ if(typeof lazyUnsub[name]==="function") lazyUnsub[name](); }catch(e){}
@@ -2141,6 +2142,31 @@
     }
     state.lazyOn[name] = true; if(name==="files") state.lazyScope.files = scope;
     state.lazyLimit[name] = lim;
+    if(name==="files" && scope.indexOf("mine:")===0){
+      // 自分の案件に関わる写真・ファイルだけを読み込む（スマホ・一般メンバー向け。通信量とメモリを抑える）
+      var ids = scope.slice(5) ? scope.slice(5).split(",") : [], chunks = [], parts = [], unsubs = [], ci;
+      for(ci=0; ci<ids.length; ci+=30) chunks.push(ids.slice(ci, ci+30));
+      var merge = function(){
+        state.files = [].concat.apply([], parts.map(function(x){ return x||[]; }));
+        state.files.sort(function(a,b){ return String(a.uploadedAt||"").localeCompare(String(b.uploadedAt||"")); });
+        state.filesCapped = false; state.loaded.files = true; bgRender();
+      };
+      lazyUnsub.files = function(){ unsubs.forEach(function(u){ try{ u(); }catch(e){} }); };
+      if(!chunks.length){ merge(); return; }
+      chunks.forEach(function(ch, k){
+        unsubs.push(db.collection("files").where("projectId","in",ch).onSnapshot(function(snap){
+          parts[k] = snap.docs.map(toObj);
+          var done = true; for(var z=0; z<chunks.length; z++) if(!parts[z]) done = false;
+          if(done) merge();
+        }, function(e){
+          state.syncError = (e&&e.code)||"unknown"; if(e&&e.code==="resource-exhausted") quotaMark();
+          toast("写真・ファイルの読み込みエラー: "+(e&&e.code||"unknown"));
+          parts[k] = parts[k]||[]; var done = true; for(var z=0; z<chunks.length; z++) if(!parts[z]) done = false;
+          if(done) merge();
+        }));
+      });
+      return;
+    }
     var q = db.collection(name);
     if(name==="files" && scope) q = q.where("projectId","==",scope);
     else if(name==="files" && lim) q = q.orderBy("uploadedAt","desc").limit(lim);
@@ -2160,19 +2186,28 @@
     Object.keys(lazyUnsub).forEach(function(k){ try{ if(typeof lazyUnsub[k]==="function") lazyUnsub[k](); }catch(e){} });
     lazyUnsub = {}; state.lazyOn = {}; state.lazyScope = {};
   }
+  // 写真・ファイル一覧の読み込み範囲：スマホ・管理者以外は自分の案件のものだけ。それ以外は新しい順に件数を絞る
+  function startListFiles(){
+    var phone = !!(window.matchMedia && window.matchMedia("(max-width:640px)").matches);
+    if(phone || !seesAllProjects()){
+      if(!state.loaded.projects) return;
+      var ids = state.projects.filter(function(p){ return isMyProject(p); }).map(function(p){ return p.id; }).sort();
+      lazyStart("files", "mine:"+ids.join(","));
+    }else lazyStart("files", "", state.filesLimit||150);
+  }
   // いまの画面に必要なコレクションを開始する（render の先頭で呼ぶ）
   function lazyNeeds(){
     if(!db) return;
     var t = state.tab, seg = state.settingsSeg;
     if(t==="project-detail"||t==="project-files"){ lazyStart("files", t==="project-files" ? state.filesProjectId : state.viewingProjectId); lazyStart("folders"); }
-    else if(["files","reports"].indexOf(t)!==-1){ lazyStart("files", "", state.filesLimit||150); lazyStart("folders"); }
+    else if(["files","reports"].indexOf(t)!==-1){ startListFiles(); lazyStart("folders"); }
     if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1){ lazyStart("files"); lazyStart("folders"); lazyStart("trash"); }
     if(t==="settings" && seg==="trash") lazyStart("trash");
     if(t==="cards" && cardsAllowed()) lazyStart("cards");
     if((t==="budget" || t==="project-detail") && state.isAdmin) lazyStart("budgets");
     if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1 && state.isAdmin) lazyStart("budgets");
     if(state.isAdmin) lazyStart("snsPosts");
-    if(t==="sns" && state.isAdmin){ lazyStart("files", "", state.filesLimit||150); lazyStart("folders"); }
+    if(t==="sns" && state.isAdmin){ startListFiles(); lazyStart("folders"); }
     if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1 && state.isAdmin) lazyStart("cards");
   }
   // バックアップ前：未読み込みのコレクションがあれば読み込みを始めて false を返す（欠けたまま保存しない）
