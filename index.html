@@ -7712,15 +7712,25 @@
     if(!state.loaded.trash) return skeleton();
     var t = state.trashType||"all";
     var all = state.trash.slice().sort(function(a,b){ return (b.deletedAt||"").localeCompare(a.deletedAt||""); });
-    var list = all.filter(function(x){ return t==="all" || x.col===t; });
+    var tq = (state.trashQ||"").trim().toLowerCase();
+    var list = all.filter(function(x){ return (t==="all" || x.col===t) && (!tq || String(x.name||"").toLowerCase().indexOf(tq)!==-1 || String(x.deletedBy||"").toLowerCase().indexOf(tq)!==-1); });
+    var sel = state.trashSel = state.trashSel || {};
+    Object.keys(sel).forEach(function(k){ if(!all.some(function(x){ return x.id===k; })) delete sel[k]; });
+    var nSel = list.filter(function(x){ return sel[x.id]; }).length;
     var html = '<div style="font-size:12px;color:var(--ink-faint);line-height:1.7;max-width:760px;margin-bottom:12px">削除したデータはここに残り、「元に戻す」で復元できます。「完全に削除」するとデータは消えて復元できません。</div>';
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">'+
-      '<select id="trash-type" style="width:auto"><option value="all">すべての種類（'+all.length+'件）</option>'+Object.keys(TRASH_TYPES).map(function(k){ var n=all.filter(function(x){return x.col===k;}).length; return n?'<option value="'+k+'"'+(t===k?' selected':'')+'>'+TRASH_TYPES[k]+'（'+n+'件）</option>':''; }).join("")+'</select><span style="flex:1"></span>'+
+      '<select id="trash-type" style="width:auto"><option value="all">すべての種類（'+all.length+'件）</option>'+Object.keys(TRASH_TYPES).map(function(k){ var n=all.filter(function(x){return x.col===k;}).length; return n?'<option value="'+k+'"'+(t===k?' selected':'')+'>'+TRASH_TYPES[k]+'（'+n+'件）</option>':''; }).join("")+'</select><input type="search" id="trash-q" value="'+esc(state.trashQ||"")+'" placeholder="名前・削除した人で検索" style="width:200px"><span style="flex:1"></span>'+
       (list.length?'<button class="btn outline" id="trash-empty" style="color:var(--danger)">'+iAdmin()+iTrash()+' '+(t==="all"?'ゴミ箱を空にする':TRASH_TYPES[t]+'をすべて完全に削除')+'</button>':'')+'</div>';
-    if(!list.length) return html + emptyState(iTrash,"ゴミ箱は空です","削除したデータがここに表示されます");
-    html += '<div class="tablewrap"><table><thead><tr><th>種類</th><th>名前</th><th>削除日時</th><th>削除した人</th><th></th></tr></thead><tbody>'+
+    if(!list.length) return html + emptyState(iTrash,tq?"該当するデータがありません":"ゴミ箱は空です",tq?"検索ワードを変えてみてください":"削除したデータがここに表示されます");
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;padding:8px 12px;border-radius:10px;background:var(--surface-2)">'+
+      '<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="trash-all"'+(nSel&&nSel===list.length?' checked':'')+'> 表示中をすべて選択</label>'+
+      '<b style="font-size:13px">'+nSel+'件を選択中</b><span style="flex:1"></span>'+
+      '<button class="btn sm primary" id="trash-bulk-restore"'+(nSel?'':' disabled')+'>選択を元に戻す</button>'+
+      '<button class="btn sm outline" id="trash-bulk-purge"'+(nSel?'':' disabled')+' style="color:var(--danger)">選択を完全に削除</button>'+
+      '<span style="font-size:11px;color:var(--ink-faint);width:100%">Shiftを押しながらチェックすると、範囲でまとめて選べます</span></div>';
+    html += '<div class="tablewrap"><table><thead><tr><th style="width:34px"></th><th>種類</th><th>名前</th><th>削除日時</th><th>削除した人</th><th></th></tr></thead><tbody>'+
       list.map(function(x){
-        return '<tr class="rowhover"><td><span class="badge line-gray">'+esc(TRASH_TYPES[x.col]||x.col)+'</span></td><td><div class="cell-name">'+esc(x.name||"（名称なし）")+'</div></td><td class="num">'+esc(fmtDateTime(x.deletedAt))+'</td><td>'+esc(x.deletedBy||"—")+'</td>'+
+        return '<tr class="rowhover"><td><input type="checkbox" data-trash-sel="'+esc(x.id)+'"'+(sel[x.id]?' checked':'')+'></td><td><span class="badge line-gray">'+esc(TRASH_TYPES[x.col]||x.col)+'</span></td><td><div class="cell-name">'+esc(x.name||"（名称なし）")+'</div></td><td class="num">'+esc(fmtDateTime(x.deletedAt))+'</td><td>'+esc(x.deletedBy||"—")+'</td>'+
           '<td style="white-space:nowrap"><button class="btn sm primary" data-trash-restore="'+esc(x.id)+'">元に戻す</button> <button class="btn sm" data-trash-purge="'+esc(x.id)+'" style="color:var(--danger)">完全に削除</button></td></tr>';
       }).join("")+'</tbody></table></div>';
     return html;
@@ -10026,6 +10036,20 @@
     db.collection(col).doc(id).set(data).then(function(){ return db.collection("trash").doc(entry.id).delete(); })
       .then(function(){ toast("「"+(entry.name||TRASH_TYPES[col])+"」を元に戻しました"); }).catch(function(){ toast("元に戻せませんでした"); });
   }
+  function restoreTrashMany(entries){
+    var ok = 0, skip = 0, ng = 0;
+    var one = function(entry){
+      var col = entry.col, id = entry.docId;
+      if(rawOf(col).some(function(x){ return x.id===id; })){ skip++; return Promise.resolve(); }
+      var data = Object.assign({}, entry.data);
+      if(col==="files" && data.folderId && state.loaded.folders && !state.folders.some(function(g){ return g.id===data.folderId; })) data.folderId = null;
+      if(!db){ rawOf(col).unshift(Object.assign({id:id}, data)); state.trash = state.trash.filter(function(x){ return x.id!==entry.id; }); ok++; return Promise.resolve(); }
+      return db.collection(col).doc(id).set(data).then(function(){ return db.collection("trash").doc(entry.id).delete(); }).then(function(){ ok++; }, function(){ ng++; });
+    };
+    var chain = Promise.resolve();
+    entries.forEach(function(e,i){ chain = chain.then(function(){ if(i%10===0) toast("元に戻しています… "+i+" / "+entries.length); return one(e); }); });
+    return chain.then(function(){ state.trashSel = {}; toast(ok+"件を元に戻しました"+(skip?"（すでに存在: "+skip+"件）":"")+(ng?"（失敗: "+ng+"件）":"")); render(); });
+  }
   function purgeTrash(ids){
     if(!db){ state.trash = state.trash.filter(function(x){ return ids.indexOf(x.id)===-1; }); toast(ids.length+"件を完全に削除しました（プレビューのみ）"); render(); return; }
     ids.forEach(function(id){
@@ -12047,6 +12071,24 @@
       if(db) db.doc("settings/secret").set({defaults:list, updatedAt:new Date().toISOString()}).then(done).catch(function(){ toast("保存に失敗しました"); });
       else done();
     };
+    var tq2 = document.getElementById("trash-q"); if(tq2){ tq2.addEventListener("input", function(){ state.trashQ = tq2.value; clearTimeout(window.__trashQT); window.__trashQT = setTimeout(function(){ render(); var n = document.getElementById("trash-q"); if(n){ n.focus(); try{ n.setSelectionRange(n.value.length, n.value.length); }catch(e){} } }, 350); }); }
+    var trashVisible = function(){ var ty = state.trashType||"all", q = (state.trashQ||"").trim().toLowerCase(); return state.trash.slice().sort(function(a,b){ return (b.deletedAt||"").localeCompare(a.deletedAt||""); }).filter(function(x){ return (ty==="all"||x.col===ty) && (!q || String(x.name||"").toLowerCase().indexOf(q)!==-1 || String(x.deletedBy||"").toLowerCase().indexOf(q)!==-1); }); };
+    var tAll = document.getElementById("trash-all"); if(tAll) tAll.addEventListener("change", function(){ state.trashSel = state.trashSel||{}; trashVisible().forEach(function(x){ if(tAll.checked) state.trashSel[x.id] = true; else delete state.trashSel[x.id]; }); render(); });
+    var lastTrashIdx = -1;
+    c.querySelectorAll("[data-trash-sel]").forEach(function(el){ el.addEventListener("click", function(ev){
+      state.trashSel = state.trashSel||{}; var vis = trashVisible(), id = el.getAttribute("data-trash-sel"), idx = vis.findIndex(function(x){ return x.id===id; });
+      if(ev.shiftKey && state.trashLast!=null && state.trashLast>=0){ var a1 = Math.min(state.trashLast, idx), b1 = Math.max(state.trashLast, idx); for(var q=a1;q<=b1;q++){ if(el.checked) state.trashSel[vis[q].id] = true; else delete state.trashSel[vis[q].id]; } }
+      else if(el.checked) state.trashSel[id] = true; else delete state.trashSel[id];
+      state.trashLast = idx; render();
+    }); });
+    var tbr = document.getElementById("trash-bulk-restore"); if(tbr) tbr.addEventListener("click", function(){
+      var es = state.trash.filter(function(x){ return (state.trashSel||{})[x.id]; }); if(!es.length) return;
+      restoreTrashMany(es);
+    });
+    var tbp = document.getElementById("trash-bulk-purge"); if(tbp) tbp.addEventListener("click", function(){
+      var ids = state.trash.filter(function(x){ return (state.trashSel||{})[x.id]; }).map(function(x){ return x.id; }); if(!ids.length) return;
+      confirmDelete(ids.length+"件を完全に削除します。復元できなくなります。", function(){ state.trashSel = {}; purgeTrash(ids); }, {title:"完全に削除の確認", button:"完全に削除"});
+    });
     var tt = document.getElementById("trash-type"); if(tt) tt.addEventListener("change", function(){ state.trashType = tt.value; render(); });
     c.querySelectorAll("[data-trash-restore]").forEach(function(el){ el.addEventListener("click", function(){ var e=state.trash.find(function(x){return x.id===el.getAttribute("data-trash-restore");}); if(e) restoreTrash(e); }); });
     c.querySelectorAll("[data-trash-purge]").forEach(function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-trash-purge"); confirmDelete("このデータを完全に削除します。復元できなくなります。", function(){ purgeTrash([id]); }, {title:"完全に削除の確認", button:"完全に削除"}); }); });
