@@ -2151,7 +2151,7 @@
     if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1){ lazyStart("files"); lazyStart("folders"); lazyStart("trash"); }
     if(t==="settings" && seg==="trash") lazyStart("trash");
     if(t==="cards" && cardsAllowed()) lazyStart("cards");
-    if(t==="budget" && state.isAdmin) lazyStart("budgets");
+    if((t==="budget" || t==="project-detail") && state.isAdmin) lazyStart("budgets");
     if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1 && state.isAdmin) lazyStart("budgets");
     if(state.isAdmin) lazyStart("snsPosts");
     if(t==="sns" && state.isAdmin){ lazyStart("files"); lazyStart("folders"); }
@@ -2869,6 +2869,17 @@
     if(!list.length) return html+emptyState(iYenIcon,"該当する案件がありません","表示する案件の条件を変えてください");
     html += '<div class="card" style="padding:0;overflow-x:auto"><table class="tbl" style="font-size:12.5px;min-width:760px"><thead><tr><th>案件</th><th style="text-align:right">契約金額</th><th style="text-align:right">予算</th><th style="text-align:right">実績</th><th style="text-align:right">残り予算</th><th>消化率</th><th style="text-align:right">粗利（契約−実績）</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
     return html;
+  }
+  // 案件のページに出す予算の欄（管理者のみ）
+  function projectBudgetSection(p){
+    if(!state.isAdmin) return "";
+    var head = '<div class="form-section-title"><span>予算管理 <span class="admin-chip">'+iAdmin()+'管理者専用</span></span><span><button class="btn sm primary" data-bg-open="'+esc(p.id)+'">予算・実績を入力する</button></span></div>';
+    if(db && !state.loaded.budgets) return head+'<div class="card" style="padding:14px 18px;font-size:12px;color:var(--ink-faint)">読み込み中…</div>';
+    var c = bgCalc(p), over = c.budget>0 && c.actual>c.budget, w = c.rate==null ? 0 : Math.min(100, Math.round(c.rate*100));
+    var stat = function(l,v,warn){ return '<div style="flex:1;min-width:110px"><div style="font-size:11px;color:var(--ink-soft)">'+l+'</div><div class="num" style="font-size:14px;font-weight:800;margin-top:2px;'+(warn?'color:var(--danger)':'')+'">'+v+'</div></div>'; };
+    if(!c.has && !c.budget && !c.actual) return head+'<div class="card" style="padding:14px 18px;font-size:12.5px;color:var(--ink-faint);line-height:1.7">この案件の予算はまだ登録されていません。「予算・実績を入力する」から、項目ごとの予算と、実際にかかった費用を登録できます。</div>';
+    return head+'<div class="card" style="padding:14px 18px"><div style="display:flex;gap:10px;flex-wrap:wrap">'+stat("契約金額",c.contract?bgYen(c.contract):"未入力")+stat("予算",c.budget?bgYen(c.budget):"未設定")+stat("実績",bgYen(c.actual),over)+stat("残り予算",c.budget?bgYen(c.remain):"—",c.budget>0&&c.remain<0)+stat("粗利（契約−実績）",c.contract?bgYen(c.profit)+"（"+bgPct(c.profitRate)+"）":"—",c.contract>0&&c.profit<0)+'</div>'+
+      '<div style="height:8px;border-radius:99px;background:var(--border);overflow:hidden;margin-top:12px"><div style="height:100%;width:'+w+'%;background:'+(over?'var(--danger)':'var(--accent)')+'"></div></div><div style="font-size:11px;margin-top:3px;color:'+(over?'var(--danger)':'var(--ink-faint)')+'">予算の消化率 '+bgPct(c.rate)+'（明細 '+c.lines.length+'件・実績 '+c.costs.length+'件）</div></div>';
   }
   function bgSave(pid, patch, msg, after){
     if(!state.isAdmin){ toast("管理者のみ行えます"); return; }
@@ -5365,6 +5376,8 @@
     html += '</div>';
 
     html += projectWorkSection(p);
+
+    html += projectBudgetSection(p);
 
     html += renderMemoSection(p);
 
