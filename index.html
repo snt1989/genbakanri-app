@@ -5186,6 +5186,60 @@
   }
 
   /* ============ HOME ============ */
+  /* ---- ホームの「全体へのお知らせ」（管理者が書き、全員のホームに表示） ---- */
+  function annLoad(force){
+    if(!db){ state.annLoaded = true; return; }
+    var now = Date.now();
+    if(!force && state.annAt && now-state.annAt<60000) return;
+    state.annAt = now;
+    db.doc("settings/announce").get().then(function(snap){
+      state.announce = (snap.exists && Array.isArray(snap.data().items)) ? snap.data().items : [];
+      state.annLoaded = true; if(state.tab==="home") render();
+    }).catch(function(){ state.annLoaded = true; });
+  }
+  function annSave(items){
+    state.announce = items; state.annAt = Date.now();
+    if(db) db.doc("settings/announce").set({items:items, updatedAt:new Date().toISOString(), updatedBy:state.myName||""}).catch(function(){ toast("お知らせを保存できませんでした"); });
+    render();
+  }
+  function annHtml(){
+    annLoad();
+    var items = (state.announce||[]).slice(), adm = !!state.isAdmin;
+    if(!items.length && !adm) return "";
+    var h = '<div class="card" style="padding:14px 18px;margin-bottom:16px;border-left:4px solid var(--accent)"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="font-size:14px;margin:0;flex:1">'+iBell()+' 全体へのお知らせ</h2>'+
+      (adm?'<button class="btn sm outline" data-ann-add>＋ お知らせを追加</button>':'')+'</div>';
+    if(!items.length) h += '<div style="font-size:12.5px;color:var(--ink-faint);margin-top:8px">お知らせはありません。「お知らせを追加」から、全員のホームに表示できます。</div>';
+    items.forEach(function(x){
+      h += '<div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">'+
+        (x.title?'<b style="font-size:13.5px">'+esc(x.title)+'</b>':'')+
+        '<span style="font-size:11px;color:var(--ink-faint)">'+esc(fmtDateTime(x.at))+(x.by?' ・ '+esc(x.by):'')+'</span><span style="flex:1"></span>'+
+        (adm?'<button class="btn sm" data-ann-edit="'+esc(x.id)+'">編集</button><button class="btn sm" data-ann-del="'+esc(x.id)+'" style="color:var(--danger)">削除</button>':'')+'</div>'+
+        '<div style="font-size:13px;line-height:1.75;white-space:pre-wrap;word-break:break-word;margin-top:4px">'+esc(x.text||"")+'</div></div>';
+    });
+    return h+'</div>';
+  }
+  function annEdit(id){
+    var cur = (state.announce||[]).find(function(x){ return x.id===id; }) || {};
+    openModal(id?"お知らせを編集":"お知らせを追加",
+      '<label class="field">見出し（省略できます）<input id="ann-title" value="'+esc(cur.title||"")+'" maxlength="60"></label>'+
+      '<label class="field">内容<textarea id="ann-text" style="min-height:140px">'+esc(cur.text||"")+'</textarea></label>'+
+      '<div style="font-size:11.5px;color:var(--ink-faint)">全員のホーム画面に表示されます。</div>',
+      '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="ann-save">保存</button>');
+    document.getElementById("ann-save").addEventListener("click", function(){
+      var text = document.getElementById("ann-text").value.trim(), title = document.getElementById("ann-title").value.trim();
+      if(!text){ toast("内容を入力してください"); return; }
+      var items = (state.announce||[]).slice();
+      if(id){ items = items.map(function(x){ return x.id===id ? Object.assign({}, x, {title:title, text:text, editedAt:new Date().toISOString()}) : x; }); }
+      else items.unshift({id:"a"+Date.now().toString(36), title:title, text:text, at:new Date().toISOString(), by:state.myName||""});
+      closeModal(); annSave(items); toast("お知らせを保存しました");
+    });
+  }
+  document.addEventListener("click", function(ev){
+    var t = ev.target.closest ? ev.target : null; if(!t || !state.isAdmin) return;
+    if(t.closest("[data-ann-add]")) return annEdit(null);
+    var e = t.closest("[data-ann-edit]"); if(e) return annEdit(e.getAttribute("data-ann-edit"));
+    var d = t.closest("[data-ann-del]"); if(d){ var id = d.getAttribute("data-ann-del"); confirmDelete("このお知らせを削除します。", function(){ annSave((state.announce||[]).filter(function(x){ return x.id!==id; })); toast("お知らせを削除しました"); }, {title:"お知らせの削除"}); }
+  });
   function renderHome(){
     if(!state.loaded.tasks || !state.loaded.projects) return skeleton();
     var todo = state.tasks.filter(function(t){return !t.done;}).sort(function(a,b){return (a.dueDate||"").localeCompare(b.dueDate||"");});
@@ -5193,6 +5247,7 @@
     var thisMonthAmount = state.projects.filter(function(p){return (p.status==="契約済"||p.status==="施工中"||p.status==="施工完了");}).reduce(function(s,p){return s+(hiddenFor(p,"p_amount")?0:(p.amount||0));},0);
 
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">ホーム</h1></div><div style="height:16px"></div>';
+    html += annHtml();
     html += '<div class="home-grid">';
     html += '<div>';
     html += projUpdatesHomeHtml();
@@ -5217,7 +5272,7 @@
     html += '<div style="display:flex;flex-direction:column;gap:16px">';
     html += '<div class="card side-card"><h3>本日の稼働状況</h3>'+
       '<div class="side-stat">施工中の現場<b>'+activeProjects.length+'</b></div>'+
-      '<div class="side-stat">今月の契約金額合計<b class="num">'+fmtYen(thisMonthAmount)+'</b></div>'+
+      (state.isAdmin ? '<div class="side-stat">今月の契約金額合計<b class="num">'+fmtYen(thisMonthAmount)+'</b></div>' : '')+
       '<div class="side-stat">未完了タスク<b>'+todo.length+'</b></div>'+
       '<div class="side-stat">登録メンバー<b>'+state.members.length+'</b></div>'+
     '</div>';
