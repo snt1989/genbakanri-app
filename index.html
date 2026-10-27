@@ -3384,6 +3384,7 @@
       });
     });
   }
+  document.addEventListener("click", function(e){ window.__shiftDown = !!e.shiftKey; }, true);
   document.addEventListener("click", function(e){
     var t = e.target; if(!t || !t.closest) return;
     if(t.closest("[data-file-server-more]")){ state.filesLimit = (state.filesLimit||30) + 30; render(); return; }
@@ -3422,7 +3423,17 @@
     if(t.hasAttribute && t.hasAttribute("data-bgc")){ var fk = t.getAttribute("data-bgc"), fl = bgFilter(), cur = fl[fk], ix = cur.indexOf(t.value); if(t.checked && ix===-1) cur.push(t.value); else if(!t.checked && ix>-1) cur.splice(ix,1); render(); return; }
     if(t.hasAttribute && t.hasAttribute("data-bgf")){ bgFilter()[t.getAttribute("data-bgf")] = t.value; render(); return; }
     if(t.hasAttribute && t.hasAttribute("data-bgsort-key")){ bgSort().key = t.value; render(); return; }
-    if(t.hasAttribute && t.hasAttribute("data-bg-sel")){ var sel = bgSel(), id = t.getAttribute("data-bg-sel"); if(t.checked) sel[id] = 1; else delete sel[id]; render(); return; }
+    if(t.hasAttribute && t.hasAttribute("data-bg-sel")){
+      var sel = bgSel(), id = t.getAttribute("data-bg-sel"), ids = [id];
+      // Shiftを押しながら選ぶと、前に選んだ行との間をまとめて選択／解除する
+      if(window.__shiftDown && state.bgLast && state.bgLast!==id){
+        var allIds = Array.prototype.map.call(document.querySelectorAll("[data-bg-sel]"), function(x){ return x.getAttribute("data-bg-sel"); });
+        var ia = allIds.indexOf(state.bgLast), ib = allIds.indexOf(id);
+        if(ia>-1 && ib>-1) ids = allIds.slice(Math.min(ia,ib), Math.max(ia,ib)+1);
+      }
+      ids.forEach(function(k){ if(t.checked) sel[k] = 1; else delete sel[k]; });
+      state.bgLast = id; render(); return;
+    }
     if(t.hasAttribute && t.hasAttribute("data-bg-all")){ var sl = bgSel(); bgRows().forEach(function(r){ if(t.checked) sl[r.p.id] = 1; else delete sl[r.p.id]; }); render(); }
   });
 
