@@ -4367,7 +4367,7 @@
     var activeProjects = state.projects.filter(function(p){return p.status==="施工中";});
     var thisMonthAmount = state.projects.filter(function(p){return (p.status==="契約済"||p.status==="施工中"||p.status==="施工完了");}).reduce(function(s,p){return s+(hiddenFor(p,"p_amount")?0:(p.amount||0));},0);
 
-    var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">ホーム</h1><div style="display:flex;gap:8px;flex-wrap:wrap">'+csvToolbar("tasks")+'</div></div><div style="height:16px"></div>';
+    var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">ホーム</h1></div><div style="height:16px"></div>';
     html += '<div class="home-grid">';
     html += '<div>';
     html += projUpdatesHomeHtml();
