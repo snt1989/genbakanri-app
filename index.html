@@ -2449,7 +2449,19 @@
   function isVideoFile(f){ return (f.contentType||"").indexOf("video/")===0 || (!(f.contentType||"").length && VIDEO_EXT.test(f.filename||f.name||"")); }
   function isMediaFile(f){ return isImageFile(f) || isVideoFile(f); }
   function videoType(file){ var t = file.type||""; if(t.indexOf("video/")===0) return t; var e = ((file.name||"").split(".").pop()||"").toLowerCase(); return ({mov:"video/quicktime", mp4:"video/mp4", m4v:"video/mp4", webm:"video/webm", avi:"video/x-msvideo", "3gp":"video/3gpp", mkv:"video/x-matroska", mpg:"video/mpeg", mpeg:"video/mpeg", wmv:"video/x-ms-wmv"})[e] || t; }
-  function fileUrl(f){ return f.chunked ? ("#fc-"+f.id) : (f.url || ("/_blob/"+f.assetId)); }
+  var fileBlobCache = {};
+  // 写真の本体（data:...）をそのまま画面に埋め込むと、文字列がリンクと画像で二重になりメモリ不足（Out of Memory）になる。
+  // 一度だけBlobに変換し、短いblob:のURLで表示する
+  function fileUrl(f){
+    if(f.chunked) return "#fc-"+f.id;
+    var u = f.url;
+    if(typeof u==="string" && u.length>2000 && /^data:/i.test(u)){
+      var c = fileBlobCache[f.id];
+      if(c && c.len===u.length) return c.url;
+      try{ var bu = URL.createObjectURL(dataUrlToBlob(u)); fileBlobCache[f.id] = {url:bu, len:u.length}; return bu; }catch(e){}
+    }
+    return u || ("/_blob/"+f.assetId);
+  }
   /* ---- 分割保存されたファイル（報告写真アプリのPDFなど）：クリック時に分割データを結合して開く ---- */
   function chunkBlob(f){
     if(!db) return Promise.reject(new Error("no-db"));
@@ -2712,7 +2724,7 @@
     });
   }
   /* 写真が多いと画面が重くなりメモリ不足になるため、一度に出す件数を絞り「さらに表示」で増やす */
-  var FILE_PAGE = 60;
+  var FILE_PAGE = 30;
   function fileLimit(key){ state.fileLim = state.fileLim || {}; return state.fileLim[key] || FILE_PAGE; }
   function fileMoreBtn(key, total){
     var lim = fileLimit(key);
