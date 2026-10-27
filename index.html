@@ -3392,6 +3392,9 @@
   document.addEventListener("click", function(e){
     var t = e.target; if(!t || !t.closest) return;
     if(t.closest("[data-file-server-more]")){ state.filesLimit = (state.filesLimit||30) + 30; render(); return; }
+    var fcl = t.closest("[data-ffclear]");
+    if(fcl){ e.preventDefault(); filesFlt()[fcl.getAttribute("data-ffclear")] = []; state.fileLim = {}; render(); return; }
+    if(t.closest("[data-files-view-toggle]")){ state.filesView = state.filesView==="project" ? "all" : "project"; render(); return; }
     if(t.closest("[data-unlight]")){ state.filesFilter.unlight = !state.filesFilter.unlight; state.fileLim = {}; render(); return; }
     var fm = t.closest("[data-file-more]");
     if(fm){ var fk = fm.getAttribute("data-file-more"); state.fileLim = state.fileLim || {}; state.fileLim[fk] = fileLimit(fk) + FILE_PAGE; render(); return; }
@@ -3402,6 +3405,8 @@
   });
   document.addEventListener("change", function(e){
     var t = e.target; if(!t || !t.hasAttribute) return;
+    var ffm = {"data-ffk":"kinds","data-ffp":"projects","data-ffd":"divisions","data-ffa":"assignees"};
+    for(var ffa in ffm){ if(t.hasAttribute(ffa)){ var arr = filesFlt()[ffm[ffa]], fi = arr.indexOf(t.value); if(t.checked && fi===-1) arr.push(t.value); else if(!t.checked && fi>-1) arr.splice(fi,1); state.fileLim = {}; render(); return; } }
     if(t.hasAttribute("data-tkasg")){ var a = state.taskFilter.assignees = state.taskFilter.assignees||[], i = a.indexOf(t.value); if(t.checked && i===-1) a.push(t.value); else if(!t.checked && i>-1) a.splice(i,1); render(); }
   });
   document.addEventListener("click", function(e){
@@ -4476,10 +4481,61 @@
   /* ページ内のドロップダウン式チェック選択（開閉は state.bgDd）。attr はチェックボックスに付ける属性 */
   function ddPage(key, label, names, sel, attr, extra){
     var open = state.bgDd===key, on = sel.length>0;
-    var unit = /進捗/.test(label) ? "件" : "名";
-    var txt = (!on || sel.length>=names.length) ? "すべて" : (sel.length<=2 ? sel.join("・") : sel.length+unit+"を選択");
+    var items = names.map(function(n){ return Array.isArray(n) ? n : [n,n]; });
+    var unit = /進捗/.test(label) ? "件" : (/案件|種類/.test(label) ? "件" : "名");
+    var labs = items.filter(function(it){ return sel.indexOf(it[0])!==-1; }).map(function(it){ return it[1]; });
+    var txt = (!on || sel.length>=items.length) ? "すべて" : (labs.length<=2 ? labs.join("・") : labs.length+unit+"を選択");
     return '<div class="fitem bgdd" style="min-width:180px;max-width:280px"><span>'+label+'</span><button type="button" class="bgdd-btn'+(on?' on':'')+'" data-bgdd="'+key+'"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(txt)+'</span><span style="font-size:10px;color:var(--ink-faint)">'+(open?'▲':'▼')+'</span></button>'+
-      (open ? '<div class="bgdd-panel">'+(extra||'')+(names.length ? names.map(function(n){ return '<label class="checkopt"><input type="checkbox" '+attr+' value="'+esc(n)+'"'+(sel.indexOf(n)!==-1?' checked':'')+'>'+esc(n)+'</label>'; }).join("") : '<div style="padding:8px 2px">メンバーがいません</div>')+'</div>' : '')+'</div>';
+      (open ? '<div class="bgdd-panel">'+(extra||'')+(items.length ? items.map(function(it){ return '<label class="checkopt"><input type="checkbox" '+attr+' value="'+esc(it[0])+'"'+(sel.indexOf(it[0])!==-1?' checked':'')+'>'+esc(it[1])+'</label>'; }).join("") : '<div style="padding:8px 2px">候補がありません</div>')+'</div>' : '')+'</div>';
+  }
+  /* 写真・ファイルの絞り込み（ドロップダウン式のチェック選択）。空＝すべて */
+  var _fpm = {src:null, n:-1, map:{}};
+  function filesProjMap(){
+    if(_fpm.src!==state.projects || _fpm.n!==state.projects.length){ var m = {}; state.projects.forEach(function(p){ m[p.id] = p; }); _fpm = {src:state.projects, n:state.projects.length, map:m}; }
+    return _fpm.map;
+  }
+  function filesFlt(){
+    var f = state.filesFilter;
+    ["projects","divisions","assignees","kinds"].forEach(function(k){ if(!Array.isArray(f[k])) f[k] = []; });
+    return f;
+  }
+  function filesProjPass(p){
+    var f = filesFlt();
+    if(f.projects.length && (!p || f.projects.indexOf(p.id)===-1)) return false;
+    if(f.divisions.length && f.divisions.indexOf(p && p.division ? p.division : "none")===-1) return false;
+    if(f.assignees.length){
+      var n = p ? normalizeAssignees(p.assignees).map(function(a){ return a.name; }) : [];
+      if(!n.some(function(x){ return f.assignees.indexOf(x)!==-1; })) return false;
+    }
+    return true;
+  }
+  function filesKindPass(isMedia){
+    var k = filesFlt().kinds; if(!k.length) return true;
+    return k.indexOf(isMedia ? "image" : "other")!==-1;
+  }
+  function filesPass(x){
+    var f = filesFlt();
+    if(!filesProjPass(filesProjMap()[x.projectId])) return false;
+    if(!filesKindPass(isMediaFile(x))) return false;
+    if(f.unlight && !notLightened(x)) return false;
+    return true;
+  }
+  function filesFilterBar(){
+    var f = filesFlt(), pm = filesProjMap();
+    var clr = function(k){ return '<div style="text-align:right;font-size:11.5px;padding:2px 2px 6px;border-bottom:1px solid var(--border);margin-bottom:4px"><a href="#" data-ffclear="'+k+'" style="font-weight:700">解除</a></div>'; };
+    var projs = state.projects.slice().sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); }).map(function(p){ return [p.id, p.name||"（無題）"]; });
+    var divs = DIVISIONS.map(function(d){ return [d,d]; }).concat([["none","（事業部 未設定）"]]);
+    var who = {}; state.members.forEach(function(m){ who[m.name] = 1; });
+    var asg = Object.keys(who).sort(function(a,b){ return a.localeCompare(b,"ja"); });
+    var nUnl = state.files.filter(function(x){ return fileVisible(x) && projectVisibleId(x.projectId) && notLightened(x); }).length;
+    return '<div class="card filter-card"><div class="filter-line">'+
+      ddPage("ffKind","種類",[["image","写真・動画"],["other","書類"]],f.kinds,"data-ffk",clr("kinds"))+
+      ddPage("ffProj","案件",projs,f.projects,"data-ffp",clr("projects"))+
+      ddPage("ffDiv","事業部",divs,f.divisions,"data-ffd",clr("divisions"))+
+      ddPage("ffAsg","担当者",asg,f.assignees,"data-ffa",clr("assignees"))+
+      '<div class="fitem"><span>軽量化</span><button type="button" class="btn sm'+(f.unlight?' primary':' outline')+'" data-unlight="files">'+(f.unlight?'✓ ':'')+'軽量化していない写真のみ（'+nUnl+'枚）</button></div>'+
+      '<div class="fitem"><span>表示</span><button type="button" class="btn sm'+(state.filesView==="project"?' primary':' outline')+'" data-files-view-toggle>'+(state.filesView==="project"?'✓ ':'')+'案件ごとの容量一覧</button></div>'+
+    '</div></div>';
   }
   function taskWho(t){ return stepWho(t); }
   function stepWho(x){
@@ -6613,10 +6669,7 @@
     var f = state.filesFilter;
     var list = state.files.filter(function(x){
       if(!fileVisible(x) || !projectVisibleId(x.projectId)) return false;
-      if(f.project!=="all" && x.projectId!==f.project) return false;
-      if(f.kind==="image" && !isMediaFile(x)) return false;
-      if(f.kind==="other" && isMediaFile(x)) return false;
-      if(f.unlight && !notLightened(x)) return false;
+      if(!filesPass(x)) return false;
       return true;
     });
     var fso = state.filesSort || "date_desc";
@@ -6648,24 +6701,8 @@
       '<h1 class="pagetitle">写真・ファイル</h1>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="files-upload-btn">'+iPlus()+' 写真・ファイルを追加</button>'+(byProject?'':csvToolbar("files"))+(byProject?'':'<button class="btn outline" id="files-dl-btn">'+iDownload()+' ダウンロード（'+list.length+'件）</button>')+(state.isAdmin?'<button class="btn outline" id="files-lighten-btn">'+iAdmin()+' 写真を軽量化</button>':'')+(state.isAdmin?'<button class="btn outline" id="files-backup-btn">'+iAdmin()+' ファイルをバックアップ</button>':'')+'</div>'+
       '</div><div style="height:14px"></div>';
-    html += '<div class="segmented" style="margin-bottom:16px">'+
-      '<div class="segopt'+(byProject?'':' active')+'" data-files-view="all">すべて</div>'+
-      '<div class="segopt'+(fv==="project"?' active':'')+'" data-files-view="project">案件別</div>'+
-      '<div class="segopt'+(fv==="division"?' active':'')+'" data-files-view="division">事業部別</div>'+
-      '<div class="segopt'+(fv==="assignee"?' active':'')+'" data-files-view="assignee">担当者別</div></div>';
-    var cntI = 0, cntO = 0;
-    state.files.forEach(function(x){ if(!fileVisible(x) || !projectVisibleId(x.projectId)) return; if(isMediaFile(x)) cntI++; else cntO++; });
-    html += '<div class="pf-kind" role="tablist" style="margin:0 0 14px">'+[["all","すべて",cntI+cntO],["image","写真・動画",cntI],["other","書類",cntO]].map(function(k){ return '<button type="button" data-files-kind-sw="'+k[0]+'" class="'+(f.kind===k[0]?'on':'')+'">'+k[1]+'<i>'+k[2]+'</i></button>'; }).join("")+'</div>';
+    html += filesFilterBar();
     if(byProject) return html + renderFilesByProject(fv);
-
-    html += '<div class="card filter-card"><div class="filter-line">'+
-      '<div class="fitem" style="min-width:220px"><span>案件で絞り込み</span><select id="files-flt-project"><option value="all">すべての案件</option>'+
-        state.projects.slice().sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");}).map(function(p){
-          return '<option value="'+p.id+'"'+(f.project===p.id?" selected":"")+'>'+esc(p.name)+'</option>';
-        }).join("")+
-      '</select></div>'+
-      '<div class="fitem"><span>軽量化</span><button type="button" class="btn sm'+(f.unlight?' primary':' outline')+'" data-unlight="files">'+(f.unlight?'✓ ':'')+'軽量化していない写真のみ（'+state.files.filter(function(x){ return fileVisible(x) && projectVisibleId(x.projectId) && notLightened(x); }).length+'枚）</button></div>'+
-    '</div></div>';
 
     html += '<div class="summary-line" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span><b>'+list.length+'</b>件 / 全'+state.files.length+'件</span><label style="font-size:12px;color:var(--ink-soft)">並び替え <select id="files-sort-all" style="margin-left:4px">'+
       [["date_desc","追加が新しい順"],["date_asc","追加が古い順"],["name","ファイル名順"],["project","案件名順"],["size","サイズが大きい順"],["assignee","担当者順（案件の担当者）"],["division","事業部順（案件の事業部）"]].map(function(o){ return '<option value="'+o[0]+'"'+(o[0]===fso?" selected":"")+'>'+o[1]+'</option>'; }).join("")+'</select></label></div>';
@@ -6763,7 +6800,12 @@
       var fl = filesForProject(p.id), imgs = fl.filter(isMediaFile).length;
       var last = fl.reduce(function(m,f){ return (f.uploadedAt||"")>m ? (f.uploadedAt||"") : m; }, "");
       return {p:p, imgs:imgs, other:fl.length-imgs, last:last, n:fl.length, bytes:fl.reduce(function(a,f){ return a+(Number(f.size)||0); },0)};
-    }).filter(function(r){ var k = state.filesFilter.kind; return k==="image" ? r.imgs>0 : k==="other" ? r.other>0 : r.n>0; });   // ファイルがない案件は表示しない（写真/書類で絞るときは、その種類がある案件だけ）
+    }).filter(function(r){
+      if(!filesProjPass(r.p)) return false;
+      var k = filesFlt().kinds;
+      if(!k.length) return r.n>0;
+      return (k.indexOf("image")!==-1 && r.imgs>0) || (k.indexOf("other")!==-1 && r.other>0);
+    });   // ファイルがない案件は表示しない（写真/書類で絞るときは、その種類がある案件だけ）
     if(rows.length===0) return emptyState(iImage,"ファイルのある案件がありません","案件詳細ページ、またはこのページから写真・ファイルを追加してください");
     var val = function(r){
       switch(so.k){
@@ -6788,7 +6830,7 @@
     var html = '<div class="summary-line" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><span>案件 <b>'+rows.length+'</b>件</span><label style="font-size:12px;color:var(--ink-soft)">並び替え '+
       '<select id="fbp-sort-sel" style="margin-left:4px">'+(cur===-1?'<option selected>—</option>':'')+FBP_SORTS.map(function(o,n){ return '<option value="'+n+'"'+(n===cur?" selected":"")+'>'+o[1]+'</option>'; }).join("")+'</select></label></div>';
     html += '<div class="tablewrap"><table><thead><tr>'+th("案件名","name","asc")+th("進捗","status","asc")+th("写真","imgs","desc")+th("その他","other","desc")+th("容量","bytes","desc")+th("最終追加","last","desc")+'<th></th></tr></thead><tbody>';
-    var kindAttr = state.filesFilter.kind==="image" ? "photo" : state.filesFilter.kind==="other" ? "doc" : "all";
+    var fk0 = filesFlt().kinds, kindAttr = (fk0.length===1) ? (fk0[0]==="image" ? "photo" : "doc") : "all";
     var rowHtml = function(r){
       var p = r.p;
       return '<tr class="rowhover"><td><div class="cell-name"><a href="#" data-open-files="'+esc(p.id)+'" data-files-from="files" data-files-kind="'+kindAttr+'">'+esc(p.name)+'</a></div><div class="cell-sub">'+esc(propertyAddressOf(p).full)+'</div></td>'+
@@ -10201,11 +10243,7 @@
   function filterFiles(){
     var f = state.filesFilter;
     return state.files.filter(function(x){
-      if(f.project!=="all" && x.projectId!==f.project) return false;
-      if(f.kind==="image" && !isImageFile(x)) return false;
-      if(f.kind==="other" && isImageFile(x)) return false;
-      if(f.unlight && !notLightened(x)) return false;
-      return true;
+      return filesPass(x);
     }).sort(function(a,b){return (b.uploadedAt||"").localeCompare(a.uploadedAt||"");});
   }
   function taskRequestedByMe(t){ return !!state.myName && t.createdBy===state.myName && taskWho(t).some(function(n){ return n!==state.myName; }); }
@@ -11356,10 +11394,7 @@
       var ff = state.filesFilter;
       var l = state.files.filter(function(x){
         if(!fileVisible(x) || !projectVisibleId(x.projectId)) return false;
-        if(ff.project!=="all" && x.projectId!==ff.project) return false;
-        if(ff.kind==="image" && !isImageFile(x)) return false;
-        if(ff.kind==="other" && isImageFile(x)) return false;
-        return true;
+        return filesPass(x);
       });
       downloadFiles(l, "写真・ファイル", function(f){ var pr=state.projects.find(function(x){return x.id===f.projectId;}); return (pr?pr.name:f.projectName||"")+(f.folderId?"/"+dirName(f):""); });
     });
