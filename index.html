@@ -2586,9 +2586,16 @@
         .catch(function(){ toast("削除に失敗しました"); });
     });
   }
+  /* 写真が多いと画面が重くなりメモリ不足になるため、一度に出す件数を絞り「さらに表示」で増やす */
+  var FILE_PAGE = 60;
+  function fileLimit(key){ state.fileLim = state.fileLim || {}; return state.fileLim[key] || FILE_PAGE; }
+  function fileMoreBtn(key, total){
+    var lim = fileLimit(key); if(total<=lim) return "";
+    return '<div style="text-align:center;margin:16px 0"><button class="btn outline" data-file-more="'+key+'">さらに表示（残り '+(total-lim)+'件）</button></div>';
+  }
   function fileThumb(f, withDelete, showProject){
     var inner = isImageFile(f) ?
-      '<img src="'+esc(fileUrl(f))+'" loading="lazy">' :
+      '<img src="'+esc(fileUrl(f))+'" loading="lazy" decoding="async">' :
       '<div class="filekind" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px">'+iFile()+'<span class="fname">'+esc(f.filename||"ファイル")+'</span></div>';
     var cls = "photo-thumb"+(isImageFile(f)?"":" filekind");
     return '<a href="'+esc(fileUrl(f))+'" target="_blank" rel="noopener" class="'+cls+'" data-row-id="'+esc(f.id)+'" style="display:block">'+inner+
@@ -3288,6 +3295,8 @@
   }
   document.addEventListener("click", function(e){
     var t = e.target; if(!t || !t.closest) return;
+    var fm = t.closest("[data-file-more]");
+    if(fm){ var fk = fm.getAttribute("data-file-more"); state.fileLim = state.fileLim || {}; state.fileLim[fk] = fileLimit(fk) + FILE_PAGE; render(); return; }
     var dd = t.closest("[data-bgdd]");
     if(dd){ var dk = dd.getAttribute("data-bgdd"); state.bgDd = state.bgDd===dk ? "" : dk; render(); return; }
     if(t.closest("[data-tkasg-none]")){ e.preventDefault(); state.taskFilter.assignees = []; render(); return; }
@@ -6542,7 +6551,7 @@
     if(list.length===0){
       html += emptyState(iImage,"写真・ファイルがありません","案件詳細ページ、またはこのページから追加してください");
     }else{
-      html += '<div class="photo-grid">'+list.map(function(x){ return fileThumb(x, true, true); }).join("")+'</div>';
+      html += '<div class="photo-grid">'+list.slice(0,fileLimit("all")).map(function(x){ return fileThumb(x, true, true); }).join("")+'</div>'+fileMoreBtn("all", list.length);
     }
     return html;
   }
@@ -6733,10 +6742,10 @@
           '<div class="pf-main" data-pf-folder="'+esc(g.id)+'">'+iFolderBig()+'</div><a href="#" class="pf-name" data-pf-folder="'+esc(g.id)+'" title="'+esc(g.name)+'">'+esc(g.name)+'</a></div>';
       });
     }
-    list.forEach(function(f){
+    list.slice(0,fileLimit("pf")).forEach(function(f){
       var on = !!state.pfSel[f.id];
       tiles += '<div class="pf-tile'+(on?' on':'')+'"><input type="checkbox" class="pf-chk" data-pf-chk="'+esc(f.id)+'"'+(on?' checked':'')+'><button class="pf-edit" data-pf-edit-file="'+esc(f.id)+'">'+iEdit()+'編集</button>'+
-        '<a class="pf-main" href="'+esc(fileUrl(f))+'" target="_blank" rel="noopener">'+(isImageFile(f)?'<img src="'+esc(fileUrl(f))+'" loading="lazy">':iFileKind(f))+'</a>'+
+        '<a class="pf-main" href="'+esc(fileUrl(f))+'" target="_blank" rel="noopener">'+(isImageFile(f)?'<img src="'+esc(fileUrl(f))+'" loading="lazy" decoding="async">':iFileKind(f))+'</a>'+
         '<a class="pf-name" href="'+esc(fileUrl(f))+'" target="_blank" rel="noopener" title="'+esc(f.filename||"")+'">'+esc(f.filename||"ファイル")+'</a>'+
         '<div class="pf-sub">'+esc(fileDate(f))+(f.size?' ・ '+fmtSize(f.size):'')+'</div><div class="pf-sub2">'+uploaderHtml(f.uploadedBy)+'</div></div>';
       rowsHtml += '<tr class="rowhover"><td style="width:32px"><input type="checkbox" data-pf-chk="'+esc(f.id)+'"'+(on?' checked':'')+'></td>'+
@@ -6753,6 +6762,7 @@
     }else{
       html += '<div class="pf-grid2'+(selIds.length?' sel':'')+'">'+tiles+'</div>';
     }
+    if(tiles) html += fileMoreBtn("pf", list.length);
     return html;
   }
 
