@@ -2895,7 +2895,6 @@
     var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
     var reopen = function(){ openBudgetModal(pid); render(); };
     var L = bgLines(bgDoc(pid)||{}).map(function(l){ return Object.assign({}, l); });   // 編集中の予算明細
-    var editing = null;                                                                  // 編集中の実績ID
     var newId = function(k){ return k+Date.now().toString(36)+Math.random().toString(36).slice(2,5); };
     var cur = function(){ var d = Object.assign({}, bgDoc(pid)||{projectId:pid}); d.lines = L; return bgCalcFor(p, d); };
     var acctOpts = function(sel){ var arr = ACCOUNT_ITEMS.slice(); if(sel && arr.indexOf(sel)===-1) arr.push(sel); return arr.map(function(k){ return '<option'+(k===sel?' selected':'')+'>'+esc(k)+'</option>'; }).join(""); };
@@ -2918,8 +2917,10 @@
     var costRows = function(){ var c = cur(), costs = c.costs.slice().sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")); });
       var nm = {}; L.forEach(function(l){ nm[l.id] = l.name; });
       return costs.length ? costs.map(function(x){
-        return '<tr><td class="num">'+esc(fmtDate(x.date))+'</td><td>'+esc(x.cat||"")+(x.lineId&&nm[x.lineId]?'<div style="font-size:11px;color:var(--ink-faint)">'+esc(nm[x.lineId])+'</div>':'')+'</td><td>'+esc(x.vendor||"")+(x.memo?'<div style="font-size:11px;color:var(--ink-faint)">'+esc(x.memo)+'</div>':'')+'</td><td class="num" style="text-align:right">'+bgYen(bgNum(x.amount))+'</td><td style="white-space:nowrap"><button class="btn sm" data-bg-editcost="'+esc(x.id)+'">編集</button> <button class="btn sm" data-bg-delcost="'+esc(x.id)+'">削除</button></td></tr>';
-      }).join("") : '<tr><td colspan="5" style="color:var(--ink-faint);text-align:center;padding:14px">まだ実績がありません</td></tr>'; };
+        return '<div data-bg-cost="'+esc(x.id)+'" style="border-top:1px solid var(--border);padding:10px 2px"><div style="display:flex;gap:10px;align-items:baseline;justify-content:space-between"><div style="min-width:0"><span class="num" style="font-size:12px;color:var(--ink-soft)">'+esc(fmtDate(x.date))+'</span> <b style="font-size:13px">'+esc(x.cat||"")+'</b>'+(x.lineId&&nm[x.lineId]?' <span style="font-size:11.5px;color:var(--ink-faint)">／ '+esc(nm[x.lineId])+'</span>':'')+'</div><div class="num" style="font-weight:800;font-size:13.5px;white-space:nowrap">'+bgYen(bgNum(x.amount))+'</div></div>'+
+          ((x.vendor||x.memo)?'<div style="font-size:12px;color:var(--ink-soft);margin-top:3px;word-break:break-all">'+esc(x.vendor||"")+(x.vendor&&x.memo?' ／ ':'')+esc(x.memo||"")+'</div>':'')+
+          '<div style="display:flex;gap:8px;margin-top:7px"><button class="btn sm" data-bg-editcost="'+esc(x.id)+'">編集</button><button class="btn sm" data-bg-delcost="'+esc(x.id)+'">削除</button></div></div>';
+      }).join("") : '<div style="color:var(--ink-faint);text-align:center;padding:14px;border-top:1px solid var(--border)">まだ実績がありません</div>'; };
     var body = '<div id="bg-head" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">'+headHtml()+'</div>'+
       '<h3 style="font-size:13px;margin:0 0 4px">予算の明細</h3><div style="font-size:11.5px;color:var(--ink-faint);margin-bottom:6px">項目ごとに、勘定科目・数量・単価を入力します（金額は数量×単価で自動計算。金額だけを直接入力してもかまいません）。</div>'+
       '<div style="overflow-x:auto;flex:none"><table class="tbl" style="font-size:12.5px;min-width:700px"><thead><tr><th>勘定科目</th><th>項目名</th><th style="text-align:right">数量</th><th>単位</th><th style="text-align:right">単価</th><th style="text-align:right">金額</th><th style="text-align:right">実績</th><th style="text-align:right">残り</th><th></th></tr></thead><tbody id="bg-lines">'+linesHtml()+'</tbody></table></div>'+
@@ -2933,8 +2934,8 @@
         '<label class="field" style="margin:0">支払先<input type="text" id="bg-c-vendor" placeholder="例：○○建材"></label>'+
         '<label class="field" style="margin:0">金額（円）<input type="text" inputmode="numeric" id="bg-c-amt" placeholder="0"></label>'+
         '<label class="field" style="margin:0;grid-column:1/-1">内容（任意）<input type="text" id="bg-c-memo" placeholder="例：解体材の処分費"></label>'+
-      '</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="bg-c-add">'+iPlus()+' 実績を追加</button><button class="btn" id="bg-c-cancel" style="display:none">編集をやめる</button></div>'+
-      '<h3 style="font-size:13px;margin:18px 0 6px">実績の一覧（'+cur().costs.length+'件）</h3><div style="overflow-x:auto;flex:none"><table class="tbl" style="font-size:12.5px"><thead><tr><th>日付</th><th>勘定科目・予算の項目</th><th>支払先・内容</th><th style="text-align:right">金額</th><th></th></tr></thead><tbody>'+costRows()+'</tbody></table></div>';
+      '</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="bg-c-add">'+iPlus()+' 実績を追加</button></div>'+
+      '<h3 style="font-size:13px;margin:18px 0 6px">実績の一覧（'+cur().costs.length+'件）</h3><div style="flex:none">'+costRows()+'</div>';
     openModal("予算管理："+(p.name||"案件"), body, (freeeAvailable()?'<button class="btn outline" id="bg-freee" style="margin-right:auto">freeeから実績を取り込む</button>':'')+'<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="bg-save">予算を保存する</button>');
     var $ = function(id){ return document.getElementById(id); };
     var mb = $("modal-box"); if(mb) mb.style.maxWidth = "960px";
@@ -2962,23 +2963,35 @@
     bindLines();
     $("bg-l-add").addEventListener("click", function(){ L.push({id:newId("l"), cat:ACCOUNT_ITEMS[0]||"その他", name:"", qty:"", unit:"", price:"", amount:""}); refresh(true); var ins = $("bg-lines").querySelectorAll('[data-l="name"]'); if(ins.length) ins[ins.length-1].focus(); });
     $("bg-save").addEventListener("click", function(){ bgSave(pid, {lines:cleanLines(), budget:{}}, "予算を保存しました", function(){ closeModal(); render(); }); });
-    var resetForm = function(){ editing = null; $("bg-c-amt").value = ""; $("bg-c-vendor").value = ""; $("bg-c-memo").value = ""; $("bg-c-add").innerHTML = iPlus()+" 実績を追加"; $("bg-c-cancel").style.display = "none"; $("bg-c-title").textContent = "実績（実際にかかった費用）を追加"; };
-    $("bg-c-cancel").addEventListener("click", resetForm);
     $("bg-c-add").addEventListener("click", function(){
       var amt = bgNum($("bg-c-amt").value);
       if(!amt){ toast("金額を入力してください"); return; }
       var all = (bgDoc(pid)||{}).costs || [];
-      var item = {id:editing||newId("c"), date:$("bg-c-date").value||localToday(), cat:$("bg-c-cat").value, lineId:$("bg-c-line").value||"", vendor:$("bg-c-vendor").value.trim(), memo:$("bg-c-memo").value.trim(), amount:amt};
-      var next = editing ? all.map(function(x){ return x.id===editing ? Object.assign({}, x, item) : x; }) : all.concat([item]);
+      var item = {id:newId("c"), date:$("bg-c-date").value||localToday(), cat:$("bg-c-cat").value, lineId:$("bg-c-line").value||"", vendor:$("bg-c-vendor").value.trim(), memo:$("bg-c-memo").value.trim(), amount:amt};
       // 入力中の予算の明細も一緒に保存する
-      bgSave(pid, {lines:cleanLines(), budget:{}, costs:next}, editing?"実績を更新しました":"実績を追加しました", reopen);
+      bgSave(pid, {lines:cleanLines(), budget:{}, costs:all.concat([item])}, "実績を追加しました", reopen);
     });
+    // 実績の編集：一覧のその行が、そのまま入力欄に変わる
     document.querySelectorAll("#modal-box [data-bg-editcost]").forEach(function(b){ b.addEventListener("click", function(){
-      var x = ((bgDoc(pid)||{}).costs||[]).find(function(y){ return y.id===b.getAttribute("data-bg-editcost"); }); if(!x) return;
-      editing = x.id; $("bg-c-date").value = x.date||localToday();
-      var cs = $("bg-c-cat"); if(!Array.prototype.some.call(cs.options, function(o){ return o.value===x.cat; })) cs.insertAdjacentHTML("beforeend", '<option>'+esc(x.cat||"")+'</option>'); cs.value = x.cat||"";
-      $("bg-c-line").innerHTML = lineOpts(x.lineId||""); $("bg-c-vendor").value = x.vendor||""; $("bg-c-amt").value = x.amount||""; $("bg-c-memo").value = x.memo||"";
-      $("bg-c-add").innerHTML = "実績を更新する"; $("bg-c-cancel").style.display = ""; $("bg-c-title").textContent = "実績を編集"; $("bg-c-title").scrollIntoView({block:"center"});
+      var id = b.getAttribute("data-bg-editcost"), x = ((bgDoc(pid)||{}).costs||[]).find(function(y){ return y.id===id; }), tr = b.closest("[data-bg-cost]"); if(!x || !tr) return;
+      var f = function(k,v,w,al){ return '<input type="text" data-ce="'+k+'" value="'+esc(v==null?"":v)+'" style="width:'+w+';padding:6px 8px;font-size:12.5px;'+(al?'text-align:right;':'')+'">'; };
+      tr.style.background = "var(--accent-soft)"; tr.style.padding = "12px"; tr.style.borderRadius = "10px"; tr.innerHTML = '<div><div style="font-weight:700;font-size:12.5px;margin-bottom:8px">実績を編集</div>'+
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">'+
+        '<label class="field" style="margin:0">日付<input type="date" data-ce="date" value="'+esc(x.date||localToday())+'"></label>'+
+        '<label class="field" style="margin:0">勘定科目<select data-ce="cat">'+acctOpts(x.cat||"")+'</select></label>'+
+        '<label class="field" style="margin:0">予算の項目<select data-ce="lineId">'+lineOpts(x.lineId||"")+'</select></label>'+
+        '<label class="field" style="margin:0">支払先<input type="text" data-ce="vendor" value="'+esc(x.vendor||"")+'"></label>'+
+        '<label class="field" style="margin:0">金額（円）<input type="text" inputmode="numeric" data-ce="amount" value="'+esc(x.amount||"")+'"></label>'+
+        '<label class="field" style="margin:0;grid-column:1/-1">内容<input type="text" data-ce="memo" value="'+esc(x.memo||"")+'"></label></div>'+
+        '<div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary sm" data-ce-save>この内容で更新する</button><button class="btn sm" data-ce-cancel>やめる</button></div></div>';
+      tr.querySelector("[data-ce-cancel]").addEventListener("click", function(){ reopen(); });
+      tr.querySelector("[data-ce-save]").addEventListener("click", function(){
+        var v = {}; tr.querySelectorAll("[data-ce]").forEach(function(el){ v[el.getAttribute("data-ce")] = el.value; });
+        var amt = bgNum(v.amount); if(!amt){ toast("金額を入力してください"); return; }
+        var upd = {date:v.date||x.date, cat:v.cat, lineId:v.lineId||"", vendor:(v.vendor||"").trim(), memo:(v.memo||"").trim(), amount:amt};
+        bgSave(pid, {lines:cleanLines(), budget:{}, costs:((bgDoc(pid)||{}).costs||[]).map(function(y){ return y.id===id ? Object.assign({}, y, upd) : y; })}, "実績を更新しました", reopen);
+      });
+      tr.scrollIntoView({block:"center"});
     }); });
     document.querySelectorAll("#modal-box [data-bg-delcost]").forEach(function(b){ b.addEventListener("click", function(){
       var id = b.getAttribute("data-bg-delcost");
