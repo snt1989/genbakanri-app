@@ -2125,24 +2125,33 @@
   };
   var lazyUnsub = {};
   state.lazyScope = state.lazyScope || {};
-  function lazyStart(name, scopeId){
+  state.lazyLimit = state.lazyLimit || {};
+  function lazyStart(name, scopeId, limit){
     if(!db) return;
     var scope = scopeId || "";
+    // 写真・ファイルが多いと全件の読み込みが時間切れ（deadline-exceeded）になるため、新しい順に件数を絞って読み込む
+    var lim = (name==="files" && !scope && typeof limit==="number") ? limit : 0;
     if(state.lazyOn[name]){
+      var cur = state.lazyLimit[name]||0;
+      var limitChange = name==="files" && !scope && state.lazyScope.files==="" && cur>0 && (lim===0 || lim>cur);
       // 案件内の画面で絞り込み読み込み中に全件が必要になった（またはその逆で別案件になった）場合は読み込み直す
-      if(name!=="files" || (state.lazyScope.files||"")===scope || (state.lazyScope.files==="" )) return;
+      if(!limitChange && (name!=="files" || (state.lazyScope.files||"")===scope || (state.lazyScope.files==="" ))) return;
       try{ if(typeof lazyUnsub[name]==="function") lazyUnsub[name](); }catch(e){}
       state.loaded[name] = false;
     }
     state.lazyOn[name] = true; if(name==="files") state.lazyScope.files = scope;
+    state.lazyLimit[name] = lim;
     var q = db.collection(name);
     if(name==="files" && scope) q = q.where("projectId","==",scope);
+    else if(name==="files" && lim) q = q.orderBy("uploadedAt","desc").limit(lim);
     else if(LAZY_COLS[name].order) q = q.orderBy(LAZY_COLS[name].order);
     lazyUnsub[name] = q.onSnapshot(function(snap){
       state[name] = snap.docs.map(toObj);
       if(name==="files" && scope) state.files.sort(function(a,b){ return String(a.uploadedAt||"").localeCompare(String(b.uploadedAt||"")); });
+      if(name==="files") state.filesCapped = !!lim && snap.size>=lim;
       state.loaded[name] = true; bgRender();
     }, function(e){
+      if(name==="files" && e && e.code==="deadline-exceeded" && !lim){ state.filesLimit = 100; state.lazyOn.files = false; try{ lazyUnsub.files && lazyUnsub.files(); }catch(x){} state.loaded.files = false; lazyStart("files", "", 100); return; }
       if(name==="files"){ state.loaded.files = true; state.files = state.files||[]; state.syncError = (e&&e.code)||"unknown"; if(e&&e.code==="resource-exhausted") quotaMark(); toast(e&&e.code==="resource-exhausted" ? "Firestoreの無料枠（1日の読み取り上限）を超えました。日本時間の夕方（16時前後）にリセットされます" : "写真・ファイルの読み込みエラー: "+(e&&e.code||"unknown")+(e&&e.message?"（"+String(e.message).slice(0,80)+"）":"")); render(); return; }
       state.loaded[name] = true; state[name] = []; bgRender();
     });
@@ -2156,14 +2165,14 @@
     if(!db) return;
     var t = state.tab, seg = state.settingsSeg;
     if(t==="project-detail"||t==="project-files"){ lazyStart("files", t==="project-files" ? state.filesProjectId : state.viewingProjectId); lazyStart("folders"); }
-    else if(["files","reports"].indexOf(t)!==-1){ lazyStart("files"); lazyStart("folders"); }
+    else if(["files","reports"].indexOf(t)!==-1){ lazyStart("files", "", state.filesLimit||150); lazyStart("folders"); }
     if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1){ lazyStart("files"); lazyStart("folders"); lazyStart("trash"); }
     if(t==="settings" && seg==="trash") lazyStart("trash");
     if(t==="cards" && cardsAllowed()) lazyStart("cards");
     if((t==="budget" || t==="project-detail") && state.isAdmin) lazyStart("budgets");
     if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1 && state.isAdmin) lazyStart("budgets");
     if(state.isAdmin) lazyStart("snsPosts");
-    if(t==="sns" && state.isAdmin){ lazyStart("files"); lazyStart("folders"); }
+    if(t==="sns" && state.isAdmin){ lazyStart("files", "", state.filesLimit||150); lazyStart("folders"); }
     if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1 && state.isAdmin) lazyStart("cards");
   }
   // バックアップ前：未読み込みのコレクションがあれば読み込みを始めて false を返す（欠けたまま保存しない）
@@ -2590,7 +2599,10 @@
   var FILE_PAGE = 60;
   function fileLimit(key){ state.fileLim = state.fileLim || {}; return state.fileLim[key] || FILE_PAGE; }
   function fileMoreBtn(key, total){
-    var lim = fileLimit(key); if(total<=lim) return "";
+    var lim = fileLimit(key);
+    if(total<=lim){
+      return (key==="all" && state.filesCapped) ? '<div style="text-align:center;margin:16px 0"><div style="font-size:12px;color:var(--ink-faint);margin-bottom:6px">新しい順に'+state.files.length+'件を読み込んでいます</div><button class="btn outline" data-file-server-more>さらに古い写真・ファイルを読み込む</button></div>' : "";
+    }
     return '<div style="text-align:center;margin:16px 0"><button class="btn outline" data-file-more="'+key+'">さらに表示（残り '+(total-lim)+'件）</button></div>';
   }
   function fileThumb(f, withDelete, showProject){
@@ -3295,6 +3307,7 @@
   }
   document.addEventListener("click", function(e){
     var t = e.target; if(!t || !t.closest) return;
+    if(t.closest("[data-file-server-more]")){ state.filesLimit = (state.filesLimit||150) + 150; render(); return; }
     var fm = t.closest("[data-file-more]");
     if(fm){ var fk = fm.getAttribute("data-file-more"); state.fileLim = state.fileLim || {}; state.fileLim[fk] = fileLimit(fk) + FILE_PAGE; render(); return; }
     var dd = t.closest("[data-bgdd]");
