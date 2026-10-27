@@ -3405,7 +3405,7 @@
   });
   document.addEventListener("change", function(e){
     var t = e.target; if(!t || !t.hasAttribute) return;
-    var ffm = {"data-ffk":"kinds","data-ffp":"projects","data-ffd":"divisions","data-ffa":"assignees"};
+    var ffm = {"data-ffk":"kinds","data-ffp":"projects","data-ffd":"divisions","data-ffa":"assignees","data-ffs":"statuses"};
     for(var ffa in ffm){ if(t.hasAttribute(ffa)){ var arr = filesFlt()[ffm[ffa]], fi = arr.indexOf(t.value); if(t.checked && fi===-1) arr.push(t.value); else if(!t.checked && fi>-1) arr.splice(fi,1); state.fileLim = {}; render(); return; } }
     if(t.hasAttribute("data-tkasg")){ var a = state.taskFilter.assignees = state.taskFilter.assignees||[], i = a.indexOf(t.value); if(t.checked && i===-1) a.push(t.value); else if(!t.checked && i>-1) a.splice(i,1); render(); }
   });
@@ -4496,12 +4496,13 @@
   }
   function filesFlt(){
     var f = state.filesFilter;
-    ["projects","divisions","assignees","kinds"].forEach(function(k){ if(!Array.isArray(f[k])) f[k] = []; });
+    ["projects","divisions","assignees","kinds","statuses"].forEach(function(k){ if(!Array.isArray(f[k])) f[k] = []; });
     return f;
   }
   function filesProjPass(p){
     var f = filesFlt();
     if(f.projects.length && (!p || f.projects.indexOf(p.id)===-1)) return false;
+    if(f.statuses.length && (!p || f.statuses.indexOf(p.status||"")===-1)) return false;
     if(f.divisions.length && f.divisions.indexOf(p && p.division ? p.division : "none")===-1) return false;
     if(f.assignees.length){
       var n = p ? normalizeAssignees(p.assignees).map(function(a){ return a.name; }) : [];
@@ -4531,6 +4532,7 @@
     return '<div class="card filter-card"><div class="filter-line">'+
       ddPage("ffKind","種類",[["image","写真・動画"],["other","書類"]],f.kinds,"data-ffk",clr("kinds"))+
       ddPage("ffProj","案件",projs,f.projects,"data-ffp",clr("projects"))+
+      ddPage("ffSt","案件の進捗",STATUS_LIST.map(function(x){ return [x,x]; }),f.statuses,"data-ffs",clr("statuses"))+
       ddPage("ffDiv","事業部",divs,f.divisions,"data-ffd",clr("divisions"))+
       ddPage("ffAsg","担当者",asg,f.assignees,"data-ffa",clr("assignees"))+
       '<div class="fitem"><span>軽量化</span><button type="button" class="btn sm'+(f.unlight?' primary':' outline')+'" data-unlight="files">'+(f.unlight?'✓ ':'')+'軽量化していない写真のみ（'+nUnl+'枚）</button></div>'+
