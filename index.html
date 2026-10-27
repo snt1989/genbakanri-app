@@ -1133,6 +1133,7 @@
     {id:"calendar", label:"カレンダー", icon:iCalendar},
     {id:"schedule", label:"工程表", icon:iGantt},
     {id:"reports", label:"報告書", icon:iDoc},
+    {id:"budget", label:"予算管理", icon:iYenIcon, adminOnly:true},
     {id:"chat", label:"チャット", icon:iChat},
     {id:"apps", label:"連携アプリ", icon:iBox},
     {id:"members", label:"メンバー管理", icon:iUsers},
@@ -1142,6 +1143,7 @@
     {id:"sns", label:"SNS投稿", icon:iShare, adminOnly:true},
     {id:"settings", label:"設定", icon:iBox}
   ];
+  function iYenIcon(){ return svgIcon('<circle cx="12" cy="12" r="9"/><path d="M8.5 7.5 12 12l3.5-4.5M12 12v5M9.5 13h5M9.5 15.5h5"/>'); }
   function iCardIcon(){ return svgIcon('<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6 16c.5-1.4 1.7-2 3-2s2.5.6 3 2"/><path d="M14.5 10h3.5M14.5 13.5h2.5"/>'); }
   function tabVisible(t){ if(t.id==="calendar") return false; return t.id==="cards" ? cardsAllowed() : (!t.adminOnly || !!state.isAdmin); }
   // 名刺管理は管理者のほか、管理者が指定したメンバー（members の cardAccess）も使える
@@ -1187,9 +1189,9 @@
     fltMoreOpen:false,
     chatPaneOpen:false,
     tab:"home", returnTab:"sales",
-    projects:[], customers:[], members:[], tasks:[], chats:[], files:[], folders:[], events:[], steps:[], trash:[], reports:[], cards:[], snsPosts:[],
+    projects:[], customers:[], members:[], tasks:[], chats:[], files:[], folders:[], events:[], steps:[], trash:[], reports:[], cards:[], snsPosts:[], budgets:[],
     lazyOn:{},
-    loaded:{projects:false,customers:false,members:false,tasks:false,chats:false,files:false,folders:false,events:false,steps:false,trash:false,reports:false,cards:false,snsPosts:false},
+    loaded:{projects:false,customers:false,members:false,tasks:false,chats:false,files:false,folders:false,events:false,steps:false,trash:false,reports:false,cards:false,snsPosts:false,budgets:false},
     canWrite:true,
     sidebarOpen:false,
     salesFilter:{name:"",status:STATUS_LIST.slice(),type:"all",assignees:[],page:1},
@@ -2109,6 +2111,7 @@
     folders: {},
     trash:   {},
     cards:   {},
+    budgets: {},
     snsPosts:{}
   };
   var lazyUnsub = {};
@@ -2148,6 +2151,8 @@
     if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1){ lazyStart("files"); lazyStart("folders"); lazyStart("trash"); }
     if(t==="settings" && seg==="trash") lazyStart("trash");
     if(t==="cards" && cardsAllowed()) lazyStart("cards");
+    if(t==="budget" && state.isAdmin) lazyStart("budgets");
+    if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1 && state.isAdmin) lazyStart("budgets");
     if(state.isAdmin) lazyStart("snsPosts");
     if(t==="sns" && state.isAdmin){ lazyStart("files"); lazyStart("folders"); }
     if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1 && state.isAdmin) lazyStart("cards");
@@ -2172,7 +2177,7 @@
     Promise.race([Promise.all(jobs), new Promise(function(r){ setTimeout(r, 3000); })]).then(go, go);
   }
   /* ---- データの同期状況（画面右上の「同期」表示） ---- */
-  var SYNC_NAMES = {projects:"案件",customers:"顧客",members:"メンバー",tasks:"タスク",chats:"チャット",reports:"報告書",events:"予定",steps:"工程",files:"ファイル",folders:"フォルダ",cards:"名刺",trash:"ゴミ箱",snsPosts:"SNS投稿"};
+  var SYNC_NAMES = {projects:"案件",customers:"顧客",members:"メンバー",tasks:"タスク",chats:"チャット",reports:"報告書",events:"予定",steps:"工程",files:"ファイル",folders:"フォルダ",cards:"名刺",trash:"ゴミ箱",snsPosts:"SNS投稿",budgets:"予算"};
   var syncInfo = {subs:{}, lastServer:0, online:(typeof navigator.onLine==="boolean" ? navigator.onLine : true), timer:0};
   window.__syncNote = function(path, fromCache, pending, size, err){
     var o = syncInfo.subs[path] || (syncInfo.subs[path] = {});
@@ -2645,7 +2650,7 @@
   // 管理者が「設定 > 管理画面」で、スマホ下部のバーに出す項目と順番を決める。全員に共通。保存先: settings/mobileNav
   var MOBILE_NAV_DEFAULT = ["home","sales","construction","chat"];
   var MOBILE_NAV_MAX = 4;   // 右端の「メニュー」と合わせて5つまで
-  var BN_SHORT = {help:"使い方", home:"ホーム", tasks:"タスク", sales:"営業", construction:"施工", calendar:"予定", schedule:"工程表", reports:"報告書", chat:"チャット", members:"メンバー", customers:"顧客", files:"写真", apps:"連携", settings:"設定"};
+  var BN_SHORT = {help:"使い方", home:"ホーム", tasks:"タスク", sales:"営業", construction:"施工", calendar:"予定", schedule:"工程表", reports:"報告書", budget:"予算", chat:"チャット", members:"メンバー", customers:"顧客", files:"写真", apps:"連携", settings:"設定"};
   function mobileNavTabs(){
     var seen = {}, list = (state.mobileNav || MOBILE_NAV_DEFAULT).filter(function(id){
       if(seen[id] || !TABS.some(function(t){ return t.id===id; })) return false; seen[id] = 1; return true;
@@ -2801,6 +2806,122 @@
     var rs = document.getElementById("brand-reset"); if(rs) rs.addEventListener("click", function(){ save({logo:"", icon:""}, "標準に戻しました"); });
   }
   (function(){ var b = brandRead(); if(b){ try{ applyBrand(b); }catch(e){} } })();
+
+  /* ============ 予算管理（管理者専用） ============ */
+  // 案件ごとに、費用区分別の予算と、実際にかかった費用（実績）を登録して、残りと粗利を見る。保存先: budgets コレクション（ドキュメントID＝案件ID）
+  var BG_CATS = ["材料費","外注費","労務費","産廃・処分費","車両・機械費","その他経費"];
+  var BG_ACTIVE = ["契約済","施工中","施工完了","清算済"];
+  function bgDoc(pid){ return (state.budgets||[]).find(function(b){ return b.projectId===pid; }) || null; }
+  function bgNum(v){ var n = Number(String(v==null?"":v).replace(/[,，円\s]/g,"")); return isFinite(n) ? n : 0; }
+  function bgCalc(p){
+    var d = bgDoc(p.id) || {}, bud = d.budget || {}, costs = Array.isArray(d.costs) ? d.costs : [];
+    var b = 0, a = 0, byCat = {};
+    BG_CATS.forEach(function(c){ b += bgNum(bud[c]); });
+    costs.forEach(function(x){ var n = bgNum(x.amount); a += n; byCat[x.cat] = (byCat[x.cat]||0) + n; });
+    var contract = bgNum(p.amount);
+    return {contract:contract, budget:b, actual:a, remain:b-a, rate:b?a/b:null, profit:contract-a, profitRate:contract?(contract-a)/contract:null, byCat:byCat, bud:bud, costs:costs, has:!!(d.projectId)};
+  }
+  function bgPct(x){ return x==null ? "—" : (Math.round(x*1000)/10)+"%"; }
+  function bgYen(n){ return (n||0).toLocaleString("ja-JP")+"円"; }
+  function bgFilter(){ return state.bgFilter = state.bgFilter || {mode:"active", q:""}; }
+  function bgProjects(){
+    var f = bgFilter(), q = (f.q||"").trim().toLowerCase();
+    return state.projects.filter(function(p){
+      if(f.mode==="active" && BG_ACTIVE.indexOf(p.status)===-1) return false;
+      if(f.mode==="nobudget" && bgCalc(p).budget>0) return false;
+      if(q && [p.name,p.customerName,p.client].join(" ").toLowerCase().indexOf(q)===-1) return false;
+      return true;
+    }).sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
+  }
+  function renderBudget(){
+    if(!state.isAdmin) return emptyState(iYenIcon,"この画面は管理者のみ使えます","");
+    if(!state.loaded.projects || (db && !state.loaded.budgets)) return skeleton();
+    var f = bgFilter(), list = bgProjects(), T = {contract:0,budget:0,actual:0};
+    var rows = list.map(function(p){
+      var c = bgCalc(p); T.contract += c.contract; T.budget += c.budget; T.actual += c.actual;
+      var over = c.budget>0 && c.actual>c.budget, w = c.rate==null ? 0 : Math.min(100, Math.round(c.rate*100));
+      return '<tr data-bg-open="'+esc(p.id)+'" style="cursor:pointer"><td><b>'+esc(p.name||"")+'</b><div style="font-size:11px;color:var(--ink-faint)">'+esc(p.status||"")+'</div></td>'+
+        '<td class="num" style="text-align:right">'+(c.contract?bgYen(c.contract):"—")+'</td>'+
+        '<td class="num" style="text-align:right">'+(c.budget?bgYen(c.budget):'<span style="color:var(--ink-faint)">未設定</span>')+'</td>'+
+        '<td class="num" style="text-align:right">'+(c.actual?bgYen(c.actual):"—")+'</td>'+
+        '<td class="num" style="text-align:right;'+(c.budget&&c.remain<0?'color:var(--danger);font-weight:700':'')+'">'+(c.budget?bgYen(c.remain):"—")+'</td>'+
+        '<td style="min-width:110px"><div style="height:8px;border-radius:99px;background:var(--border);overflow:hidden"><div style="height:100%;width:'+w+'%;background:'+(over?'var(--danger)':'var(--accent)')+'"></div></div><div style="font-size:11px;margin-top:2px;color:'+(over?'var(--danger)':'var(--ink-faint)')+'">'+bgPct(c.rate)+'</div></td>'+
+        '<td class="num" style="text-align:right;'+(c.contract&&c.profit<0?'color:var(--danger);font-weight:700':'')+'">'+(c.contract?bgYen(c.profit)+'<div style="font-size:11px;color:var(--ink-faint)">'+bgPct(c.profitRate)+'</div>':"—")+'</td></tr>';
+    }).join("");
+    var tile = function(l,v,sub){ return '<div class="card" style="padding:12px 16px;flex:1;min-width:150px"><div style="font-size:11.5px;color:var(--ink-soft)">'+l+'</div><div class="num" style="font-size:18px;font-weight:800;margin-top:4px">'+v+'</div>'+(sub?'<div style="font-size:11px;color:var(--ink-faint);margin-top:2px">'+sub+'</div>':'')+'</div>'; };
+    var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><div><h1 class="pagetitle">予算管理<span class="admin-chip">'+iAdmin()+'管理者専用</span></h1><div style="font-size:12px;color:var(--ink-faint);margin-top:4px">現場（案件）ごとの予算と、実際にかかった費用を管理します。行をタップすると、予算と実績を入力できます。</div></div></div><div style="height:14px"></div>';
+    html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'+tile("契約金額の合計",bgYen(T.contract),list.length+"件")+tile("予算の合計",bgYen(T.budget))+tile("実績（支払い）の合計",bgYen(T.actual),T.budget?"予算の"+bgPct(T.actual/T.budget):"")+tile("見込みの粗利（契約−実績）",bgYen(T.contract-T.actual),T.contract?"粗利率 "+bgPct((T.contract-T.actual)/T.contract):"")+'</div>';
+    html += '<div class="card filter-card"><div class="filter-line"><div class="fitem"><span>表示する案件</span><select id="bg-mode">'+[["active","契約済〜清算済（施工中を含む）"],["nobudget","予算が未設定"],["all","すべて"]].map(function(x){ return '<option value="'+x[0]+'"'+(f.mode===x[0]?" selected":"")+'>'+x[1]+'</option>'; }).join("")+'</select></div>'+
+      '<div class="fitem" style="min-width:220px"><span>案件名で検索</span><input type="text" id="bg-q" value="'+esc(f.q||"")+'"></div></div></div>';
+    if(!list.length) return html+emptyState(iYenIcon,"該当する案件がありません","表示する案件の条件を変えてください");
+    html += '<div class="card" style="padding:0;overflow-x:auto"><table class="tbl" style="font-size:12.5px;min-width:760px"><thead><tr><th>案件</th><th style="text-align:right">契約金額</th><th style="text-align:right">予算</th><th style="text-align:right">実績</th><th style="text-align:right">残り予算</th><th>消化率</th><th style="text-align:right">粗利（契約−実績）</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    return html;
+  }
+  function bgSave(pid, patch, msg, after){
+    if(!state.isAdmin){ toast("管理者のみ行えます"); return; }
+    var p = state.projects.find(function(x){ return x.id===pid; }) || {}, d = bgDoc(pid) || {};
+    var next = Object.assign({projectId:pid, budget:d.budget||{}, costs:d.costs||[]}, patch, {projectName:p.name||d.projectName||"", updatedAt:new Date().toISOString(), updatedBy:state.myName||""});
+    var arr = state.budgets, i = arr.findIndex(function(x){ return x.projectId===pid; });
+    if(i>-1) arr[i] = Object.assign({}, arr[i], next); else arr.push(Object.assign({id:pid}, next));
+    if(!db){ toast(msg+"（プレビューのみ）"); if(after) after(); return; }
+    db.collection("budgets").doc(pid).set(next).then(function(){ toast(msg); if(after) after(); }, function(){ toast("保存に失敗しました"); });
+  }
+  function openBudgetModal(pid){
+    if(!state.isAdmin) return;
+    var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
+    var c = bgCalc(p), reopen = function(){ openBudgetModal(pid); render(); };
+    var tile = function(l,v,warn){ return '<div style="flex:1;min-width:120px;border:1px solid var(--border);border-radius:10px;padding:8px 10px"><div style="font-size:11px;color:var(--ink-soft)">'+l+'</div><div class="num" style="font-size:14.5px;font-weight:800;margin-top:2px;'+(warn?'color:var(--danger)':'')+'">'+v+'</div></div>'; };
+    var head = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">'+tile("契約金額",c.contract?bgYen(c.contract):"未入力")+tile("予算合計",bgYen(c.budget))+tile("実績合計",bgYen(c.actual),c.budget>0&&c.actual>c.budget)+tile("残り予算",c.budget?bgYen(c.remain):"—",c.budget>0&&c.remain<0)+tile("粗利（契約−実績）",c.contract?bgYen(c.profit)+"（"+bgPct(c.profitRate)+"）":"—",c.contract>0&&c.profit<0)+'</div>';
+    var catRows = BG_CATS.map(function(k,i){
+      var a = c.byCat[k]||0, b = bgNum(c.bud[k]), diff = b-a;
+      return '<tr><td>'+esc(k)+'</td><td style="width:140px"><input type="text" inputmode="numeric" data-bg-bud="'+esc(k)+'" value="'+(b?b:"")+'" placeholder="0" style="width:100%;text-align:right"></td><td class="num" style="text-align:right">'+(a?bgYen(a):"—")+'</td><td class="num" style="text-align:right;'+(b&&diff<0?'color:var(--danger);font-weight:700':'')+'">'+((b||a)?bgYen(diff):"—")+'</td></tr>';
+    }).join("");
+    var costs = c.costs.slice().sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")); });
+    var costRows = costs.length ? costs.map(function(x){
+      return '<tr><td class="num">'+esc(fmtDate(x.date))+'</td><td>'+esc(x.cat||"")+'</td><td>'+esc(x.vendor||"")+(x.memo?'<div style="font-size:11px;color:var(--ink-faint)">'+esc(x.memo)+'</div>':'')+'</td><td class="num" style="text-align:right">'+bgYen(bgNum(x.amount))+'</td><td><button class="btn sm" data-bg-delcost="'+esc(x.id)+'">削除</button></td></tr>';
+    }).join("") : '<tr><td colspan="5" style="color:var(--ink-faint);text-align:center;padding:14px">まだ実績がありません</td></tr>';
+    var body = head+
+      '<h3 style="font-size:13px;margin:0 0 6px">費用区分ごとの予算</h3><div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead><tr><th>区分</th><th style="text-align:right">予算（円）</th><th style="text-align:right">実績</th><th style="text-align:right">残り</th></tr></thead><tbody>'+catRows+'</tbody></table></div>'+
+      '<h3 style="font-size:13px;margin:18px 0 6px">実績（実際にかかった費用）を追加</h3>'+
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;align-items:end">'+
+        '<label class="field" style="margin:0">日付<input type="date" id="bg-c-date" value="'+localToday()+'"></label>'+
+        '<label class="field" style="margin:0">区分<select id="bg-c-cat">'+BG_CATS.map(function(k){ return '<option>'+esc(k)+'</option>'; }).join("")+'</select></label>'+
+        '<label class="field" style="margin:0">支払先<input type="text" id="bg-c-vendor" placeholder="例：○○建材"></label>'+
+        '<label class="field" style="margin:0">金額（円）<input type="text" inputmode="numeric" id="bg-c-amt" placeholder="0"></label>'+
+        '<label class="field" style="margin:0;grid-column:1/-1">内容（任意）<input type="text" id="bg-c-memo" placeholder="例：解体材の処分費"></label>'+
+      '</div><div style="margin-top:8px"><button class="btn primary" id="bg-c-add">'+iPlus()+' 実績を追加</button></div>'+
+      '<h3 style="font-size:13px;margin:18px 0 6px">実績の一覧（'+costs.length+'件）</h3><div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead><tr><th>日付</th><th>区分</th><th>支払先・内容</th><th style="text-align:right">金額</th><th></th></tr></thead><tbody>'+costRows+'</tbody></table></div>';
+    openModal("予算管理："+(p.name||"案件"), body, '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="bg-save">予算を保存する</button>');
+    var mb = document.getElementById("modal-box"); if(mb) mb.style.maxWidth = "820px";
+    document.getElementById("bg-save").addEventListener("click", function(){
+      var bud = {}; document.querySelectorAll("#modal-box [data-bg-bud]").forEach(function(el){ var n = bgNum(el.value); if(n) bud[el.getAttribute("data-bg-bud")] = n; });
+      bgSave(pid, {budget:bud}, "予算を保存しました", function(){ closeModal(); render(); });
+    });
+    document.getElementById("bg-c-add").addEventListener("click", function(){
+      var amt = bgNum(document.getElementById("bg-c-amt").value);
+      if(!amt){ toast("金額を入力してください"); return; }
+      var cur = (bgDoc(pid)||{}).costs || [];
+      var item = {id:"c"+Date.now().toString(36)+Math.random().toString(36).slice(2,5), date:document.getElementById("bg-c-date").value||localToday(), cat:document.getElementById("bg-c-cat").value, vendor:document.getElementById("bg-c-vendor").value.trim(), memo:document.getElementById("bg-c-memo").value.trim(), amount:amt};
+      // 入力中の予算も一緒に保存する
+      var bud = {}; document.querySelectorAll("#modal-box [data-bg-bud]").forEach(function(el){ var n = bgNum(el.value); if(n) bud[el.getAttribute("data-bg-bud")] = n; });
+      bgSave(pid, {budget:bud, costs:cur.concat([item])}, "実績を追加しました", reopen);
+    });
+    document.querySelectorAll("#modal-box [data-bg-delcost]").forEach(function(b){ b.addEventListener("click", function(){
+      var id = b.getAttribute("data-bg-delcost");
+      confirmDelete("この実績を削除しますか？", function(){
+        bgSave(pid, {costs:((bgDoc(pid)||{}).costs||[]).filter(function(x){ return x.id!==id; })}, "実績を削除しました", reopen);
+      });
+    }); });
+  }
+  document.addEventListener("click", function(e){
+    var r = e.target.closest ? e.target.closest("[data-bg-open]") : null;
+    if(r) openBudgetModal(r.getAttribute("data-bg-open"));
+  });
+  document.addEventListener("change", function(e){
+    var t = e.target; if(!t || !t.id) return;
+    if(t.id==="bg-mode"){ bgFilter().mode = t.value; render(); }
+    else if(t.id==="bg-q"){ bgFilter().q = t.value; render(); }
+  });
 
   /* ============ 案件一覧の初期チェック（進捗） ============ */
   // 管理者が「設定 > 管理画面」で、営業・施工それぞれの案件一覧を開いたときに最初からチェックされている進捗を決める。全員共通。保存先: settings/listDefaults
@@ -3017,6 +3138,7 @@
     else if(state.tab==="members") c.innerHTML = banner+renderMembers();
     else if(state.tab==="customers") c.innerHTML = banner+renderCustomers();
     else if(state.tab==="cards") c.innerHTML = banner+renderCards();
+    else if(state.tab==="budget") c.innerHTML = banner+renderBudget();
     else if(state.tab==="files") c.innerHTML = banner+renderFiles();
     else if(state.tab==="help") c.innerHTML = banner+renderHelpPage();
     else if(state.tab==="apps") c.innerHTML = banner+renderAppsPage();
@@ -7155,7 +7277,7 @@
     return html+'</div>';
   }
   // サーバー（Firestore等）の容量の目安：読み込み済みデータからの概算
-  var STORAGE_COLS = [["projects","案件"],["customers","顧客"],["members","メンバー"],["tasks","タスク"],["chats","チャット（一覧）"],["files","写真・ファイル"],["reports","報告書"],["events","予定"],["steps","工程"],["folders","フォルダ"],["cards","名刺"],["trash","ゴミ箱"]];
+  var STORAGE_COLS = [["projects","案件"],["customers","顧客"],["members","メンバー"],["tasks","タスク"],["chats","チャット（一覧）"],["files","写真・ファイル"],["reports","報告書"],["events","予定"],["steps","工程"],["folders","フォルダ"],["cards","名刺"],["budgets","予算"],["trash","ゴミ箱"]];
   function fmtBytes(n){ n = Number(n)||0; if(n<1024) return n+" B"; if(n<1048576) return (n/1024).toFixed(1)+" KB"; if(n<1073741824) return (n/1048576).toFixed(1)+" MB"; return (n/1073741824).toFixed(2)+" GB"; }
   function storageStats(){
     var key = STORAGE_COLS.map(function(c){ return (state[c[0]]||[]).length; }).join(",");
@@ -8274,7 +8396,7 @@
   }
 
   /* ============ バックアップ / 復元 ============ */
-  var BACKUP_COLS = [["projects","案件"],["customers","顧客"],["members","メンバー"],["tasks","タスク"],["chats","チャット"],["files","ファイル"],["folders","フォルダ"],["events","予定"],["steps","工程"],["reports","報告書"],["cards","名刺"],["trash","ゴミ箱"]];
+  var BACKUP_COLS = [["projects","案件"],["customers","顧客"],["members","メンバー"],["tasks","タスク"],["chats","チャット"],["files","ファイル"],["folders","フォルダ"],["events","予定"],["steps","工程"],["reports","報告書"],["cards","名刺"],["budgets","予算"],["trash","ゴミ箱"]];
   function lastBackupAt(){ try{ return localStorage.getItem("genba_last_backup")||state.lastBackup||""; }catch(e){ return state.lastBackup||""; } }
   function markBackup(){ var t=new Date().toISOString(); state.lastBackup=t; try{ localStorage.setItem("genba_last_backup", t); }catch(e){} }
   function buildBackup(includePw){
