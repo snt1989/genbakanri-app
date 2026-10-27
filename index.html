@@ -2260,10 +2260,18 @@
   function lazyReady(){
     if(!db) return true;
     if(state.projMode!=="full"){ loadAllProjects(); toast("バックアップ用に、過去の案件も含めて読み込んでいます。数秒後にもう一度押してください"); return false; }
-    var wait = Object.keys(LAZY_COLS).filter(function(k){ return !(state.lazyOn[k] && state.loaded[k]) || (k==="files" && state.lazyScope.files); });   // 案件ごとの絞り込み読み込み中は、全件の読み込みをやり直す
+    // 写真・ファイルは「全件そろった」ときだけ準備完了（新しい順の一部だけ・自分の案件だけ・1案件だけの読み込みでは、バックアップが欠けてしまう）
+    var filesFull = state.lazyOn.files && state.loaded.files && state.lazyScope.files==="" && (!state.lazyLimit.files || state.filesAllLoaded);
+    var wait = Object.keys(LAZY_COLS).filter(function(k){ return k==="files" ? !filesFull : !(state.lazyOn[k] && state.loaded[k]); });
     if(!wait.length) return true;
-    wait.forEach(lazyStart);
-    toast("バックアップ用にデータを読み込んでいます。数秒後にもう一度押してください");
+    wait.forEach(function(k){
+      if(k==="files"){
+        if(state.lazyScope.files!=="" || !state.lazyOn.files) lazyStart("files", "", state.filesLimit||30);   // 新しい順に読み始め、古い分は裏で読み足す
+        else filesPageOlder();
+      }else lazyStart(k);
+    });
+    if(wait.indexOf("files")!==-1 && state.lazyOn.files && state.loaded.files) toast("バックアップ用に写真・ファイルを読み込んでいます（現在 "+state.files.length+"件）。完了後にもう一度押してください");
+    else toast("バックアップ用にデータを読み込んでいます。数秒後にもう一度押してください");
     return false;
   }
   /* 最新版に更新：この端末の古いアプリのキャッシュだけを消して読み込み直す（ログイン・データは消えない） */
