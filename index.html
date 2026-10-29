@@ -6016,7 +6016,7 @@
       var mq2 = hasPin ? (p.mapLat+","+p.mapLng) : mq;
       var pmMode = state.propMapMode==="google" ? "google" : "pin";
       prows += '<div class="kv" style="display:block;padding:12px 16px"><div class="segmented" id="pm-mode" style="margin-bottom:10px;max-width:340px"><div class="segopt'+(pmMode==="pin"?" active":"")+'" data-pmmode="pin">ピン付き地図（位置を調整）</div><div class="segopt'+(pmMode==="google"?" active":"")+'" data-pmmode="google">Googleマップ</div></div><div class="propmap" id="propmap-live" data-pid="'+esc(p.id)+'" style="border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--surface-2)">'+
-        '<iframe title="物件の地図" loading="lazy" referrerpolicy="no-referrer-when-downgrade" style="display:block;width:100%;height:240px;border:0" src="https://www.google.com/maps?q='+mq2+'&z=16&hl=ja&output=embed"></iframe></div>'+
+        '<iframe title="物件の地図" loading="lazy" referrerpolicy="no-referrer-when-downgrade" style="display:block;width:100%;height:min(440px,62vh);border:0" src="https://www.google.com/maps?q='+mq2+'&z=18&t=h&hl=ja&output=embed"></iframe></div>'+
         '<div id="propmap-ctl"></div>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:flex-start"><a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+mq2+'">'+iMap()+' Googleマップで開く（経路・ストリートビュー）</a>'+
         '<a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination='+mq2+'">経路を調べる</a></div></div>';
@@ -11419,7 +11419,7 @@
     var pa = propertyAddressOf(p); if(!pa.text) return;
     var canMove = !isExternalViewer();
     var gFrame = function(q){
-      return '<iframe title="物件の地図" loading="lazy" referrerpolicy="no-referrer-when-downgrade" style="display:block;width:100%;height:260px;border:0" src="https://www.google.com/maps?q='+q+'&z=17&hl=ja&output=embed"></iframe>';
+      return '<iframe title="物件の地図" loading="lazy" referrerpolicy="no-referrer-when-downgrade" style="display:block;width:100%;height:min(440px,62vh);border:0" src="https://www.google.com/maps?q='+q+'&z=18&t=h&hl=ja&output=embed"></iframe>';
     };
     // Googleマップにもピンを出すため、位置（保存済み→住所から検索した座標）を緯度経度で渡す。見つからなければ住所で表示。
     var parseLatLng = function(t){
@@ -11473,10 +11473,19 @@
       var pre = saved ? Promise.resolve(saved) : geocodeJp(pa.text).catch(function(){ return null; });
       return pre.then(function(pos){
         if(!document.body.contains(box)) return;
-        box.innerHTML = '<div id="propmap-canvas" style="height:260px;width:100%"></div>';
+        box.innerHTML = '<div id="propmap-canvas" style="height:min(440px,62vh);width:100%"></div>';
         var found = !!pos, cur = pos || {lat:36.2, lng:138.25}, dirty = false;
-        var map = L.map("propmap-canvas", {scrollWheelZoom:false}).setView([cur.lat,cur.lng], found?17:5);
-        L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", {maxZoom:18, attribution:"地理院タイル"}).addTo(map);
+        var map = L.map("propmap-canvas", {scrollWheelZoom:false}).setView([cur.lat,cur.lng], found?18:5);
+        // 航空写真を標準にし、地図（地理院）・世界の航空写真（Esri）にも切り替えられる
+        var lyAir = L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg", {maxZoom:19, maxNativeZoom:18, attribution:"地理院タイル（空中写真）"});
+        var lyEsri = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {maxZoom:19, attribution:"Esri World Imagery"});
+        var lyStd = L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", {maxZoom:19, maxNativeZoom:18, attribution:"地理院タイル"});
+        var lyRoad = L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", {maxZoom:19, maxNativeZoom:18, opacity:0.35, attribution:"地理院タイル"});
+        var bases = {"航空写真":lyAir, "航空写真（Esri）":lyEsri, "地図":lyStd}, pick = state.propMapLayer;
+        (bases[pick] || lyAir).addTo(map);
+        L.control.layers(bases, {"道路・地名を重ねる":lyRoad}, {collapsed:true}).addTo(map);
+        map.on("baselayerchange", function(e){ state.propMapLayer = e.name; });
+        L.control.scale({imperial:false}).addTo(map);
         var icon = L.divIcon({className:"", iconSize:[30,40], iconAnchor:[15,38],
           html:'<svg width="30" height="40" viewBox="0 0 30 40"><path d="M15 1C7.8 1 2 6.8 2 14c0 9.5 13 25 13 25s13-15.500 13-25C28 6.800 22.200 1 15 1z" fill="#d93025" stroke="#fff" stroke-width="2"/><circle cx="15" cy="14" r="5" fill="#fff"/></svg>'});
         var mk = L.marker([cur.lat,cur.lng], {icon:icon, draggable:canMove}).addTo(map);
