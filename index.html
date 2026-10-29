@@ -11403,15 +11403,40 @@
     return __leafletP;
   }
   var __geoCache = {};
+  // 住所の表記ゆれをそろえる（全角→半角、丁目・番・号→ハイフン、空白除去）。例：盛岡市本宮7丁目7番41号 → 盛岡市本宮7-7-41
+  function geoNorm(t){
+    var kn = {"一":1,"二":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9};
+    t = String(t||"").replace(/([一二三四五六七八九]?十?[一二三四五六七八九]?)丁目/g, function(m, k){ if(!k) return m; var n = 0; if(k.indexOf("十")>-1){ var pr = k.split("十"); n = (pr[0]?kn[pr[0]]:1)*10 + (pr[1]?kn[pr[1]]:0); } else n = kn[k]; return n+"丁目"; });
+    return String(t||"").normalize("NFKC").replace(/[\s　]+/g,"").replace(/[ー－−‐–—―]/g,"-").replace(/(\d)丁目/g,"$1-").replace(/(\d)番地?/g,"$1-").replace(/(\d)号/g,"$1").replace(/の(?=\d)/g,"-").replace(/-+/g,"-").replace(/-$/,"");
+  }
+  function geoScore(q, title){
+    var a = geoNorm(q), b = geoNorm(title), n = 0;
+    while(n<a.length && n<b.length && a[n]===b[n]) n++;
+    return {n:n, full:(b.length>=a.length-0 && n>=a.length) || (n>=b.length && b.length>=a.length-1)};
+  }
+  // 国土地理院の住所検索。候補の中から、入力した住所にいちばん長く一致するものを選ぶ（先頭の候補が町名だけの場合があるため）
+  // 戻り値 level: "exact"=番地まで一致 / "coarse"=町名・丁目まで（付近）
   function geocodeJp(q){
     if(__geoCache[q]) return Promise.resolve(__geoCache[q]);
-    return fetch("https://msearch.gsi.go.jp/address-search/AddressSearch?q="+encodeURIComponent(q))
-      .then(function(r){ return r.json(); })
-      .then(function(a){
-        if(!a || !a.length) return null;
-        var c = a[0].geometry.coordinates; var o = {lat:c[1], lng:c[0], title:(a[0].properties||{}).title||""};
-        __geoCache[q]=o; return o;
-      });
+    var nq = geoNorm(q), variants = [q];
+    if(nq!==q) variants.push(nq);
+    var noLast = nq.replace(/-\d+$/,""); if(noLast!==nq && /\d/.test(noLast)) variants.push(noLast);
+    var best = null;
+    var run = function(k){
+      if(k>=variants.length || (best && best.level==="exact")) return Promise.resolve(best);
+      return fetch("https://msearch.gsi.go.jp/address-search/AddressSearch?q="+encodeURIComponent(variants[k]))
+        .then(function(r){ return r.json(); }).catch(function(){ return []; })
+        .then(function(a){
+          (a||[]).forEach(function(x){
+            var c = x.geometry && x.geometry.coordinates; if(!c) return;
+            var title = (x.properties||{}).title||"", sc = geoScore(nq, title);
+            var cand = {lat:c[1], lng:c[0], title:title, score:sc.n, level:(sc.n>=nq.length-0 ? "exact":"coarse")};
+            if(!best || cand.score>best.score) best = cand;
+          });
+          return run(k+1);
+        });
+    };
+    return run(0).then(function(b){ if(b) __geoCache[q]=b; return b; });
   }
   function initPropMap(box){
     var p = state.projects.find(function(x){ return x.id===box.getAttribute("data-pid"); });
@@ -11475,6 +11500,7 @@
         if(!document.body.contains(box)) return;
         box.innerHTML = '<div id="propmap-canvas" style="height:min(440px,62vh);width:100%"></div>';
         var found = !!pos, cur = pos || {lat:36.2, lng:138.25}, dirty = false;
+        var posInfo = saved ? null : pos; pos = posInfo;
         var map = L.map("propmap-canvas", {scrollWheelZoom:false}).setView([cur.lat,cur.lng], found?18:5);
         // 航空写真を標準にし、地図（地理院）・世界の航空写真（Esri）にも切り替えられる
         var lyAir = L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg", {maxZoom:19, maxNativeZoom:18, attribution:"地理院タイル（空中写真）"});
@@ -11493,8 +11519,9 @@
         var paint = function(){
           var msg = dirty ? '<span style="color:var(--danger);font-weight:700">ピンの位置を変更しました。保存してください。</span>'
             : (saved ? '<span style="color:var(--ink-soft)">ピンの位置は保存済みです。</span>'
-            : (found ? '<span style="color:var(--ink-soft)">住所から位置を自動で表示しています。'+(canMove?'ずれている場合はピンを動かしてください。':'')+'</span>'
-            : '<span style="color:var(--danger);font-weight:700">住所から場所を特定できませんでした。'+(canMove?'地図をタップするか、ピンを動かして位置を指定してください。':'')+'</span>'));
+            : (found && pos && pos.level==="coarse" ? '<span style="color:var(--danger);font-weight:700">番地までは特定できず、「'+esc(pos.title||"")+'」付近を表示しています。</span><span style="color:var(--ink-soft)">'+(canMove?'航空写真を見ながらピンを正しい場所に動かして、保存してください。':'')+'</span>'
+            : (found ? '<span style="color:var(--ink-soft)">住所から位置を自動で表示しています'+(pos&&pos.title?'（照合：'+esc(pos.title)+'）':'')+'。'+(canMove?'ずれている場合はピンを動かしてください。':'')+'</span>'
+            : '<span style="color:var(--danger);font-weight:700">住所から場所を特定できませんでした。'+(canMove?'地図をタップするか、ピンを動かして位置を指定してください。':'')+'</span>')));
           ctl.innerHTML = '<div style="font-size:12px;margin-top:8px;line-height:1.6">'+msg+'</div>'+(canMove ?
             '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;align-items:flex-start">'+
             (dirty?'<button class="btn sm primary" id="pm-save">この位置で保存</button><button class="btn sm" id="pm-cancel">元に戻す</button>':'')+
@@ -11509,7 +11536,7 @@
           if((b=document.getElementById("pm-reset"))) b.onclick=function(){
             p.mapLat = null; p.mapLng = null; saved = null;
             if(db) db.collection("projects").doc(p.id).update({mapLat:null, mapLng:null}).catch(function(){});
-            geocodeJp(pa.text).catch(function(){return null;}).then(function(g){ found=!!g; if(g){ cur=g; mk.setLatLng([g.lat,g.lng]); map.setView([g.lat,g.lng],17);} paint(); });
+            geocodeJp(pa.text).catch(function(){return null;}).then(function(g){ found=!!g; pos=g; if(g){ cur=g; mk.setLatLng([g.lat,g.lng]); map.setView([g.lat,g.lng],17);} paint(); });
           };
         };
         if(canMove){
