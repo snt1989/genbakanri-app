@@ -24,6 +24,8 @@ async function recipients(chatId){
       var all = await W.listDocs("projects");
       p = all.filter(function(x){ return x.name === chat.name; })[0] || {};
     }
+    // 清算済・失注の案件のチャットは非表示にしているので、通知も送らない
+    if(p && (p.status === "清算済" || p.status === "失注")) return {chat: null, names: []};
     names = W.assigneeNames(p);
   }else if(Array.isArray(chat.members) && chat.members.length){
     names = chat.members;

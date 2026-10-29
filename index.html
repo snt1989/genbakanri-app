@@ -9121,6 +9121,7 @@
   // 通知をタップして開いたとき、該当のチャットを表示する
   function openChatFromPush(id){
     if(!id) return;
+    var ch0 = state.chats.find(function(x){ return x.id===id; }); if(ch0 && chatArchived(ch0)){ toast("清算済・失注の案件のチャットは非表示です"); return; }
     state.activeChat = id; state.tab = "chat"; state.viewingProjectId = null;
     try{ render(); }catch(e){}
   }
@@ -11718,6 +11719,7 @@
         var p = state.projects.find(function(x){return x.id===el.getAttribute("data-chat-project");});
         if(!p) return;
         if(!seesAllProjects() && !isMyProject(p)){ toast("この案件の担当者ではないため、チャットは表示されません"); return; }
+        if(PROJ_ARCHIVED.indexOf(p.status)!==-1){ toast("清算済・失注の案件のチャットは非表示です。ステータスを戻すと表示されます"); return; }
         ensureProjectChat(p, function(chatId){ state.activeChat=chatId; setTab("chat"); });
       });
     });
@@ -11726,6 +11728,7 @@
         var p = state.projects.find(function(x){return x.id===state.viewingProjectId;});
         if(!p) return;
         if(!seesAllProjects() && !isMyProject(p)){ toast("この案件の担当者ではないため、チャットは表示されません"); return; }
+        if(PROJ_ARCHIVED.indexOf(p.status)!==-1){ toast("清算済・失注の案件のチャットは非表示です。ステータスを戻すと表示されます"); return; }
         ensureProjectChat(p, function(chatId){ state.activeChat=chatId; setTab("chat"); });
       });
     });
