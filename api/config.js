@@ -416,6 +416,11 @@ async function ssoHandler(req, res){
       var dbase = (F.env("DAITO_URL") || "https://daito-kanriapp000.vercel.app").replace(/\/+$/, "");
       return res.status(200).json({url: dbase + "/?sso=" + makeTicket(me.name, dsec, null, "d")});
     }
+    if(b.app === "jyosestu"){   // 除雪作業管理アプリへ（除雪アプリのメンバーに同じ氏名の人がいる場合だけ自動ログイン。確認は除雪アプリ側）
+      var jsec = F.env("JYOSETSU_SSO_SECRET") || secret;
+      var jbase = (F.env("JYOSETSU_URL") || "https://jyosestu-app.vercel.app").replace(/\/+$/, "");
+      return res.status(200).json({url: jbase + "/?sso=" + makeTicket(me.name, jsec, null, "j")});
+    }
     var toShayosha = b.app === "shayosha";   // 社用車管理アプリへ（ログイン引き継ぎ＋行先に現場名）
     var base = toShayosha ? (F.env("SHAYOSHA_URL") || "https://shayosha-kanri.vercel.app").replace(/\/+$/, "") : (F.env("BIHIN_URL") || "https://bihinkanriapp.vercel.app").replace(/\/+$/, "");
     var proj = null;

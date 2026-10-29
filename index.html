@@ -3576,7 +3576,8 @@
   function openBihinApp(ev){
     var toShayosha = !!(ev && ev.currentTarget && ev.currentTarget.hasAttribute && ev.currentTarget.hasAttribute("data-shayosha-link"));
     var toDaito = !!(ev && ev.currentTarget && ev.currentTarget.hasAttribute && ev.currentTarget.hasAttribute("data-daito-link"));
-    var plain = toDaito ? "https://daito-kanriapp000.vercel.app/" : toShayosha ? "https://shayosha-kanri.vercel.app/" : "https://bihinkanriapp.vercel.app/", me = myMember();
+    var toJyosetsu = !!(ev && ev.currentTarget && ev.currentTarget.hasAttribute && ev.currentTarget.hasAttribute("data-jyosetsu-link"));
+    var plain = toJyosetsu ? "https://jyosestu-app.vercel.app/" : toDaito ? "https://daito-kanriapp000.vercel.app/" : toShayosha ? "https://shayosha-kanri.vercel.app/" : "https://bihinkanriapp.vercel.app/", me = myMember();
     // 案件の画面から開くときは、その案件（現場名）を指定して開く → 備品管理アプリで現場名が自動で入る
     var pid = ev && ev.currentTarget && ev.currentTarget.getAttribute ? ev.currentTarget.getAttribute("data-bihin-project") : "";
     var pj = pid ? state.projects.find(function(x){ return x.id===pid; }) : null;
@@ -3585,7 +3586,7 @@
     ev.preventDefault();
     var w = window.open("", "_blank");        // ポップアップ制限を避けるため、先に空のタブを開く
     var go = function(u){ if(w){ try{ w.opener = null; }catch(e){} w.location.href = u; } else { location.href = u; } };
-    fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({auth:{name:me.name, password:me.password||""}, projectId: pid || undefined, app: toDaito ? "daito" : (toShayosha ? "shayosha" : undefined)})})
+    fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({auth:{name:me.name, password:me.password||""}, projectId: pid || undefined, app: toJyosetsu ? "jyosestu" : toDaito ? "daito" : (toShayosha ? "shayosha" : undefined)})})
       .then(function(r){ return r.json(); })
       .then(function(j){ go(j && j.url ? j.url : plain); }, function(){ go(plain); });
   }
@@ -3596,14 +3597,14 @@
     {name:"黒板アプリ", url:"https://kokubanapp.vercel.app/", icon:iImage, desc:"工事用の電子小黒板。"},
     {name:"勤怠アプリ", url:"https://kintaiapp-one.vercel.app/", icon:iCalendar, desc:"勤怠(出退勤)の管理。"},
     {name:"社用車管理アプリ", url:"https://shayosha-kanri.vercel.app/", icon:iBriefcase2, site:true, desc:"社用車の管理。案件の画面から開くと、出発登録の行先に現場名が入ります。"},
-    {name:"除雪作業管理アプリ", url:"https://jyosestu-app.vercel.app/", icon:iBriefcase2, desc:"除雪作業の管理。"},
+    {name:"除雪作業管理アプリ", url:"https://jyosestu-app.vercel.app/", icon:iBriefcase2, jyosetsu:true, desc:"除雪作業の管理。同じ氏名のメンバーがいれば自動でログインします。"},
     {name:"大東受注アプリ", url:"https://daito-kanriapp000.vercel.app/", icon:iBriefcase2, daito:true, desc:"大東の受注の管理。大東アプリにアカウントがある人だけ入れます（ある人は自動でログイン）。"}
   ];
   function renderAppsPage(){
     return '<div style="max-width:780px"><div style="margin-bottom:12px"><h1 style="font-size:22px;margin:0">連携アプリ</h1><div style="font-size:12.5px;color:var(--ink-soft);margin-top:2px">社内の関連アプリを新しいタブで開きます。</div></div>'+
       '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">'+
       APP_LINKS.map(function(a){
-        return '<a class="card" '+(a.sso?'data-bihin-link="1" ':'')+(a.site?'data-shayosha-link="1" ':'')+(a.daito?'data-daito-link="1" ':'')+(a.name==="報告写真アプリ"?'data-report-open="1" ':'')+'href="'+esc(a.url)+'" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:inherit;display:block;padding:16px">'+
+        return '<a class="card" '+(a.sso?'data-bihin-link="1" ':'')+(a.site?'data-shayosha-link="1" ':'')+(a.daito?'data-daito-link="1" ':'')+(a.jyosetsu?'data-jyosetsu-link="1" ':'')+(a.name==="報告写真アプリ"?'data-report-open="1" ':'')+'href="'+esc(a.url)+'" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:inherit;display:block;padding:16px">'+
           '<div style="display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px">'+a.icon()+'<span>'+esc(a.name)+' ↗</span></div>'+
           '<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.6;margin-top:8px">'+esc(a.desc)+'</div>'+
           '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px;word-break:break-all">'+esc(a.url.replace(/^https:\/\//,""))+'</div></a>';
@@ -3742,7 +3743,7 @@
     c.querySelectorAll("[data-report-open]").forEach(function(a){ a.addEventListener("click", function(ev){ if(!db || window.claude || !myMember()) return; ev.preventDefault(); openReportApp("", a.getAttribute("href")); }); });   // 連携アプリのページから開くときも、ログイン情報つきで開く（アプリの中で案件を選べる）
     c.querySelectorAll("[data-report-project]").forEach(function(el){ el.addEventListener("click", function(){ openReportApp(el.getAttribute("data-report-project")); }); });
     var ur = document.getElementById("usage-refresh"); if(ur) ur.addEventListener("click", function(){ usageLoad(); });
-    c.querySelectorAll("[data-bihin-link],[data-shayosha-link],[data-daito-link]").forEach(function(a){ a.addEventListener("click", function(ev){ openBihinApp(ev); }); });
+    c.querySelectorAll("[data-bihin-link],[data-shayosha-link],[data-daito-link],[data-jyosetsu-link]").forEach(function(a){ a.addEventListener("click", function(ev){ openBihinApp(ev); }); });
     applyBulkUi();
     mobileSimplify();
     // 横に長いタブ（設定など）は、選択中のタブが見える位置までスクロールしておく
@@ -5910,7 +5911,7 @@
       var short = a.name.replace(/アプリ$/,"");
       var inner = '<span class="pa-ico">'+a.icon()+'</span><span class="pa-name"><span>'+esc(short)+'</span><span class="pa-sfx">アプリ</span></span>';
       if(a.name==="報告写真アプリ") return '<button type="button" class="btn sm outline pa-btn" data-report-project="'+esc(p.id)+'" title="この案件を指定して報告写真アプリを開きます（作ったPDFはこの案件のファイルに保存できます）">'+inner+'</button>';
-      return '<a class="btn sm outline pa-btn" '+(a.sso?'data-bihin-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を指定して備品管理アプリを開きます（持出時の現場名が自動で入ります）" ':'')+(a.site?'data-shayosha-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を行先に入れて社用車管理アプリを開きます（ログインも引き継ぎます）" ':'')+(a.daito?'data-daito-link="1" title="大東アプリのアカウントがある人だけ入れます" ':'')+'href="'+esc(a.url+((a.sso||a.site)?"?site="+encodeURIComponent(p.name||"")+(a.site&&p.division?"&division="+encodeURIComponent(p.division):""):""))+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>';
+      return '<a class="btn sm outline pa-btn" '+(a.sso?'data-bihin-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を指定して備品管理アプリを開きます（持出時の現場名が自動で入ります）" ':'')+(a.site?'data-shayosha-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を行先に入れて社用車管理アプリを開きます（ログインも引き継ぎます）" ':'')+(a.daito?'data-daito-link="1" title="大東アプリのアカウントがある人だけ入れます" ':'')+(a.jyosetsu?'data-jyosetsu-link="1" ':'')+'href="'+esc(a.url+((a.sso||a.site)?"?site="+encodeURIComponent(p.name||"")+(a.site&&p.division?"&division="+encodeURIComponent(p.division):""):""))+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>';
     };
     return '<div class="card pa-card"><div class="pa-title">連携アプリ</div><div class="pa-list">'+APP_LINKS.map(btn).join("")+'</div></div>';
   }
