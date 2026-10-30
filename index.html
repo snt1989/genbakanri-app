@@ -1509,7 +1509,7 @@
     }).join("");
     var hasProj = projUpdates().length>0;
     return '<div class="card" style="padding:12px 18px 6px;margin-bottom:16px;border-color:var(--accent);background:var(--accent-soft)">'+
-      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="font-size:14px;margin:0;flex:1">'+iBell()+' お知らせ（'+items.length+'件）</h2>'+(hasProj?'<button class="btn sm" id="pu-readall">案件の更新を既読にする</button>':'')+'<button class="btn sm" id="hn-all">すべて見る</button></div>'+
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="font-size:14px;margin:0;flex:1">'+iBell()+' お知らせ（'+items.length+'件）</h2>'+'<button class="btn sm" id="notice-readall-home">すべて既読にする</button>'+'<button class="btn sm" id="hn-all">すべて見る</button></div>'+
       '<div style="margin-top:6px">'+rows+'</div>'+(items.length>5?'<div style="font-size:11.5px;color:var(--ink-faint);padding:8px 0">ほか'+(items.length-5)+'件は「すべて見る」で確認できます</div>':'')+'</div>';
   }
   /* ---- お知らせ（ベルマーク） ---- */
@@ -1528,7 +1528,7 @@
       items.push({grp:"task", title:t.title||"タスク", sub:"明日が期限"+(t.projectName?" ／ "+t.projectName:""), go:function(){ setTab("tasks"); }});
     });
     projUpdates().forEach(function(u){
-      items.push({grp:"project", urgent:true, title:(u.p.name||"案件")+"が更新されました", sub:projUpdateText(u), go:function(){ goProjectDetail(u.p.id); }});
+      items.push({grp:"project", key:"pu:"+u.p.id+":"+u.last.at, urgent:true, title:(u.p.name||"案件")+"が更新されました", sub:projUpdateText(u), go:function(){ goProjectDetail(u.p.id); }});
     });
     var lim = addDays(today,3);
     state.projects.filter(function(p){ return p.endDate && p.endDate>=today && p.endDate<=lim && (p.status==="施工中"||p.status==="契約済") && (state.isAdmin || isMyProject(p)); }).forEach(function(p){
@@ -1538,9 +1538,26 @@
     state.chats.forEach(function(c){
       if(!chatJoined(c)) return;
       var rd = (c.reads||{})[me];
-      if(rd && String(c.updatedAt||"")>String(rd)) items.push({grp:"chat", urgent:true, title:c.name||"チャット", sub:"未読のメッセージがあります（"+fmtAgo(c.updatedAt)+"）", go:function(){ goChat(c.id); }});
+      if(rd && String(c.updatedAt||"")>String(rd)) items.push({grp:"chat", key:"chat:"+c.id+":"+(c.updatedAt||""), urgent:true, title:c.name||"チャット", sub:"未読のメッセージがあります（"+fmtAgo(c.updatedAt)+"）", go:function(){ goChat(c.id); }});
     });
-    return items;
+    var dis = noticeDismissed();
+    return items.filter(function(it){ return it.grp==="update" || !dis[noticeKey(it)]; });
+  }
+  /* お知らせを「既読」にすると、その内容が変わるまで一覧とベルの数字から消える（端末ごとに記憶） */
+  function noticeKey(it){ return it.key || (it.grp+"|"+it.title+"|"+(it.sub||"")); }
+  function noticeDisKey(){ return "genba_notice_dis_"+(state.myName||""); }
+  function noticeDismissed(){ try{ return JSON.parse(localStorage.getItem(noticeDisKey())||"{}")||{}; }catch(e){ return {}; } }
+  function noticeDismiss(list){
+    var m = noticeDismissed(), now = Date.now();
+    list.forEach(function(it){ if(it && it.grp!=="update") m[noticeKey(it)] = now; });
+    var ks = Object.keys(m); if(ks.length>400){ ks.sort(function(a,b){ return m[a]-m[b]; }).slice(0, ks.length-300).forEach(function(k){ delete m[k]; }); }
+    try{ localStorage.setItem(noticeDisKey(), JSON.stringify(m)); }catch(e){}
+  }
+  function noticeReadAll(){
+    var items = noticeItems();
+    noticeDismiss(items);
+    markProjSeen(projUpdates().map(function(u){ return u.p.id; }));
+    render();
   }
   // 指定のチャットを確実に開く（絞り込み・検索・非表示の設定で別のチャットに切り替わってしまわないようにする）
   function goChat(id){
@@ -1713,10 +1730,11 @@
       body += '<div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);margin:10px 0 0">'+GL[g]+'（'+xs.length+'）</div>'+xs.map(function(p){ return row(p[0], p[1], g); }).join("");
     });
     if(setup.length) body += '<div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);margin:14px 0 0">ご案内</div>'+setup.map(function(it,k){ return row(it, items.length+k, ""); }).join("");
-    openModal("お知らせ", body, '<button class="btn" id="notif-history">通知の履歴</button><button class="btn" id="rel-history" style="margin-right:auto">更新の履歴</button><button class="btn" data-close-modal>閉じる</button>');
+    openModal("お知らせ", body, (items.length?'<button class="btn primary" id="notif-readall">すべて既読にする</button>':'')+'<button class="btn" id="notif-history">通知の履歴</button><button class="btn" id="rel-history" style="margin-right:auto">更新の履歴</button><button class="btn" data-close-modal>閉じる</button>');
+    var nra = document.getElementById("notif-readall"); if(nra) nra.addEventListener("click", function(){ closeModal(); noticeReadAll(); toast("すべて既読にしました"); });
     var rh = document.getElementById("rel-history"); if(rh) rh.addEventListener("click", function(){ closeModal(); openReleaseNotes(); });
     var nh = document.getElementById("notif-history"); if(nh) nh.addEventListener("click", function(){ closeModal(); openNotifHistory(); });
-    document.querySelectorAll("#modal-box [data-notice]").forEach(function(el){ el.addEventListener("click", function(){ var f = __noticeFns[+el.getAttribute("data-notice")]; closeModal(); if(f && f.go) f.go(); }); });
+    document.querySelectorAll("#modal-box [data-notice]").forEach(function(el){ el.addEventListener("click", function(){ var f = __noticeFns[+el.getAttribute("data-notice")]; closeModal(); if(f){ noticeDismiss([f]); if(f.grp==="project" && f.key) { var pid = String(f.key).split(":")[1]; try{ markProjSeen([pid]); }catch(e){} } if(f.go) f.go(); } render(); }); });
   }
   /* ---- 通知の履歴（これまでに届いた通知。直近30日・最大100件） ---- */
   var NOTIF_ICON = {chat:"💬", projectNew:"🏗", projectStatus:"🔄", report:"📝", task:"✓"};
@@ -11735,8 +11753,9 @@
     }); });
     c.querySelectorAll("[data-edit-customer]").forEach(function(el){ el.addEventListener("click", function(){ openCustomerForm(el.getAttribute("data-edit-customer")); }); });
     c.querySelectorAll("[data-del-customer]").forEach(function(el){ el.addEventListener("click", function(){ var id=el.getAttribute("data-del-customer"); confirmDelete("この顧客を削除しますか？",function(){deleteDoc("customers",id,"顧客を削除しました");}); }); });
-    c.querySelectorAll("[data-home-notice]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var it = __homeNotices[+el.getAttribute("data-home-notice")]; if(it && it.go) it.go(); }); });
+    c.querySelectorAll("[data-home-notice]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var it = __homeNotices[+el.getAttribute("data-home-notice")]; if(it){ noticeDismiss([it]); if(it.grp==="project" && it.key){ try{ markProjSeen([String(it.key).split(":")[1]]); }catch(e){} } if(it.go) it.go(); } }); });
     var hnAll = document.getElementById("hn-all"); if(hnAll) hnAll.addEventListener("click", openNotices);
+    var nrh = document.getElementById("notice-readall-home"); if(nrh) nrh.addEventListener("click", function(){ noticeReadAll(); toast("すべて既読にしました"); });
     var puAll = document.getElementById("pu-readall"); if(puAll) puAll.addEventListener("click", function(){ markProjSeen(projUpdates().map(function(u){ return u.p.id; })); render(); });
     c.querySelectorAll("[data-done-task]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.stopPropagation(); setTaskDone(el.getAttribute("data-done-task"), true); }); });
     c.querySelectorAll("[data-task-done]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.stopPropagation(); setTaskDone(el.getAttribute("data-task-done"), el.getAttribute("data-to")==="1"); }); });
