@@ -1538,9 +1538,17 @@
     state.chats.forEach(function(c){
       if(!chatJoined(c)) return;
       var rd = (c.reads||{})[me];
-      if(rd && String(c.updatedAt||"")>String(rd)) items.push({grp:"chat", urgent:true, title:c.name||"チャット", sub:"未読のメッセージがあります（"+fmtAgo(c.updatedAt)+"）", go:function(){ state.activeChat = c.id; state.chatPaneOpen = true; state.viewingProjectId = null; state.tab = "chat"; render(); }});
+      if(rd && String(c.updatedAt||"")>String(rd)) items.push({grp:"chat", urgent:true, title:c.name||"チャット", sub:"未読のメッセージがあります（"+fmtAgo(c.updatedAt)+"）", go:function(){ goChat(c.id); }});
     });
     return items;
+  }
+  // 指定のチャットを確実に開く（絞り込み・検索・非表示の設定で別のチャットに切り替わってしまわないようにする）
+  function goChat(id){
+    var c = state.chats.find(function(x){ return x.id===id; });
+    state.chatKind = (c && Array.isArray(c.hiddenBy) && c.hiddenBy.indexOf(state.myName)!==-1) ? "hidden" : "all";
+    state.chatQ = "";
+    state.activeChat = id; state.chatPaneOpen = true; state.viewingProjectId = null; state.tab = "chat"; render();
+    setTimeout(function(){ var el = document.querySelector('.chat-item.active'); if(el && el.scrollIntoView) el.scrollIntoView({block:"nearest"}); }, 50);
   }
   function noticeCount(){ return noticeItems().length; }
   // ホーム画面のアプリアイコンに未対応のお知らせ件数（バッジ）を表示する（Badging API：ホーム画面に追加したアプリ／対応ブラウザ）
@@ -1728,7 +1736,7 @@
         if(day!==lastDay){ lastDay = day; head = '<div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);margin:12px 0 2px">'+esc(day)+'</div>'; }
         return head+'<div'+(x.chatId?' data-nh-chat="'+esc(x.chatId)+'" style="cursor:pointer;':' style="')+'display:flex;gap:10px;align-items:flex-start;padding:9px 2px;border-bottom:1px solid var(--border)"><span style="flex:none;width:22px;text-align:center">'+(NOTIF_ICON[x.kind]||"🔔")+'</span><span style="flex:1;min-width:0"><b style="display:block;font-size:13px;word-break:break-all">'+esc(x.title||"")+'</b><span style="display:block;font-size:12.5px;color:var(--ink-soft);line-height:1.5;word-break:break-all">'+esc(x.body||"")+'</span></span><span style="flex:none;font-size:11px;color:var(--ink-faint)">'+esc(String(d).slice(11))+'</span></div>';
       }).join(""));
-      document.querySelectorAll("#modal-box [data-nh-chat]").forEach(function(el){ el.addEventListener("click", function(){ var id = el.getAttribute("data-nh-chat"); closeModal(); state.activeChat = id; state.chatPaneOpen = true; setTab("chat"); }); });
+      document.querySelectorAll("#modal-box [data-nh-chat]").forEach(function(el){ el.addEventListener("click", function(){ var id = el.getAttribute("data-nh-chat"); closeModal(); goChat(id); }); });
     }, function(e){ put('<div style="padding:18px 4px;color:var(--danger)">読み込めませんでした'+(e&&e.code==="resource-exhausted"?"（データベースの読み取り上限）":"")+'</div>'); });
   }
   /* ---- 通知オフの人へのお知らせ ---- */
@@ -9122,8 +9130,7 @@
   function openChatFromPush(id){
     if(!id) return;
     var ch0 = state.chats.find(function(x){ return x.id===id; }); if(ch0 && chatArchived(ch0)){ toast("清算済・失注の案件のチャットは非表示です"); return; }
-    state.activeChat = id; state.tab = "chat"; state.viewingProjectId = null;
-    try{ render(); }catch(e){}
+    try{ goChat(id); }catch(e){}
   }
   try{
     if("serviceWorker" in navigator){ navigator.serviceWorker.addEventListener("message", function(e){ if(e.data && e.data.type==="open-chat") openChatFromPush(e.data.chatId); }); }
