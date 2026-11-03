@@ -4638,11 +4638,13 @@
     return Array.isArray(x.assignees) ? x.assignees.filter(Boolean) : [];
   }
   /* モーダル内で使う、ドロップダウン式の複数選択（チェック） */
+  // 担当者を選ぶ一覧用：名前と会社名を並べて表示する
+  function memberDdItems(list){ return (list||[]).map(function(m){ return [m.name, m.name, m.company||""]; }); }
   function ddMultiHtml(id, items, selected){
     var sum = function(sel){ return !sel.length ? "（未設定）" : (sel.length<=2 ? sel.join("・") : sel.length+"名を選択"); };
     return '<div class="ddm" id="'+id+'" data-ddm-sum="1"><button type="button" class="bgdd-btn'+(selected.length?' on':'')+'" data-ddm-btn><span class="ddm-sum" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(sum(selected))+'</span><span class="ddm-arrow" style="font-size:10px;color:var(--ink-faint)">▼</span></button>'+
       '<div class="bgdd-panel ddm-panel" hidden style="position:static;box-shadow:none;margin-top:6px;max-height:210px;max-width:none">'+
-      (items.length ? items.map(function(n){ return '<label class="checkopt"><input type="checkbox" value="'+esc(n)+'"'+(selected.indexOf(n)!==-1?' checked':'')+'>'+esc(n)+'</label>'; }).join("") : '<div style="padding:8px 2px">メンバーが登録されていません</div>')+'</div></div>';
+      (items.length ? items.map(function(n){ var v = Array.isArray(n)?n[0]:n, lb = Array.isArray(n)?n[1]:n, sub = Array.isArray(n)?(n[2]||""):""; return '<label class="checkopt"><input type="checkbox" value="'+esc(v)+'"'+(selected.indexOf(v)!==-1?' checked':'')+'>'+esc(lb)+(sub?' <span style="color:var(--ink-faint);font-size:11px;margin-left:4px">'+esc(sub)+'</span>':'')+'</label>'; }).join("") : '<div style="padding:8px 2px">メンバーが登録されていません</div>')+'</div></div>';
   }
   function ddMultiBind(id){
     var root = document.getElementById(id); if(!root) return;
@@ -4661,7 +4663,7 @@
       field("案件",'<select id="f-sproj">'+state.projects.slice().sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");}).map(function(p){ return '<option value="'+esc(p.id)+'"'+(p.id===s.projectId?" selected":"")+'>'+esc(p.name)+'</option>'; }).join("")+'</select>')+
       field("工程名",'<input type="text" id="f-sname" data-ac-all="1" maxlength="60" autocomplete="off" placeholder="自由に入力（候補から選ぶこともできます）" value="'+esc(s.name||"")+'">')+
       '<div class="field-row">'+field("開始日",'<input type="date" id="f-sstart" value="'+esc(s.startDate||(st?"":today))+'">')+field("終了日",'<input type="date" id="f-send" value="'+esc(s.endDate||(st?"":today))+'">')+'</div>'+
-      '<div class="field-row">'+field("担当者（複数選択できます）", ddMultiHtml("f-sassg", members, stepWho(s)))+
+      '<div class="field-row">'+field("担当者（複数選択できます）", ddMultiHtml("f-sassg", memberDdItems(state.members), stepWho(s)))+
       field("進捗（%）",'<input type="number" id="f-sprog" min="0" max="100" step="5" value="'+(+s.progress||0)+'">')+'</div>'+
       '<div class="field-row">'+field("区分（任意・工程表で見出しになります）",'<input type="text" id="f-sgroup" maxlength="30" placeholder="例：除草工" value="'+esc(s.group||"")+'">')+field("備考（任意）",'<input type="text" id="f-snote" maxlength="40" placeholder="例：予備日含む" value="'+esc(s.note||"")+'">')+'</div>'+secretRadio(s.secret),
       (st?'<button class="btn" id="f-sdel" style="color:var(--danger)">'+iTrash()+' 削除</button>':'')+'<button class="btn" id="f-sgcal" style="margin-right:auto">'+iCalendar()+' Googleカレンダーに追加</button><button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-ssave">'+(st?"保存する":"追加する")+'</button>');
@@ -5196,7 +5198,7 @@
     openModal(t?"タスクの編集":"タスクの追加",
       field("タイトル",'<input type="text" id="f-ttitle" maxlength="80" placeholder="例）見積書送付、現地確認" value="'+esc(x.title||"")+'">')+
       '<div class="field-row">'+field("期限",'<input type="date" id="f-tdue" value="'+esc(x.dueDate||"")+'">')+
-      field("担当者（複数選択できます）", ddMultiHtml("f-tassg", state.members.map(function(m){ return m.name; }), taskWho(x)))+'</div>'+
+      field("担当者（複数選択できます）", ddMultiHtml("f-tassg", memberDdItems(state.members), taskWho(x)))+'</div>'+
       field("案件（任意）",'<select id="f-tproj">'+projectOptions(x.projectId)+'</select>')+
       field("メモ",'<textarea id="f-tnote" style="min-height:60px">'+esc(x.note||"")+'</textarea>')+
       '<label class="radioopt" style="margin-top:4px"><input type="checkbox" id="f-tdone"'+(x.done?' checked':'')+'> 完了にする</label>',
@@ -5496,8 +5498,8 @@
 
     html += '<div class="form-section-title"><span>案件メンバー</span></div>';
     html += '<div class="form-card">';
-    html += formRow("自社の案件メンバー", false, false, ddMultiHtml("pick-internal", internalMembers.map(function(m){return m.name;}), internalPicked));
-    html += formRow("社外の案件メンバー", false, false, ddMultiHtml("pick-external", externalMembers.map(function(m){return m.name;}), externalPicked));
+    html += formRow("自社の案件メンバー", false, false, ddMultiHtml("pick-internal", memberDdItems(internalMembers), internalPicked));
+    html += formRow("社外の案件メンバー", false, false, ddMultiHtml("pick-external", memberDdItems(externalMembers), externalPicked));
     html += '</div>';
 
     html += '<div class="form-section-title"><span>案件情報</span><span class="lockhint">'+iLock()+' 「社外秘」にチェックした項目は社外に表示されません</span></div>';
@@ -5858,8 +5860,8 @@
       var orphans = cur.filter(function(a){ return !known[a.name]; });
       var nm = function(l){ return l.map(function(m){ return m.name; }); };
       var pickIn = function(list){ return picked.filter(function(n){ return nm(list).indexOf(n)!==-1; }); };
-      var body = '<div><div class="cf-label" style="margin-bottom:6px">自社の案件メンバー</div>'+ddMultiHtml("sec-in", nm(internal), pickIn(internal))+'</div>'+
-        '<div><div class="cf-label" style="margin-bottom:6px">社外の案件メンバー</div>'+ddMultiHtml("sec-ex", nm(external), pickIn(external))+'</div>'+
+      var body = '<div><div class="cf-label" style="margin-bottom:6px">自社の案件メンバー</div>'+ddMultiHtml("sec-in", memberDdItems(internal), pickIn(internal))+'</div>'+
+        '<div><div class="cf-label" style="margin-bottom:6px">社外の案件メンバー</div>'+ddMultiHtml("sec-ex", memberDdItems(external), pickIn(external))+'</div>'+
         (orphans.length ? '<div><div class="cf-label" style="margin-bottom:6px">登録のないメンバー</div>'+ddMultiHtml("sec-or", orphans.map(function(a){return a.name;}), orphans.map(function(a){return a.name;}))+'</div>' : '');
       openModal("案件メンバーの編集", body, cancel+'<button class="btn primary" id="sec-save">保存する</button>');
       ddMultiBind("sec-in"); ddMultiBind("sec-ex"); if(orphans.length) ddMultiBind("sec-or");
