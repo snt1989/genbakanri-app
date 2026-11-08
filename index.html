@@ -2641,6 +2641,9 @@
   }
   function snsPhotoList(p){ return filesForProject(p.id).filter(function(f){ return (f.contentType||"")==="image/jpeg" && !f.chunked && String(f.url||"").indexOf("data:image/jpeg")===0 && secretVisible(f); }).slice(0,60); }
   function openSnsModal(p){
+    snsEnsureFiles([p]).then(function(){ openSnsModal2(p); });
+  }
+  function openSnsModal2(p){
     var st = {v:0};
     var co0 = ""; try{ co0 = localStorage.getItem("gc_sns_company")||""; }catch(e){}
     var ex0 = ""; try{ ex0 = localStorage.getItem("gc_sns_tags")||""; }catch(e){}
@@ -3844,8 +3847,19 @@
     var cfg = snsCfg(), have = {}, cutoff = addDays(todayISO(), -(cfg.days||60));
     state.snsPosts.forEach(function(x){ have[x.projectId] = 1; });
     return state.projects.filter(function(p){
-      return p.status===cfg.trigger && !have[p.id] && ((p.endDate||p.updatedAt||p.createdAt||"").slice(0,10) >= cutoff) && snsPick(p, cfg.maxPhotos||10).length>0;
+      return p.status===cfg.trigger && !have[p.id] && ((p.endDate||p.updatedAt||p.createdAt||"").slice(0,10) >= cutoff) && (!snsFilesAll() || snsPick(p, cfg.maxPhotos||10).length>0);
     });
+  }
+  // 写真・ファイルは、メモリ保護のため新しいものの一部しか読み込んでいないことがある。その間は写真の有無を確認できないので、下書きを作る直前に案件ごとに取得する
+  function snsFilesAll(){ return !!(state.lazyOn.files && state.loaded.files && state.lazyScope.files==="" && (!state.lazyLimit.files || state.filesAllLoaded)); }
+  function snsEnsureFiles(list){
+    if(!db || snsFilesAll()) return Promise.resolve();
+    return Promise.all(list.map(function(p){
+      return db.collection("files").where("projectId","==",p.id).get().then(function(snap){
+        var have = {}; state.files.forEach(function(f){ have[f.id] = 1; });
+        snap.docs.forEach(function(d){ var o = toObj(d); if(!have[o.id]){ state.files.push(o); have[o.id] = 1; } });
+      }).catch(function(){});
+    }));
   }
   // AIで「集客につながる」投稿文を作る。案件の施工内容・工程・報告・メモ（個人情報は除去）を材料にする。失敗したら null を返し、定型文のままにする
   function snsAiCall(extra){
@@ -3868,7 +3882,10 @@
     var list = snsCandidates().slice(0, 5); if(!list.length) return 0;
     S.scanning = true;
     var n = state.snsPosts.length, t = snsNow();
-    Promise.all(list.map(function(p, i){
+    snsEnsureFiles(list).then(function(){
+      list = list.filter(function(p){ return snsPick(p, cfg.maxPhotos||10).length>0; });
+      if(!list.length){ if(manual) toast("新しく下書きにできる案件はありません（「"+cfg.trigger+"」で写真がある案件が対象です）"); S.scanning = false; return; }
+    return Promise.all(list.map(function(p, i){
       return db.collection("snsPosts").doc("auto_"+p.id).set({
         projectId:p.id, projectName:p.name||"", caption:snsBuildCaption(p, n+i), fileIds:snsPick(p, cfg.maxPhotos||10),
         status:"draft", source:"auto", scheduledAt:"", createdAt:t, updatedAt:t, createdBy:state.myName||""
@@ -3884,6 +3901,7 @@
           if(cur && cur.status==="draft" && cur.caption===base) snsSet("auto_"+p.id, {caption:txt, aiWritten:true}).catch(function(){});
         });
       });
+    });
     })
       .catch(function(){ toast("SNS投稿の下書きを作れませんでした"); })
       .then(function(){ S.scanning = false; });
@@ -4118,6 +4136,10 @@
     reload();
   }
   function openSnsEdit(x){
+    var pp = state.projects.filter(function(q){ return q.id===x.projectId; })[0];
+    snsEnsureFiles(pp?[pp]:[]).then(function(){ openSnsEdit2(x); });
+  }
+  function openSnsEdit2(x){
     var p = state.projects.filter(function(q){ return q.id===x.projectId; })[0], ro = x.status==="posted" || x.status==="posting";
     var sel = (x.fileIds||[]).slice(), all = p ? snsPhotoList(p) : [];
     var order = sel.map(function(id){ return snsPhotoById(id); }).filter(Boolean);
