@@ -3684,7 +3684,18 @@
   function setTab(id){
     bulkReset(); state.personalOpen=false; state.tab=id; state.sidebarOpen=false; if(!SUBPAGES[id]) state.returnTab=id; render();
   }
-  function goProjectForm(mode, project){ state.formMode=mode||state.returnTab; state.editingProject=project||null; state.tab="project-form"; render(); }
+  // 既存案件の内容を引き継いで、新規登録フォームを開く（進捗・日付・写真・ファイルなどは引き継がない）
+  function copyProjectToNew(id){
+    var src = state.projects.find(function(x){ return x.id===id; }); if(!src) return;
+    var cp = JSON.parse(JSON.stringify(src));
+    ["id","createdAt","createdBy","updatedAt","updatedBy","history","status","startDate","endDate","handoverDate","estimateDate","invoiceDate","source","fsize"].forEach(function(k){ delete cp[k]; });
+    Object.keys(cp).forEach(function(k){ if(/^(freee|works|sns)/i.test(k)) delete cp[k]; });
+    cp.assignees = normalizeAssignees(cp.assignees||[]).map(function(a){ return {name:a.name, kind:a.kind, status:"未確認"}; });
+    cp.__from = src.name || "";
+    cp.name = (src.name||"")+"（コピー）";
+    goProjectForm(state.returnTab, null, cp);
+  }
+  function goProjectForm(mode, project, copySrc){ state.formMode=mode||state.returnTab; state.editingProject=project||null; state.copySrc=copySrc||null; state.tab="project-form"; render(); }
   function goProjectDetail(id){ markProjSeen(id); state.viewingProjectId=id; state.tab="project-detail"; render(); ensureProject(id, function(){ if(state.viewingProjectId===id) render(); }); }
   // 案件別ファイル管理ページ. from: "detail" (案件詳細) or "files" (写真・ファイル一覧)
   function goProjectFiles(id, from, kind){ bulkReset(); state.filesProjectId=id; state.filesBack=from||"detail"; state.projectFilesKind=(kind==="photo"||kind==="doc")?kind:"all"; state.pfFolder=""; state.pfSel={}; state.pfMine=false; state.tab="project-files"; render(); }
@@ -5531,7 +5542,7 @@
   /* ============ PROJECT FORM (full page) ============ */
   function renderProjectForm(){
     if(!state.loaded.members || !state.loaded.customers) return skeleton();
-    var p = state.editingProject || {};
+    var p = state.editingProject || state.copySrc || {};
     var isEdit = !!state.editingProject;
     secretCtx = secretSet(p);
     var assignees = normalizeAssignees(p.assignees);
@@ -5541,7 +5552,7 @@
     var externalMembers = state.members.filter(function(m){return m.kind==="external";});
 
     var html = crumb(state.returnTab==="sales"?"営業案件一覧に戻る":"施工案件一覧に戻る", state.returnTab);
-    html += '<h1 class="pagetitle" style="margin-top:8px">'+(isEdit?"案件の編集":"案件の登録")+'</h1><div style="height:12px"></div>';
+    html += '<h1 class="pagetitle" style="margin-top:8px">'+(isEdit?"案件の編集":"案件の登録")+'</h1>'+(state.copySrc?'<div style="font-size:12.5px;line-height:1.7;color:var(--ink-soft);margin-top:6px;background:var(--surface-2,#f3f4f6);border-radius:8px;padding:8px 10px">「'+esc(state.copySrc.__from||"")+'」の内容をコピーしています。案件名・日付・金額を確認して登録してください。進捗・日付・写真・ファイル・報告書はコピーされません。</div>':'')+'<div style="height:12px"></div>';
     html += '<div class="form-shell">';
 
     html += '<div class="form-section-title"><span>顧客情報</span><span class="lockhint">'+iLock()+' 「社外秘」にチェックした項目は社外に表示されません</span></div>';
@@ -5784,13 +5795,14 @@
       };
 
       Object.assign(data, projectCustomerData(cdata), readPropertyData());
-      data.secretFields = readSecrets(document.getElementById("content"), state.editingProject||{});
+      data.secretFields = readSecrets(document.getElementById("content"), state.editingProject||state.copySrc||{});
       var doSave = function(){
       ensureCustomer(cdata, function(customerId){
         data.customerId = customerId;
         var id = state.editingProject ? state.editingProject.id : null;
         var mode = state.returnTab;
         writeDoc("projects", id, data, id?"案件を更新しました":"案件を登録しました", function(newId){
+          state.copySrc = null;
           setTab(mode);
         });
       });
@@ -6141,6 +6153,7 @@
     html += '<div style="display:flex;gap:8px;margin-top:12px"><button class="btn sm outline" data-chat-project="'+p.id+'">チャットする</button><button class="btn sm primary" data-edit-section="members">'+iPlus()+' メンバー追加</button></div>';
     html += '</div>';
     html += '<div style="margin-top:14px"><button class="btn outline" style="width:100%;justify-content:center" data-copy-summary="'+p.id+'">'+iDownload()+' 案件情報をコピー</button></div>';
+    html += '<div style="margin-top:8px"><button class="btn outline" style="width:100%;justify-content:center" data-copy-new="'+p.id+'">この案件をコピーして新規作成</button></div>';
     if(state.isAdmin) html += '<div style="margin-top:8px"><button class="btn outline" style="width:100%;justify-content:center" data-sns-post="'+p.id+'">'+iShare()+' SNS投稿を作る（Instagram）</button></div>';
     if(worksAvailable() && !isExternalViewer()) html += '<div style="margin-top:10px"><button class="btn outline" style="width:100%;justify-content:center" data-mail-project="'+esc(p.id)+'">'+iMail()+' メール（履歴・送信）</button></div>';
     html += '</div>';
@@ -11835,6 +11848,7 @@
     c.querySelectorAll("[data-edit-member]").forEach(function(el){ el.addEventListener("click", function(){ editMember(el.getAttribute("data-edit-member")); }); });
     c.querySelectorAll("[data-goto-memberform]").forEach(function(el){ el.addEventListener("click", function(){ goMemberForm(el.getAttribute("data-goto-memberform")==="ext"); }); });
     c.querySelectorAll("[data-mail-project]").forEach(function(el){ el.addEventListener("click", function(){ openMailModal(el.getAttribute("data-mail-project")); }); });
+    c.querySelectorAll("[data-copy-new]").forEach(function(el){ el.addEventListener("click", function(){ copyProjectToNew(el.getAttribute("data-copy-new")); }); });
     c.querySelectorAll("[data-copy-summary]").forEach(function(el){ el.addEventListener("click", function(){ copyProjectSummary(el.getAttribute("data-copy-summary")); }); });
     c.querySelectorAll("[data-toggle-assignee]").forEach(function(el){
       el.addEventListener("click", function(){
