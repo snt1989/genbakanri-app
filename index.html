@@ -1187,7 +1187,7 @@
     if(!state.canWrite || isExternalViewer()) return '<span class="badge stc" style="'+statusColorStyle(cur)+'">'+esc(cur||"未入力")+'</span>';
     var opts = STATUS_LIST.slice(); if(cur && opts.indexOf(cur)===-1) opts.push(cur); if(!cur) opts.unshift("");
     // 進捗名の長さに合わせたバッジの上に、透明なプルダウンを重ねる（選択肢に長い名前があっても、バッジが横に伸びない）
-    return '<span class="badge stc stq" style="'+statusColorStyle(cur)+'">'+esc(cur||"未入力")+'<select class="stq-sel" data-status-quick="'+esc(p.id)+'" title="クリックして進捗を変更">'+opts.map(function(o){ return '<option value="'+esc(o)+'"'+(o===cur?" selected":"")+'>'+esc(o||"未入力")+'</option>'; }).join("")+'</select></span>';
+    return '<span class="badge stc stq" style="'+statusColorStyle(cur)+'position:relative!important;display:inline-flex!important;width:auto!important;overflow:hidden;">'+esc(cur||"未入力")+'<select class="stq-sel" style="position:absolute!important;left:0!important;top:0!important;width:100%!important;height:100%!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;opacity:0!important;cursor:pointer;background:transparent!important;font-size:16px!important;" data-status-quick="'+esc(p.id)+'" title="クリックして進捗を変更">'+opts.map(function(o){ return '<option value="'+esc(o)+'"'+(o===cur?" selected":"")+'>'+esc(o||"未入力")+'</option>'; }).join("")+'</select></span>';
   }
   var STATUS_COLORS = {"現地調査前":["#6b7885","#EEF1F4"],"現地調査済":["#0b95a6","#DDF3F6"],"見積提出済":["#e38a00","#FFF0D2"],"契約済":["#2f6be0","#E0EAFF"],"施工中":["#1c9c47","#D7F3E0"],"施工完了":["#7b4bd1","#ECE3FB"],"清算済":["#33495f","#E1E7ED"],"失注":["#d6302b","#FDE1DF"]};
   function statusColorStyle(st){
