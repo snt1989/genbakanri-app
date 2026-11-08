@@ -2285,7 +2285,7 @@
   function lazyNeeds(){
     if(!db) return;
     var t = state.tab, seg = state.settingsSeg;
-    if(t==="project-detail"||t==="project-files"){ lazyStart("files", t==="project-files" ? state.filesProjectId : state.viewingProjectId); lazyStart("folders"); }
+    if(t==="project-detail"||t==="project-files"){ var pidF = t==="project-files" ? state.filesProjectId : state.viewingProjectId; lazyStart("files", pidF); lazyStart("folders"); filesEnsureProject(pidF); }
     else if(["files","reports"].indexOf(t)!==-1){ startListFiles(); lazyStart("folders"); }
     if(t==="settings" && seg==="admin"){ state.filesPaging = false; }
     if(t==="settings" && ["admin","backup"].indexOf(seg)!==-1){ startListFiles(); lazyStart("folders"); lazyStart("trash"); }   // 写真・ファイルは件数を絞って読む（全件は時間切れになる）
@@ -2540,8 +2540,23 @@
     var g = state.folders.find(function(x){ return x.id===f.folderId; });
     return !(g && g.secret);
   }
+  /* 写真・ファイルは、メモリ保護のため新しいものの一部しか読み込まないことがある。案件の画面では、その案件の分を別に取得して補う（filesExtra） */
+  var filesExtra = {}, filesExtraBusy = {}, filesExtraAt = {};
+  function filesEnsureProject(pid){
+    if(!db || !pid || filesExtraBusy[pid] || (filesExtra[pid] && Date.now()-(filesExtraAt[pid]||0)<30000)) return;
+    var sc = state.lazyScope.files||"", full = state.lazyOn.files && state.loaded.files && sc==="" && (!state.lazyLimit.files || state.filesAllLoaded);
+    if(full || sc===pid || sc.indexOf("mine:")===0 && sc.slice(5).split(",").indexOf(pid)!==-1) return;
+    if(!state.lazyOn.files || sc!=="") return;
+    filesExtraBusy[pid] = 1;
+    db.collection("files").where("projectId","==",pid).get().then(function(snap){
+      var first = !filesExtra[pid]; filesExtra[pid] = snap.docs.map(toObj); filesExtraAt[pid] = Date.now(); delete filesExtraBusy[pid]; if(first) render(); else bgRender();
+    }).catch(function(){ delete filesExtraBusy[pid]; });
+  }
+  function filesExtraRemove(id){ Object.keys(filesExtra).forEach(function(k){ filesExtra[k] = filesExtra[k].filter(function(x){ return x.id!==id; }); }); }
   function filesForProject(projectId){
-    return state.files.filter(function(f){ return f.projectId===projectId && fileVisible(f); }).sort(function(a,b){return (a.uploadedAt||"").localeCompare(b.uploadedAt||"");});
+    var base = state.files, ex = filesExtra[projectId];
+    if(ex && ex.length){ var have = {}; base.forEach(function(x){ have[x.id] = 1; }); base = base.concat(ex.filter(function(x){ return !have[x.id]; })); }
+    return base.filter(function(f){ return f.projectId===projectId && fileVisible(f); }).sort(function(a,b){return (a.uploadedAt||"").localeCompare(b.uploadedAt||"");});
   }
   /* 標準フォルダ：案件のファイル管理を開いたとき、フォルダが1つも無い案件に自動で作る（一度作ったら、削除しても作り直さない） */
   var STD_FOLDERS = ["現地調査","作業前","作業中","作業後"];
@@ -10149,7 +10164,7 @@
     if(col==="members" && !state.isAdmin){ toast("メンバーの削除は管理者のみ行えます"); return; }
     var put = trashPut(col,id);
     if(!db){ put.then(function(){ setRaw(col, rawOf(col).filter(function(x){return x.id!==id;})); toast(msg+"（プレビューのみ）"); render(); if(after) after(); }); return; }
-    put.then(function(){ return db.collection(col).doc(id).delete(); }).then(function(){toast(msg); if(after) after();}).catch(function(){toast("削除に失敗しました");});
+    put.then(function(){ return db.collection(col).doc(id).delete(); }).then(function(){ if(col==="files") filesExtraRemove(id); toast(msg); if(after) after();}).catch(function(){toast("削除に失敗しました");});
   }
   function restoreTrash(entry){
     var col = entry.col, id = entry.docId;
