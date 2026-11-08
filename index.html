@@ -5442,6 +5442,8 @@
       }
       return true;
     }).sort(projSortFn(projSortKey()));
+    state.projListIds = filtered.map(function(p){ return p.id; });
+    state.projListNarrowed = !!(fq || f.status.length || f.type!=="all" || f.noSched || f.assignees.length);
 
     var perPage = pageSizeFor("proj"), totalPages = Math.max(1,Math.ceil(filtered.length/perPage));
     if(f.page>totalPages) f.page = totalPages;
@@ -9937,7 +9939,11 @@
   }
   function openProjectDupScan(){ dupIgnoreLoad(openProjectDupScan2); }
   function openProjectDupScan2(){
-    var groups = [], seen = {}, list = state.projects, K = list.map(projKeys), ign = {};
+    var groups = [], seen = {}, list = state.projects, K, ign = {};
+    // 一覧で絞り込み・並び替えをしている場合は、その表示中の案件の中で重複チェックする（並び順も一覧に合わせる）
+    var scoped = !!(state.projListIds && state.projListIds.length);
+    if(scoped){ var byId = {}; state.projects.forEach(function(p){ byId[p.id]=p; }); list = state.projListIds.map(function(id){ return byId[id]; }).filter(Boolean); }
+    K = list.map(projKeys);
     dupIgn("projects").forEach(function(k){ ign[k] = 1; });
     for(var i=0;i<list.length;i++){
       if(seen[list[i].id]) continue;
@@ -9958,7 +9964,7 @@
           return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;padding:3px 0"><span style="font-size:12.5px">'+projDupLine(p)+'</span><button class="btn sm" data-pdup-open="'+esc(p.id)+'">開く</button></div>';
         }).join("")+'</div>';
     }).join("") : '<div style="font-size:13px">重複している可能性のある案件は見つかりませんでした。</div>';
-    openModal("案件の重複チェック", '<div style="font-size:12px;color:var(--ink-faint);margin-bottom:8px">案件名が同じ・似ている、または顧客と住所が同じ案件をまとめています。'+(groups.length?'（'+groups.length+'組）':'')+'</div><div style="max-height:55vh;overflow:auto">'+body+'</div>', dupFooter("projects"));
+    openModal("案件の重複チェック", '<div style="font-size:12px;color:var(--ink-faint);margin-bottom:8px">案件名が同じ・似ている、または顧客と住所が同じ案件をまとめています。'+(groups.length?'（'+groups.length+'組）':'')+''+(scoped&&state.projListNarrowed?'<br>※一覧の絞り込み（'+list.length+'件）の中だけで調べています。':'')+'</div><div style="max-height:55vh;overflow:auto">'+body+'</div>', dupFooter("projects"));
     document.querySelectorAll("#modal-box [data-pdup-ok]").forEach(function(el){ el.addEventListener("click", function(){ dupMarkChecked("projects", groups[Number(el.getAttribute("data-pdup-ok"))]).then(function(){ toast("確認済みにしました（リストから外しました）"); openProjectDupScan2(); }); }); });
     var rs = document.getElementById("dup-reset"); if(rs) rs.addEventListener("click", function(){ state.dupIgnore.projects = []; dupIgnoreSave().then(openProjectDupScan2); });
     document.querySelectorAll("#modal-box [data-pdup-open]").forEach(function(el){ el.addEventListener("click", function(){ var id = el.getAttribute("data-pdup-open"); closeModal(); goProjectDetail(id); }); });
