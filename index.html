@@ -3834,7 +3834,13 @@
   var SNS_DEF = {autoDraft:true, trigger:"施工完了", company:"", tags:"", area:true, maxPhotos:10, hour:12, useReport:true, days:60};
   state.sns = {cfg:null, cfgLoading:false, ig:null, accounts:[], filter:"draft", running:false, scanning:false};
 
-  function snsCfg(){ return Object.assign({}, SNS_DEF, state.sns.cfg || {}); }
+  // 投稿ルール：共通の設定（settings/sns）に、アカウントごとの設定（byAccount[アカウントID]）を重ねる。アカウント別の設定がなければ共通のまま
+  function snsCfg(acctId){
+    var g = state.sns.cfg || {}, o = Object.assign({}, SNS_DEF, g); delete o.byAccount;
+    var a = acctId && g.byAccount && g.byAccount[acctId]; if(a) Object.assign(o, a);
+    return o;
+  }
+  function snsCfgFor(p){ var a = p ? snsAcctFor({projectId:p.id}) : null; return snsCfg(a ? a.id : ""); }
   function snsNow(){ return new Date().toISOString(); }
   function snsFmt(iso){
     if(!iso) return ""; var d = new Date(iso); if(isNaN(d)) return "";
@@ -3880,14 +3886,15 @@
     return s ? s.slice(0,80)+"。" : "";
   }
   function snsBuildCaption(p, v){
-    var cfg = snsCfg();
+    var cfg = snsCfgFor(p);
     return snsText(p, {memo: cfg.useReport ? snsAutoMemo(p) : "", company:cfg.company, extraTags:cfg.tags, area:!!cfg.area}, v||0);
   }
   // 候補：「施工完了」になった案件のうち、まだ投稿の記録がなく、使える写真がある案件
   function snsCandidates(){
-    var cfg = snsCfg(), have = {}, cutoff = addDays(todayISO(), -(cfg.days||60));
+    var have = {};
     state.snsPosts.forEach(function(x){ have[x.projectId] = 1; });
     return state.projects.filter(function(p){
+      var cfg = snsCfgFor(p), cutoff = addDays(todayISO(), -(cfg.days||60));
       return p.status===cfg.trigger && !have[p.id] && ((p.endDate||p.updatedAt||p.createdAt||"").slice(0,10) >= cutoff) && (!snsFilesAll() || snsPick(p, cfg.maxPhotos||10).length>0);
     });
   }
@@ -3909,21 +3916,21 @@
   }
   function snsAiCaption(p, v){
     if(!db || window.claude || !myMember()) return Promise.resolve(null);
-    var cfg = snsCfg(), a = snsArea(p), o = {memo:"", company:cfg.company, extraTags:cfg.tags, area:!!cfg.area};
+    var cfg = snsCfgFor(p), a = snsArea(p), o = {memo:"", company:cfg.company, extraTags:cfg.tags, area:!!cfg.area};
     return snsAiCall({facts:{type:p.type||"", division:p.division||"", place: cfg.area ? (a.pref+a.city) : "", period:snsPeriod(p), memo: cfg.useReport ? snsAutoMemo(p) : "", company:cfg.company, tags:snsTags(p, o),
       material:snsMaterial(p, {instr:true, steps:true, reports:true, memo:true}), style:["丁寧","元気","落ち着いた"][(v||0)%3]}})
       .then(function(j){ return (j && j.text) ? String(j.text) : null; }).catch(function(){ return null; });
   }
   // 「候補を探す」で下書きができなかったとき、なぜ候補にならないかを案件ごとに表示する
   function snsDiagModal(){
-    var cfg = snsCfg(), have = {}, cutoff = addDays(todayISO(), -(cfg.days||60));
+    var cfg = snsCfg(), have = {};
     state.snsPosts.forEach(function(x){ have[x.projectId] = x; });
-    var rows = state.projects.filter(function(p){ return p.status===cfg.trigger; })
+    var rows = state.projects.filter(function(p){ return p.status===snsCfgFor(p).trigger; })
       .sort(function(a,b){ return String(b.endDate||b.updatedAt||"").localeCompare(String(a.endDate||a.updatedAt||"")); }).slice(0,40).map(function(p){
-        var why = "", d = (p.endDate||p.updatedAt||p.createdAt||"").slice(0,10);
+        var why = "", d = (p.endDate||p.updatedAt||p.createdAt||"").slice(0,10), pc = snsCfgFor(p), cutoff = addDays(todayISO(), -(pc.days||60));
         if(have[p.id]) why = "すでに投稿の記録があります（"+({draft:"下書き",scheduled:"予約中",posted:"投稿済み",failed:"失敗",skipped:"見送り",posting:"投稿中"}[have[p.id].status]||have[p.id].status)+"）→ SNS投稿の画面で確認できます";
-        else if(d < cutoff) why = "完了日（"+(d||"不明")+"）が、設定の「"+(cfg.days||60)+"日以内」より前です";
-        else if(!snsPick(p, cfg.maxPhotos||10).length){
+        else if(d < cutoff) why = "完了日（"+(d||"不明")+"）が、設定の「"+(pc.days||60)+"日以内」より前です";
+        else if(!snsPick(p, pc.maxPhotos||10).length){
           var n = filesForProject(p.id).length, im = filesForProject(p.id).filter(isImageFile).length;
           why = n ? "使える写真（JPEG）がありません（ファイル"+n+"件・画像"+im+"件。PNGやHEIC、分割保存の写真は対象外です）" : "写真・ファイルが登録されていません";
         }else why = "候補です（「候補を探す」でもう一度試してください）";
@@ -3937,16 +3944,15 @@
     if(S.scanning || !db || !state.isAdmin || !state.canWrite) return 0;
     if(!(state.loaded.projects && state.loaded.files && state.loaded.folders && state.loaded.snsPosts && state.loaded.reports)) return 0;
     if(S.cfg===null) return 0;
-    var cfg = snsCfg(); if(!cfg.autoDraft && !manual) return 0;
-    var list = snsCandidates().slice(0, 5); if(!list.length) return 0;
+    var list = snsCandidates().filter(function(p){ return manual || snsCfgFor(p).autoDraft; }).slice(0, 5); if(!list.length) return 0;
     S.scanning = true;
     var n = state.snsPosts.length, t = snsNow();
     snsEnsureFiles(list).then(function(){
-      list = list.filter(function(p){ return snsPick(p, cfg.maxPhotos||10).length>0; });
+      list = list.filter(function(p){ return snsPick(p, snsCfgFor(p).maxPhotos||10).length>0; });
       if(!list.length){ if(manual) snsDiagModal(); S.scanning = false; return; }
     return Promise.all(list.map(function(p, i){
       return db.collection("snsPosts").doc("auto_"+p.id).set({
-        projectId:p.id, projectName:p.name||"", caption:snsBuildCaption(p, n+i), fileIds:snsPick(p, cfg.maxPhotos||10),
+        projectId:p.id, projectName:p.name||"", caption:snsBuildCaption(p, n+i), fileIds:snsPick(p, snsCfgFor(p).maxPhotos||10),
         status:"draft", source:"auto", scheduledAt:"", createdAt:t, updatedAt:t, createdBy:state.myName||""
       });
     })).then(function(){
@@ -4066,8 +4072,8 @@
       '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+acts.join("")+'</div></div></div></div>';
   }
   function snsGet(id){ return state.snsPosts.filter(function(x){ return x.id===id; })[0]; }
-  function snsDefaultTime(){
-    var h = snsCfg().hour, d = new Date(); d.setSeconds(0,0); d.setHours(h, 0);
+  function snsDefaultTime(x){
+    var h = snsCfgFor(x ? state.projects.filter(function(q){ return q.id===x.projectId; })[0] : null).hour, d = new Date(); d.setSeconds(0,0); d.setHours(h, 0);
     if(d.getTime() <= Date.now() + 30*60000) d.setDate(d.getDate()+1);
     var z = function(n){ return String(n).padStart(2,"0"); };
     return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate())+"T"+z(d.getHours())+":"+z(d.getMinutes());
@@ -4086,7 +4092,7 @@
   function openSnsSchedule(x){
     openModal("承認して予約する",
       '<div class="cell-sub" style="margin-bottom:10px">指定した日時に、Instagramへ自動で投稿します。</div>'+
-      '<label class="field">投稿する日時<input type="datetime-local" id="sns-when" value="'+snsDefaultTime()+'"></label>'+
+      '<label class="field">投稿する日時<input type="datetime-local" id="sns-when" value="'+snsDefaultTime(x)+'"></label>'+
       '<div class="cell-sub" style="margin-top:10px">※予約の投稿は、管理者がこのアプリを開いている間は指定の時刻に送られます。アプリを閉じている間は、サーバーが毎日12時ごろにまとめて投稿します。</div>',
       '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="sns-when-ok">予約する</button>');
     document.getElementById("sns-when-ok").addEventListener("click", function(){
@@ -4100,7 +4106,7 @@
   function openSnsPreview(x, ov){
     var cap = String((ov && ov.caption!=null) ? ov.caption : (x.caption||"")), ids = ((ov && ov.fileIds) ? ov.fileIds : (x.fileIds||[])).slice(0,10), acc = (ov && ov.igAccount!=null) ? ov.igAccount : (x.igAccount||"");
     x = Object.assign({}, x, {igAccount:acc});
-    var p = state.projects.filter(function(q){ return q.id===x.projectId; })[0], cfg = snsCfg();
+    var p = state.projects.filter(function(q){ return q.id===x.projectId; })[0], cfg = snsCfg(snsAcctFor(x) ? snsAcctFor(x).id : "");
     var accObj = snsAcctFor(x), name = (accObj ? accObj.name : (cfg.company || "あなたのアカウント")), imgs = ids.map(function(id){ return snsPhotoById(id); }).filter(Boolean);
     var canPost = x.status==="draft" || x.status==="scheduled" || x.status==="failed";
     var tag = function(t){ return esc(t).replace(/(#[^\s#]+)/g, '<span style="color:#00376b">$1</span>'); };
@@ -4258,9 +4264,15 @@
       snsSet(x.id, {caption:cap, fileIds:ids, igAccount: ac ? ac.value : (x.igAccount||"")}).then(function(){ closeModal(); toast("保存しました"); }).catch(function(){ toast("保存に失敗しました"); });
     });
   }
-  function openSnsRules(){
-    var c = snsCfg();
+  function openSnsRules(selId){
+    selId = (typeof selId==="string") ? selId : "";
+    var L = state.sns.accounts || [], c = snsCfg(selId), g = state.sns.cfg || {};
+    var hasOwn = !!(selId && g.byAccount && g.byAccount[selId]);
+    var acctSel = L.length>1 ? '<label class="field" style="margin-bottom:12px">どのアカウントのルールか<select id="sr-acct"><option value="">共通（すべてのアカウント）</option>'+L.map(function(a){
+      return '<option value="'+esc(a.id)+'"'+(selId===a.id?' selected':'')+'>'+esc(a.name)+(g.byAccount&&g.byAccount[a.id]?'（個別ルールあり）':'')+'</option>';
+    }).join("")+'</select></label>'+(selId ? '<div class="cell-sub" style="margin:-4px 0 10px">'+(hasOwn?'このアカウント専用のルールです。':'まだ専用のルールはありません（いまは共通ルールを使用中）。保存すると、このアカウント専用になります。')+'</div>' : '<div class="cell-sub" style="margin:-4px 0 10px">個別のルールを作っていないアカウントは、この共通ルールで投稿します。</div>') : '';
     openModal("投稿ルール",
+      acctSel+
       '<label class="checkopt"><input type="checkbox" id="sr-auto"'+(c.autoDraft?' checked':'')+'>下書きを自動で作る</label>'+
       '<label class="field" style="margin-top:10px">対象にする案件の進捗<select id="sr-trig">'+STATUS_LIST.map(function(s){ return '<option'+(c.trigger===s?' selected':'')+'>'+esc(s)+'</option>'; }).join("")+'</select></label>'+
       '<label class="field" style="margin-top:10px">対象にする期間（完了から何日以内）<input type="number" id="sr-days" min="1" max="365" value="'+esc(c.days)+'"></label>'+
@@ -4271,14 +4283,25 @@
       '<label class="field" style="margin-top:10px">写真の最大枚数（1〜10）<input type="number" id="sr-max" min="1" max="10" value="'+esc(c.maxPhotos)+'"></label>'+
       '<label class="field" style="margin-top:10px">予約のときの初期時刻（時）<input type="number" id="sr-hour" min="0" max="23" value="'+esc(c.hour)+'"></label>'+
       '<div class="cell-sub" style="margin-top:10px">お客様名・電話・住所・金額は、投稿文に入らないよう自動で取り除きます。投稿は必ず承認してから行われます。</div>',
-      '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="sr-save">保存する</button>');
-    document.getElementById("sr-save").addEventListener("click", function(){
-      var g = function(id){ return document.getElementById(id); }, clamp = function(v, a, b, d){ v = parseInt(v,10); return isNaN(v) ? d : Math.max(a, Math.min(b, v)); };
-      var val = {autoDraft:g("sr-auto").checked, trigger:g("sr-trig").value, days:clamp(g("sr-days").value,1,365,60), company:g("sr-co").value.trim(), tags:g("sr-tags").value.trim(),
-        area:g("sr-area").checked, useReport:g("sr-rep").checked, maxPhotos:clamp(g("sr-max").value,1,10,10), hour:clamp(g("sr-hour").value,0,23,12)};
-      db.doc("settings/sns").set(Object.assign({}, val, {updatedAt:snsNow()})).then(function(){
-        state.sns.cfg = val; closeModal(); toast("投稿ルールを保存しました"); render();
+      '<button class="btn" data-close-modal>閉じる</button>'+(hasOwn?'<button class="btn" id="sr-reset">共通ルールに戻す</button>':'')+'<button class="btn primary" id="sr-save">保存する</button>');
+    var sa = document.getElementById("sr-acct"); if(sa) sa.addEventListener("change", function(){ openSnsRules(sa.value); });
+    var saveCfg = function(next, msg){
+      db.doc("settings/sns").set(Object.assign({}, next, {updatedAt:snsNow()})).then(function(){
+        state.sns.cfg = next; closeModal(); toast(msg); render();
       }).catch(function(){ toast("保存に失敗しました"); });
+    };
+    var rs = document.getElementById("sr-reset");
+    if(rs) rs.addEventListener("click", function(){
+      var next = Object.assign({}, g), ba = Object.assign({}, g.byAccount||{}); delete ba[selId]; next.byAccount = ba; saveCfg(next, "共通ルールに戻しました");
+    });
+    document.getElementById("sr-save").addEventListener("click", function(){
+      var q = function(id){ return document.getElementById(id); }, clamp = function(v, a, b, d){ v = parseInt(v,10); return isNaN(v) ? d : Math.max(a, Math.min(b, v)); };
+      var val = {autoDraft:q("sr-auto").checked, trigger:q("sr-trig").value, days:clamp(q("sr-days").value,1,365,60), company:q("sr-co").value.trim(), tags:q("sr-tags").value.trim(),
+        area:q("sr-area").checked, useReport:q("sr-rep").checked, maxPhotos:clamp(q("sr-max").value,1,10,10), hour:clamp(q("sr-hour").value,0,23,12)};
+      var next;
+      if(selId){ var ba = Object.assign({}, g.byAccount||{}); ba[selId] = val; next = Object.assign({}, g, {byAccount:ba}); }
+      else next = Object.assign({}, val, g.byAccount ? {byAccount:g.byAccount} : {});
+      saveCfg(next, selId ? "このアカウントの投稿ルールを保存しました" : "投稿ルールを保存しました");
     });
   }
   function bindSns(){
@@ -4290,7 +4313,7 @@
       if(state.sns.cfg===null){ toast("設定を読み込み中です。少し待ってからもう一度押してください"); return; }
       var n = snsAutoScan(true); if(!n) snsDiagModal();
     });
-    var ru = document.getElementById("sns-rules"); if(ru) ru.addEventListener("click", openSnsRules);
+    var ru = document.getElementById("sns-rules"); if(ru) ru.addEventListener("click", function(){ openSnsRules(); });
     var ac = document.getElementById("sns-accts"); if(ac) ac.addEventListener("click", openSnsAccounts);
   }
 
