@@ -2552,6 +2552,21 @@
       var first = !filesExtra[pid]; filesExtra[pid] = snap.docs.map(toObj); filesExtraAt[pid] = Date.now(); delete filesExtraBusy[pid]; if(first) render(); else bgRender();
     }).catch(function(){ delete filesExtraBusy[pid]; });
   }
+  // 「写真・ファイルを読み込む」ボタン：その案件の写真・ファイルを、いま取得し直す（表示されないとき・古いとき用）
+  function filesReloadProject(pid, btn){
+    if(!pid) return;
+    if(!db){ toast("オフラインのため読み込めません"); return; }
+    if(filesExtraBusy[pid]) return;
+    filesExtraBusy[pid] = 1;
+    var old = btn ? btn.textContent : ""; if(btn){ btn.disabled = true; btn.textContent = "読み込み中…"; }
+    db.collection("files").where("projectId","==",pid).get().then(function(snap){
+      filesExtra[pid] = snap.docs.map(toObj); filesExtraAt[pid] = Date.now(); delete filesExtraBusy[pid];
+      toast("写真・ファイルを読み込みました（"+filesForProject(pid).length+"件）"); render();
+    }).catch(function(e){
+      delete filesExtraBusy[pid]; if(btn){ btn.disabled = false; btn.textContent = old; }
+      toast("読み込めませんでした。時間をおいてもう一度お試しください");
+    });
+  }
   function filesExtraRemove(id){ Object.keys(filesExtra).forEach(function(k){ filesExtra[k] = filesExtra[k].filter(function(x){ return x.id!==id; }); }); }
   function filesForProject(projectId){
     var base = state.files, ex = filesExtra[projectId];
@@ -6042,7 +6057,7 @@
     }else{
       html += '<div style="font-size:12px;color:var(--ink-faint);margin:10px 0 14px">写真はまだありません</div>';
     }
-    html += '<div style="text-align:center;margin-bottom:22px"><button class="btn primary" style="border-radius:999px;padding:9px 26px" data-open-files="'+p.id+'">'+iUpload()+' ファイル</button></div>';
+    html += '<div style="text-align:center;margin-bottom:22px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn primary" style="border-radius:999px;padding:9px 26px" data-open-files="'+p.id+'">'+iUpload()+' ファイル</button><button class="btn outline" style="border-radius:999px;padding:9px 20px" data-files-reload="'+p.id+'">写真・ファイルを読み込む</button></div>';
     html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px"><h3 style="font-size:14px;margin:0">最近追加された資料</h3><a href="#" data-open-files="'+p.id+'" data-files-kind="doc" style="font-size:12.5px">書類をすべて見る</a></div>';
     if(recentDocs.length){
       html += recentDocs.map(function(f){
@@ -7123,6 +7138,7 @@
       (cur ? '' : '<button class="btn outline" id="pf-newfolder" style="border-radius:999px;padding:10px 22px">新規フォルダ作成</button>')+
       (cur ? '<button class="btn outline" data-pf-edit-folder="'+esc(cur.id)+'" style="border-radius:999px;padding:10px 22px">'+iEdit()+' フォルダを編集</button>' : '')+
       '<button class="btn outline" id="pf-dl-all" style="border-radius:999px;padding:10px 22px">'+iDownload()+' '+(cur?'このフォルダをダウンロード':'すべてダウンロード')+'</button>'+
+      '<button class="btn outline" data-files-reload="'+esc(p.id)+'" style="border-radius:999px;padding:10px 22px">写真・ファイルを読み込む</button>'+
       (state.isAdmin ? '<button class="btn outline" id="pf-lighten" style="border-radius:999px;padding:10px 22px">'+iAdmin()+' 写真を軽量化</button>' : '')+
       (state.isAdmin ? '<button class="btn outline" id="pf-backup" style="border-radius:999px;padding:10px 22px">'+iAdmin()+' この案件のファイルをバックアップ</button>' : '')+
     '</div>';
@@ -11700,6 +11716,7 @@
     [["data-pd-event","events",function(x){ openEventModal(x); }],["data-pd-step","steps",function(x){ openStepModal(x); }],["data-pd-report","reports",function(x){ openReportView(x); }]].forEach(function(t){
       c.querySelectorAll("["+t[0]+"]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); var x=state[t[1]].find(function(y){return y.id===el.getAttribute(t[0]);}); if(x) t[2](x); }); });
     });
+    c.querySelectorAll("[data-files-reload]").forEach(function(el){ el.addEventListener("click", function(){ filesReloadProject(el.getAttribute("data-files-reload"), el); }); });
     c.querySelectorAll("[data-open-files]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); goProjectFiles(el.getAttribute("data-open-files"), el.getAttribute("data-files-from")||"detail", el.getAttribute("data-files-kind")||"all"); }); });
     c.querySelectorAll("[data-fbp-sort]").forEach(function(el){ el.addEventListener("click", function(){
       var k = el.getAttribute("data-fbp-sort"), cur = state.fbpSort || {k:"created", dir:"desc"};
