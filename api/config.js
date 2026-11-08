@@ -300,6 +300,46 @@ function igPick(list, id, division){
   var dfl = list.filter(function(x){ return x.isDefault && x.dfltSet; })[0];
   return byDiv || dfl || list.filter(function(x){ return !x.division; })[0] || list[0] || null;
 }
+
+// ---- Instagramにログインして許可するだけで、アカウントを追加する（Instagramログイン方式のOAuth）----
+// 必要な環境変数：IG_APP_ID, IG_APP_SECRET（Metaアプリの「Instagram」→「APIの設定」にある、InstagramアプリのIDとシークレット）
+// Meta側の「有効なOAuthリダイレクトURI」に https://（このアプリのドメイン）/api/config を登録しておく
+function igAppId(){ return F.env("IG_APP_ID") || ""; }
+function igAppSecret(){ return F.env("IG_APP_SECRET") || ""; }
+function igRedirect(req){ var h = String((req.headers && (req.headers["x-forwarded-host"] || req.headers.host)) || "").split(",")[0].trim(); return "https://" + h + "/api/config"; }
+function igStateSign(obj){ var p = Buffer.from(JSON.stringify(obj)).toString("base64url"); return "ig." + p + "." + crypto.createHmac("sha256", igSecret()).update("state." + p).digest("hex").slice(0, 32); }
+function igStateRead(st){
+  var a = String(st || "").split("."); if(a.length !== 3 || a[0] !== "ig") return null;
+  if(crypto.createHmac("sha256", igSecret()).update("state." + a[1]).digest("hex").slice(0, 32) !== a[2]) return null;
+  try{ var o = JSON.parse(Buffer.from(a[1], "base64url").toString("utf8")); return o && o.exp > Date.now() ? o : null; }catch(e){ return null; }
+}
+async function igOauthCallback(req, res){
+  var q = req.query || {}, back = function(r){ res.statusCode = 302; res.setHeader("Location", "/?ig=" + r); return res.end(); };
+  try{
+    var st = igStateRead(q.state);
+    if(!st) return back("error");
+    if(q.error || !q.code) return back("denied");
+    var redirect = igRedirect(req);
+    var r1 = await fetch("https://api.instagram.com/oauth/access_token", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"},
+      body: new URLSearchParams({client_id: igAppId(), client_secret: igAppSecret(), grant_type: "authorization_code", redirect_uri: redirect, code: String(q.code).replace(/#_$/, "")}).toString()});
+    var j1 = await r1.json().catch(function(){ return {}; });
+    var d1 = (j1 && j1.data && j1.data[0]) || j1;
+    if(!r1.ok || !d1.access_token || !d1.user_id){ console.error("ig oauth", r1.status, JSON.stringify(j1).slice(0, 200)); return back("error"); }
+    var r2 = await fetch("https://graph.instagram.com/access_token?" + new URLSearchParams({grant_type: "ig_exchange_token", client_secret: igAppSecret(), access_token: d1.access_token}).toString());
+    var j2 = await r2.json().catch(function(){ return {}; });
+    var tok = (r2.ok && j2.access_token) ? j2.access_token : d1.access_token;   // 長期トークンに変えられなければ短期のまま（毎日の延長処理は長期のみ）
+    var uid = String(d1.user_id);
+    var who = await igGraph(uid, "GET", {fields: "username"}, {token: tok, main: false}).catch(function(){ return {}; });
+    var now = new Date().toISOString(), division = String(st.d || "").slice(0, 40);
+    var all = (await igAccounts(true)).filter(function(x){ return !x.main; });
+    var same = all.filter(function(x){ return String(x.userId) === uid && (x.division || "") === division; })[0];
+    var rec = {name: String(st.n || "").slice(0, 40) || who.username || "", division: division, userId: uid, username: String(who.username || ""), tokenEnc: igEncrypt(tok), disabled: false, updatedAt: now};
+    if(same){ if(!st.n) delete rec.name; await W.patchDoc("igAccounts/" + same.id, rec); }
+    else{ rec.createdAt = now; await W.createDoc("igAccounts", rec); }
+    await igAccounts(true);
+    return back("ok");
+  }catch(e){ console.error("ig oauth cb", e.message); return back("error"); }
+}
 // Instagramログイン方式のトークン（60日）を、毎日のcronで延長して Firestore に保存する
 async function igRefreshToken(){
   var res = [];
@@ -373,6 +413,14 @@ async function igHandler(req, res, b){
       if(old && old.id) await W.patchDoc("igAccounts/" + old.id, rec); else{ rec.createdAt = rec.updatedAt; await W.createDoc("igAccounts", rec); }
       await igAccounts(true);
       return res.status(200).json({ok: true, username: rec.username});
+    }
+    if(op === "acct-oauth"){
+      if(!(F.env("SSO_SECRET") || F.env("CRON_SECRET"))) return res.status(200).json({error: "ig", detail: "SSO_SECRET が未設定のため、トークンを安全に保存できません"});
+      var miss = []; if(!igAppId()) miss.push("IG_APP_ID"); if(!igAppSecret()) miss.push("IG_APP_SECRET");
+      if(miss.length) return res.status(200).json({error: "setup", missing: miss, redirect: igRedirect(req)});
+      var stt = igStateSign({n: String(b.name || "").trim().slice(0, 40), d: String(b.division || "").trim().slice(0, 40), exp: Date.now() + 15 * 60000});
+      var au = "https://www.instagram.com/oauth/authorize?" + new URLSearchParams({client_id: igAppId(), redirect_uri: igRedirect(req), response_type: "code", scope: "instagram_business_basic,instagram_business_content_publish", state: stt, force_reauth: "true"}).toString();
+      return res.status(200).json({ok: true, url: au});
     }
     if(op === "acct-default"){
       var dfid = String(b.id || "");
@@ -527,6 +575,7 @@ module.exports = async function handler(req, res) {
   if(req.method === "OPTIONS"){ setCors(res); res.statusCode = 204; return res.end(); }
   if(req.method === "POST") return ssoHandler(req, res);
   if(req.method === "GET" && req.query && req.query.snscron) return snsCronHandler(req, res);
+  if(req.method === "GET" && req.query && String(req.query.state || "").indexOf("ig.") === 0 && (req.query.code || req.query.error)) return igOauthCallback(req, res);
   if(req.method === "GET" && req.query && req.query.igimg){ try{ return await igImageHandler(req, res); }catch(e){ return res.status(500).end("error"); } }
 
   var cfg = {

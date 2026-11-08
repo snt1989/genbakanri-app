@@ -3770,6 +3770,12 @@
       if(state.isAdmin){ state.tab = "settings"; state.settingsSeg = "admin"; state.gmail = null; }
       setTimeout(function(){ toast(gr==="ok" ? "Gmailと連携しました" : (gr==="denied" ? "Gmailの許可がキャンセルされました" : (gr==="norefresh" ? "連携に失敗しました。Googleアカウントの「サードパーティのアクセス」で本アプリを削除してからやり直してください" : "Gmailとの連携に失敗しました。もう一度お試しください"))); }, 400);
     }
+    if(IG_RETURN && state.myName){
+      var igr = IG_RETURN; IG_RETURN = "";
+      try{ history.replaceState(null, "", location.pathname); }catch(e){}
+      if(state.isAdmin){ state.tab = "sns"; setTimeout(function(){ openSnsAccounts(); }, 800); }
+      setTimeout(function(){ toast(igr==="ok" ? "Instagramアカウントを追加しました" : (igr==="denied" ? "Instagramでの許可がキャンセルされました" : "Instagramアカウントを追加できませんでした。もう一度お試しください")); }, 300);
+    }
     if(FREEE_RETURN && state.myName){
       var fr = FREEE_RETURN; FREEE_RETURN = "";
       try{ history.replaceState(null, "", location.pathname); }catch(e){}
@@ -4179,7 +4185,10 @@
           (a.isDefault?'':'<button class="btn sm" data-ac-dflt="'+esc(a.id)+'">既定にする</button>')+('<button class="btn sm" data-ac-edit="'+esc(a.id)+'">編集</button>')+(a.main?'':'<button class="btn sm" data-ac-del="'+esc(a.id)+'">削除</button>')+'</div>';
       }).join("") : '<div class="cell-sub" style="padding:8px 0">まだアカウントがありません。</div>';
       var e = editing || {};
-      var form = '<div style="margin-top:14px;font-size:13px;font-weight:700">'+(e.id?'アカウントを編集':'アカウントを追加')+'</div>'+
+      var oauthBox = e.id ? '' : '<div style="margin-top:14px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)"><div style="font-size:13px;font-weight:700">かんたん追加（おすすめ）</div>'+
+        '<div class="cell-sub" style="margin:4px 0 8px;line-height:1.7">下の「表示名」「担当の事業部」を入れてから押すと、Instagramのログイン画面が開きます。追加したいアカウントでログインして「許可」するだけで、IDとトークンの入力は要りません。</div>'+
+        '<button class="btn primary" id="ac-oauth">Instagramでログインして追加</button><div id="ac-oauth-msg" class="cell-sub" style="margin-top:8px;line-height:1.7"></div></div>';
+      var form = oauthBox+'<div style="margin-top:14px;font-size:13px;font-weight:700">'+(e.id?'アカウントを編集':'IDとトークンで追加（手動）')+'</div>'+
         '<label class="field" style="margin-top:6px">表示名（アプリ内での名前）<input type="text" id="ac-name" value="'+esc(e.name||"")+'" placeholder="例：緑化事業部"></label>'+
         '<label class="field" style="margin-top:8px">担当の事業部（この事業部の案件は、このアカウントに投稿）<input type="text" id="ac-div" list="ac-divs" value="'+esc(e.division||"")+'" placeholder="空のままにすると、事業部を限定しません"><datalist id="ac-divs">'+divs.map(function(d){ return '<option value="'+esc(d)+'">'; }).join("")+'</datalist></label>'+
         (e.main ? '<div class="cell-sub" style="margin-top:8px">このアカウントの連携（ID・トークン）は、サーバーの設定で管理されています。表示名と担当事業部だけ変更できます。</div><input type="hidden" id="ac-uid" value="'+esc(e.userId||"")+'"><input type="hidden" id="ac-tok" value="">' :
@@ -4200,6 +4209,18 @@
         if(!a || !window.confirm("「"+a.name+"」の連携を削除します。予約中の投稿で、このアカウントを選んでいるものは投稿できなくなります。よろしいですか？")) return;
         snsIgCall({op:"acct-del", id:a.id}).then(function(j){ if(j && j.ok){ toast("削除しました"); reload(); } else toast("削除できませんでした"); }).catch(function(){ toast("削除できませんでした（通信エラー）"); });
       }); });
+      var ob = document.getElementById("ac-oauth");
+      if(ob) ob.addEventListener("click", function(){
+        var msg = document.getElementById("ac-oauth-msg"), nm = document.getElementById("ac-name").value.trim(), dv = document.getElementById("ac-div").value.trim();
+        ob.disabled = true; ob.textContent = "準備中…";
+        snsIgCall({op:"acct-oauth", name:nm, division:dv}).then(function(j){
+          if(j && j.ok && j.url){ window.location.href = j.url; return; }
+          ob.disabled = false; ob.textContent = "Instagramでログインして追加";
+          if(j && j.error==="setup"){
+            msg.innerHTML = '<b style="color:var(--warning)">最初に一度だけ、設定が必要です。</b><br>① Vercelの環境変数に <b>'+esc((j.missing||[]).join("・"))+'</b> を登録（Metaアプリの「Instagram」→「APIの設定」にある、InstagramアプリのIDとシークレット）<br>② Metaアプリの「有効なOAuthリダイレクトURI」に <b style="word-break:break-all">'+esc(j.redirect||"")+'</b> を登録<br>③ 再デプロイ後に、もう一度押してください。<br>※それまでは、下のフォームからIDとトークンで追加できます。';
+          }else msg.textContent = "開始できませんでした："+((j&&(j.detail||j.error))||"不明なエラー");
+        }).catch(function(){ ob.disabled = false; ob.textContent = "Instagramでログインして追加"; msg.textContent = "通信エラーです。もう一度お試しください"; });
+      });
       var cn = document.getElementById("ac-cancel"); if(cn) cn.addEventListener("click", function(){ draw(list, null); });
       document.getElementById("ac-save").addEventListener("click", function(){
         var btn = this, g = function(id){ return document.getElementById(id).value.trim(); };
@@ -8556,6 +8577,7 @@
   // 連携はVercel版（/api/freee）でのみ動きます。freeeのトークンはサーバー側に暗号化して保存され、
   // この画面は「管理者の氏名＋パスワード」を毎回サーバーへ送って本人確認します。
   var FREEE_API = "/api/freee";
+  var IG_RETURN = (function(){ try{ return new URLSearchParams(location.search).get("ig") || ""; }catch(e){ return ""; } })();
   var FREEE_RETURN = (function(){ try{ return new URLSearchParams(location.search).get("freee") || ""; }catch(e){ return ""; } })();
   var FREEE_DEAL_STATUSES = ["契約済","施工中","施工完了","清算済"];   // 売上として取引登録する進捗
   function freeeAvailable(){ return !!db && !window.claude && !state.offlineMode; }
