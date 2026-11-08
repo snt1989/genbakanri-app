@@ -278,22 +278,27 @@ async function igToken(){
 var _igAcc = null;
 async function igAccounts(force){
   if(!force && _igAcc && Date.now() - _igAcc.at < 20000) return _igAcc.v;
-  var out = [];
+  var out = [], dflt = "";
   if(igEnabled()) out.push({id: "main", name: F.env("IG_ACCOUNT_NAME") || "", division: F.env("IG_ACCOUNT_DIVISION") || "", userId: F.env("IG_USER_ID"), main: true});
   try{
     (await W.listDocs("igAccounts")).forEach(function(d){
+      if(d.id === "default"){ dflt = String(d.accountId || ""); return; }   // 既定にするアカウントのID
       if(d.id === "main"){ var m0 = out.filter(function(o){ return o.main; })[0]; if(m0){ if(d.name) m0.name = d.name; if(d.division != null) m0.division = d.division; } return; }   // 既定アカウントの表示名・担当事業部の上書き
       if(d.disabled || !d.userId || !d.tokenEnc) return;
       out.push({id: d.id, name: d.name || "", division: d.division || "", userId: String(d.userId), tokenEnc: d.tokenEnc, username: d.username || ""});
     });
   }catch(e){ console.error("igAccounts", e.message); }
+  // 既定：指定があればそのアカウント。指定がない（または消えた）ときは、環境変数の既定アカウント
+  var dx = out.filter(function(o){ return o.id === dflt; })[0] || out.filter(function(o){ return o.main; })[0] || null;
+  out.forEach(function(o){ o.isDefault = !!dx && o.id === dx.id; o.dfltSet = !!dflt && !!dx && dx.id === dflt; });
   _igAcc = {v: out, at: Date.now()};
   return out;
 }
 function igPick(list, id, division){
   if(id){ var a = list.filter(function(x){ return x.id === id; })[0]; if(a) return a; }
   var byDiv = division ? list.filter(function(x){ return x.division && x.division === division; })[0] : null;
-  return byDiv || list.filter(function(x){ return !x.division; })[0] || list[0] || null;
+  var dfl = list.filter(function(x){ return x.isDefault && x.dfltSet; })[0];
+  return byDiv || dfl || list.filter(function(x){ return !x.division; })[0] || list[0] || null;
 }
 // Instagramログイン方式のトークン（60日）を、毎日のcronで延長して Firestore に保存する
 async function igRefreshToken(){
@@ -369,6 +374,14 @@ async function igHandler(req, res, b){
       await igAccounts(true);
       return res.status(200).json({ok: true, username: rec.username});
     }
+    if(op === "acct-default"){
+      var dfid = String(b.id || "");
+      var cur = (await igAccounts(true)).filter(function(x){ return x.id === dfid; })[0];
+      if(!cur) return res.status(400).json({error: "対象のアカウントが見つかりません"});
+      await W.patchDoc("igAccounts/default", {accountId: dfid, updatedAt: new Date().toISOString()});
+      await igAccounts(true);
+      return res.status(200).json({ok: true});
+    }
     if(op === "acct-del"){
       var did = String(b.id || "");
       if(!/^[A-Za-z0-9_-]{4,64}$/.test(did) || did === "main") return res.status(400).json({error: "対象を指定してください"});
@@ -381,7 +394,7 @@ async function igHandler(req, res, b){
     var pub0 = async function(x){
       var nm = x.name || x.username || "";
       if(!nm && x.main){ try{ nm = (await igGraph(x.userId, "GET", {fields: "username"}, x)).username || ""; }catch(e){} }
-      return {id: x.id, name: nm || "（名前未設定）", division: x.division || "", userId: x.userId, main: !!x.main};
+      return {id: x.id, name: nm || "（名前未設定）", division: x.division || "", userId: x.userId, main: !!x.main, isDefault: !!x.isDefault, dfltSet: !!x.dfltSet};
     };
     if(b.probe || op === "accounts") return res.status(200).json({enabled: true, accounts: await Promise.all(accts.map(pub0))});
     var ids = (Array.isArray(b.fileIds) ? b.fileIds : []).map(String).slice(0, 10);

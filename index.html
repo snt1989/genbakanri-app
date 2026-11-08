@@ -4154,7 +4154,8 @@
     var L = state.sns.accounts || [], p = state.projects.filter(function(q){ return q.id===x.projectId; })[0];
     if(x.igAccount){ var a = L.filter(function(o){ return o.id===x.igAccount; })[0]; return a || null; }
     var div = (p && p.division) || "";
-    return (div ? L.filter(function(o){ return o.division && o.division===div; })[0] : null) || L.filter(function(o){ return !o.division; })[0] || L[0] || null;
+    var dfl = L.filter(function(o){ return o.isDefault && o.dfltSet; })[0];
+    return (div ? L.filter(function(o){ return o.division && o.division===div; })[0] : null) || dfl || L.filter(function(o){ return !o.division; })[0] || L[0] || null;
   }
   function snsAcctName(x){ var a = snsAcctFor(x); return a ? a.name : (x.igAccount ? "（見つからないアカウント）" : ""); }
   function openSnsAccounts(){
@@ -4173,9 +4174,9 @@
         if(d.exact.length) note += '<div style="font-size:11.5px;color:var(--danger);font-weight:700;margin-top:2px">⚠ 重複：同じID・同じ事業部のアカウントが、ほかにもあります'+(a.main?'（既定は削除できないため、ほかの方を削除してください）':'（不要なら「削除」してください）')+'</div>';
         else if(d.idOnly.length) note += '<div style="font-size:11.5px;color:var(--warning);margin-top:2px">同じIDが別の事業部（'+esc(d.idOnly.map(function(o){ return o.division||"指定なし"; }).join("・"))+'）でも登録されています</div>';
         if(d.name.length) note += '<div style="font-size:11.5px;color:var(--warning);margin-top:2px">同じ表示名で、別のIDのアカウントがあります（名前を変えると見分けやすくなります）</div>';
-        return '<div style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)"><div style="flex:1;min-width:0"><b style="font-size:13.5px">'+esc(a.name)+'</b>'+(a.main?' <span class="badge">既定</span>':'')+
+        return '<div style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)"><div style="flex:1;min-width:0"><b style="font-size:13.5px">'+esc(a.name)+'</b>'+(a.isDefault?' <span class="badge">既定</span>':'')+
           '<div class="cell-sub">'+(a.division?'事業部：'+esc(a.division):'事業部の指定なし（他の事業部の案件も、ここに投稿）')+'　ID：'+esc(a.userId)+'</div>'+note+'</div>'+
-          ('<button class="btn sm" data-ac-edit="'+esc(a.id)+'">編集</button>')+(a.main?'':'<button class="btn sm" data-ac-del="'+esc(a.id)+'">削除</button>')+'</div>';
+          (a.isDefault?'':'<button class="btn sm" data-ac-dflt="'+esc(a.id)+'">既定にする</button>')+('<button class="btn sm" data-ac-edit="'+esc(a.id)+'">編集</button>')+(a.main?'':'<button class="btn sm" data-ac-del="'+esc(a.id)+'">削除</button>')+'</div>';
       }).join("") : '<div class="cell-sub" style="padding:8px 0">まだアカウントがありません。</div>';
       var e = editing || {};
       var form = '<div style="margin-top:14px;font-size:13px;font-weight:700">'+(e.id?'アカウントを編集':'アカウントを追加')+'</div>'+
@@ -4188,6 +4189,12 @@
       var body = '<div class="cell-sub" style="margin-bottom:6px">事業部ごとのInstagramアカウントを登録します。投稿のたびに、投稿先を確認できます。</div>'+rows+form;
       openModal("Instagramアカウント", body, '<button class="btn" data-close-modal>閉じる</button>'+(e.id?'<button class="btn" id="ac-cancel">編集をやめる</button>':'')+'<button class="btn primary" id="ac-save">'+(e.id?'更新する':'追加する')+'</button>');
       Array.prototype.forEach.call(document.querySelectorAll("[data-ac-edit]"), function(b){ b.addEventListener("click", function(){ var a = list.filter(function(o){ return o.id===b.getAttribute("data-ac-edit"); })[0]; draw(list, a); }); });
+      Array.prototype.forEach.call(document.querySelectorAll("[data-ac-dflt]"), function(b){ b.addEventListener("click", function(){
+        var a = list.filter(function(o){ return o.id===b.getAttribute("data-ac-dflt"); })[0]; if(!a) return;
+        if(!window.confirm("「"+a.name+"」を既定のアカウントにします。事業部が合うアカウントがない案件は、ここに投稿されます。よろしいですか？")) return;
+        b.disabled = true;
+        snsIgCall({op:"acct-default", id:a.id}).then(function(j){ if(j && j.ok){ toast("既定を「"+a.name+"」にしました"); reload(); } else{ toast("変更できませんでした"); b.disabled = false; } }).catch(function(){ toast("変更できませんでした（通信エラー）"); b.disabled = false; });
+      }); });
       Array.prototype.forEach.call(document.querySelectorAll("[data-ac-del]"), function(b){ b.addEventListener("click", function(){
         var a = list.filter(function(o){ return o.id===b.getAttribute("data-ac-del"); })[0];
         if(!a || !window.confirm("「"+a.name+"」の連携を削除します。予約中の投稿で、このアカウントを選んでいるものは投稿できなくなります。よろしいですか？")) return;
