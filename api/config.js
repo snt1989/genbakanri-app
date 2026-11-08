@@ -357,6 +357,10 @@ async function igHandler(req, res, b){
       if(!/^[0-9]{5,25}$/.test(uid0)) return res.status(200).json({error: "ig", detail: "ユーザーIDは数字だけで入力してください"});
       var old = id0 && id0 !== "main" && /^[A-Za-z0-9_-]{4,64}$/.test(id0) ? await W.getDoc("igAccounts/" + id0) : null;
       if(!tok0 && !(old && old.tokenEnc)) return res.status(200).json({error: "ig", detail: "アクセストークンを入力してください"});
+      // 同じユーザーID・同じ担当事業部のアカウントを重複して登録しない
+      var dvn = String(b.division || "").trim().slice(0, 40);
+      var dupA = (await igAccounts(true)).filter(function(x){ return x.id !== id0 && String(x.userId) === uid0 && (x.division || "") === dvn; })[0];
+      if(dupA) return res.status(200).json({error: "ig", detail: "同じID・同じ事業部のアカウント「" + (dupA.name || dupA.userId) + "」がすでに登録されています"});
       var test = {token: tok0 || igDecrypt(old.tokenEnc), main: false};
       var who = await igGraph(uid0, "GET", {fields: "username"}, test).catch(function(e){ throw Object.assign(new Error("このユーザーIDとトークンでは、Instagramに接続できませんでした（" + e.message + "）"), {status: 200}); });
       var rec = {name: String(b.name || "").trim().slice(0, 40) || who.username || "", division: String(b.division || "").trim().slice(0, 40), userId: uid0, username: String(who.username || ""), disabled: false, updatedAt: new Date().toISOString()};

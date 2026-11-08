@@ -4162,9 +4162,19 @@
     if(!db || window.claude || !me){ toast("アカウントの管理は、Vercel版（本番）に管理者でログインしているときだけ使えます"); return; }
     var divs = DIVISIONS.slice(); state.projects.forEach(function(p){ if(p.division && divs.indexOf(p.division)===-1) divs.push(p.division); });
     var draw = function(list, editing){
+      // 重複の判定：同じユーザーID・同じ担当事業部のものは「重複」（どちらかを削除してください）。IDが同じで事業部だけ違うものは、意図した使い分けかもしれないので注意表示のみ
+      var dupOf = function(a){
+        var same = list.filter(function(o){ return o.id!==a.id && String(o.userId)===String(a.userId); });
+        return {exact: same.filter(function(o){ return (o.division||"")===(a.division||""); }), idOnly: same.filter(function(o){ return (o.division||"")!==(a.division||""); }),
+          name: list.filter(function(o){ return o.id!==a.id && String(o.userId)!==String(a.userId) && o.name && o.name===a.name; })};
+      };
       var rows = list.length ? list.map(function(a){
+        var d = dupOf(a), note = "";
+        if(d.exact.length) note += '<div style="font-size:11.5px;color:var(--danger);font-weight:700;margin-top:2px">⚠ 重複：同じID・同じ事業部のアカウントが、ほかにもあります'+(a.main?'（既定は削除できないため、ほかの方を削除してください）':'（不要なら「削除」してください）')+'</div>';
+        else if(d.idOnly.length) note += '<div style="font-size:11.5px;color:var(--warning);margin-top:2px">同じIDが別の事業部（'+esc(d.idOnly.map(function(o){ return o.division||"指定なし"; }).join("・"))+'）でも登録されています</div>';
+        if(d.name.length) note += '<div style="font-size:11.5px;color:var(--warning);margin-top:2px">同じ表示名で、別のIDのアカウントがあります（名前を変えると見分けやすくなります）</div>';
         return '<div style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)"><div style="flex:1;min-width:0"><b style="font-size:13.5px">'+esc(a.name)+'</b>'+(a.main?' <span class="badge">既定</span>':'')+
-          '<div class="cell-sub">'+(a.division?'事業部：'+esc(a.division):'事業部の指定なし（他の事業部の案件も、ここに投稿）')+'　ID：'+esc(a.userId)+'</div></div>'+
+          '<div class="cell-sub">'+(a.division?'事業部：'+esc(a.division):'事業部の指定なし（他の事業部の案件も、ここに投稿）')+'　ID：'+esc(a.userId)+'</div>'+note+'</div>'+
           ('<button class="btn sm" data-ac-edit="'+esc(a.id)+'">編集</button>')+(a.main?'':'<button class="btn sm" data-ac-del="'+esc(a.id)+'">削除</button>')+'</div>';
       }).join("") : '<div class="cell-sub" style="padding:8px 0">まだアカウントがありません。</div>';
       var e = editing || {};
@@ -4188,6 +4198,10 @@
         var btn = this, g = function(id){ return document.getElementById(id).value.trim(); };
         if(!e.main && !/^[0-9]{5,25}$/.test(g("ac-uid"))){ toast("ユーザーIDは数字だけで入力してください"); return; }
         if(!e.id && !g("ac-tok")){ toast("アクセストークンを入力してください"); return; }
+        if(!e.main){
+          var dv = g("ac-div"), dd = list.filter(function(o){ return o.id!==e.id && String(o.userId)===g("ac-uid") && (o.division||"")===dv; })[0];
+          if(dd){ toast("同じID・同じ事業部のアカウント「"+dd.name+"」がすでに登録されています"); return; }
+        }
         btn.disabled = true; btn.textContent = "確認中…";
         snsIgCall({op:"acct-save", id:e.id||"", name:g("ac-name"), division:g("ac-div"), userId:g("ac-uid"), token:g("ac-tok")}).then(function(j){
           if(j && j.ok){ toast("連携しました"+(j.username?"（@"+j.username+"）":"")); reload(); }
