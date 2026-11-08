@@ -8742,20 +8742,31 @@
   function freeePicker(title, intro, items, runLabel, onRun){
     if(state.freee.busy){ toast("処理中です。完了までお待ちください"); return; }
     var rows = items.map(function(it){
-      return '<label style="display:flex;gap:10px;align-items:flex-start;padding:9px 4px;border-bottom:1px solid var(--border);margin:0;cursor:pointer"><input type="checkbox" data-fr-pick="'+esc(it.id)+'" checked style="margin-top:3px">'+
+      return '<label data-fr-text="'+esc(String((it.label||"")+" "+(it.sub||"")+" "+(it.right||"")).normalize("NFKC").toLowerCase())+'" style="display:flex;gap:10px;align-items:flex-start;padding:9px 4px;border-bottom:1px solid var(--border);margin:0;cursor:pointer"><input type="checkbox" data-fr-pick="'+esc(it.id)+'" checked style="margin-top:3px">'+
         '<span style="flex:1;min-width:0"><span style="display:block;font-weight:700;font-size:12.5px;word-break:break-all">'+esc(it.label)+'</span>'+(it.sub?'<span style="display:block;font-size:11px;color:var(--ink-faint);line-height:1.5">'+esc(it.sub)+'</span>':'')+'</span>'+
         (it.right?'<span class="num" style="font-size:12px;white-space:nowrap">'+esc(it.right)+'</span>':'')+'</label>';
     }).join("");
     openModal(title, '<div style="font-size:12.5px;line-height:1.7;margin-bottom:8px">'+esc(intro)+'</div>'+
-      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><button class="btn sm" id="fr-pick-all">すべて選択</button><button class="btn sm" id="fr-pick-none">すべて解除</button><span id="fr-pick-count" style="font-size:12px;margin-left:auto"></span></div>'+
+      (items.length>8 ? '<input type="search" id="fr-pick-q" placeholder="名前・電話番号などで探す（例：ハイジア）" autocomplete="off" style="width:100%;margin-bottom:8px"><div id="fr-pick-shown" style="font-size:11.5px;color:var(--ink-faint);margin:-2px 0 6px"></div>' : '')+
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><button class="btn sm" id="fr-pick-all">表示中をすべて選択</button><button class="btn sm" id="fr-pick-none">表示中をすべて解除</button><span id="fr-pick-count" style="font-size:12px;margin-left:auto"></span></div>'+
       '<div id="fr-pick-list" style="max-height:48vh;overflow:auto;border-top:1px solid var(--border)">'+rows+'</div>',
       '<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="fr-pick-run">'+esc(runLabel)+'</button>');
     var box = document.getElementById("modal-box");
     var checks = function(){ return Array.prototype.slice.call(box.querySelectorAll("input[data-fr-pick]")); };
     var refresh = function(){ var n = checks().filter(function(c){ return c.checked; }).length; document.getElementById("fr-pick-count").textContent = n+" / "+items.length+"件を選択中"; document.getElementById("fr-pick-run").disabled = n===0; };
     checks().forEach(function(c){ c.addEventListener("change", refresh); });
-    document.getElementById("fr-pick-all").onclick = function(){ checks().forEach(function(c){ c.checked = true; }); refresh(); };
-    document.getElementById("fr-pick-none").onclick = function(){ checks().forEach(function(c){ c.checked = false; }); refresh(); };
+    var shown = function(){ return checks().filter(function(c){ return c.closest("label").style.display!=="none"; }); };
+    document.getElementById("fr-pick-all").onclick = function(){ shown().forEach(function(c){ c.checked = true; }); refresh(); };
+    document.getElementById("fr-pick-none").onclick = function(){ shown().forEach(function(c){ c.checked = false; }); refresh(); };
+    var q = document.getElementById("fr-pick-q");
+    if(q){
+      var filt = function(){
+        var words = q.value.normalize("NFKC").toLowerCase().split(/[\s　]+/).filter(Boolean), n = 0;
+        box.querySelectorAll("#fr-pick-list label").forEach(function(l){ var t = l.getAttribute("data-fr-text")||"", ok = words.every(function(w){ return t.indexOf(w)!==-1; }); l.style.display = ok ? "" : "none"; if(ok) n++; });
+        document.getElementById("fr-pick-shown").textContent = words.length ? (n+"件が見つかりました（全"+items.length+"件）") : "";
+      };
+      q.addEventListener("input", filt); setTimeout(function(){ q.focus(); }, 50);
+    }
     document.getElementById("fr-pick-run").onclick = function(){
       var ids = checks().filter(function(c){ return c.checked; }).map(function(c){ return c.getAttribute("data-fr-pick"); });
       if(!ids.length) return;
