@@ -3888,6 +3888,24 @@
       material:snsMaterial(p, {instr:true, steps:true, reports:true, memo:true}), style:["丁寧","元気","落ち着いた"][(v||0)%3]}})
       .then(function(j){ return (j && j.text) ? String(j.text) : null; }).catch(function(){ return null; });
   }
+  // 「候補を探す」で下書きができなかったとき、なぜ候補にならないかを案件ごとに表示する
+  function snsDiagModal(){
+    var cfg = snsCfg(), have = {}, cutoff = addDays(todayISO(), -(cfg.days||60));
+    state.snsPosts.forEach(function(x){ have[x.projectId] = x; });
+    var rows = state.projects.filter(function(p){ return p.status===cfg.trigger; })
+      .sort(function(a,b){ return String(b.endDate||b.updatedAt||"").localeCompare(String(a.endDate||a.updatedAt||"")); }).slice(0,40).map(function(p){
+        var why = "", d = (p.endDate||p.updatedAt||p.createdAt||"").slice(0,10);
+        if(have[p.id]) why = "すでに投稿の記録があります（"+({draft:"下書き",scheduled:"予約中",posted:"投稿済み",failed:"失敗",skipped:"見送り",posting:"投稿中"}[have[p.id].status]||have[p.id].status)+"）→ SNS投稿の画面で確認できます";
+        else if(d < cutoff) why = "完了日（"+(d||"不明")+"）が、設定の「"+(cfg.days||60)+"日以内」より前です";
+        else if(!snsPick(p, cfg.maxPhotos||10).length){
+          var n = filesForProject(p.id).length, im = filesForProject(p.id).filter(isImageFile).length;
+          why = n ? "使える写真（JPEG）がありません（ファイル"+n+"件・画像"+im+"件。PNGやHEIC、分割保存の写真は対象外です）" : "写真・ファイルが登録されていません";
+        }else why = "候補です（「候補を探す」でもう一度試してください）";
+        return '<div style="padding:8px 0;border-bottom:1px solid var(--border)"><b style="font-size:13px">'+esc(p.name||"")+'</b><div style="font-size:12px;color:var(--ink-soft);margin-top:2px">'+esc(why)+'</div><button class="btn sm outline" data-sns-post="'+esc(p.id)+'" style="margin-top:4px">この案件でSNS投稿を作る</button></div>';
+      }).join("");
+    openModal("下書きにできる案件がありません", '<div style="font-size:12.5px;margin-bottom:6px;line-height:1.7">「'+esc(cfg.trigger)+'」の案件を調べた結果です。条件を満たさない案件でも、「この案件でSNS投稿を作る」から手動で作れます。</div>'+(rows||'<div style="padding:12px 0;color:var(--ink-faint)">「'+esc(cfg.trigger)+'」の案件がありません</div>'), '<button class="btn" data-close-modal>閉じる</button>');
+    document.querySelectorAll("#modal-box [data-sns-post]").forEach(function(el){ el.addEventListener("click", function(){ var p = state.projects.find(function(x){ return x.id===el.getAttribute("data-sns-post"); }); closeModal(); if(p) openSnsModal(p); }); });
+  }
   function snsAutoScan(manual){
     var S = state.sns;
     if(S.scanning || !db || !state.isAdmin || !state.canWrite) return 0;
@@ -3899,7 +3917,7 @@
     var n = state.snsPosts.length, t = snsNow();
     snsEnsureFiles(list).then(function(){
       list = list.filter(function(p){ return snsPick(p, cfg.maxPhotos||10).length>0; });
-      if(!list.length){ if(manual) toast("新しく下書きにできる案件はありません（「"+cfg.trigger+"」で写真がある案件が対象です）"); S.scanning = false; return; }
+      if(!list.length){ if(manual) snsDiagModal(); S.scanning = false; return; }
     return Promise.all(list.map(function(p, i){
       return db.collection("snsPosts").doc("auto_"+p.id).set({
         projectId:p.id, projectName:p.name||"", caption:snsBuildCaption(p, n+i), fileIds:snsPick(p, cfg.maxPhotos||10),
@@ -4244,7 +4262,7 @@
     var sc = document.getElementById("sns-scan");
     if(sc) sc.addEventListener("click", function(){
       if(state.sns.cfg===null){ toast("設定を読み込み中です。少し待ってからもう一度押してください"); return; }
-      var n = snsAutoScan(true); if(!n) toast("新しく下書きにできる案件はありません（「"+snsCfg().trigger+"」で写真がある案件が対象です）");
+      var n = snsAutoScan(true); if(!n) snsDiagModal();
     });
     var ru = document.getElementById("sns-rules"); if(ru) ru.addEventListener("click", openSnsRules);
     var ac = document.getElementById("sns-accts"); if(ac) ac.addEventListener("click", openSnsAccounts);
@@ -6123,6 +6141,7 @@
     html += '<div style="display:flex;gap:8px;margin-top:12px"><button class="btn sm outline" data-chat-project="'+p.id+'">チャットする</button><button class="btn sm primary" data-edit-section="members">'+iPlus()+' メンバー追加</button></div>';
     html += '</div>';
     html += '<div style="margin-top:14px"><button class="btn outline" style="width:100%;justify-content:center" data-copy-summary="'+p.id+'">'+iDownload()+' 案件情報をコピー</button></div>';
+    if(state.isAdmin) html += '<div style="margin-top:8px"><button class="btn outline" style="width:100%;justify-content:center" data-sns-post="'+p.id+'">'+iShare()+' SNS投稿を作る（Instagram）</button></div>';
     if(worksAvailable() && !isExternalViewer()) html += '<div style="margin-top:10px"><button class="btn outline" style="width:100%;justify-content:center" data-mail-project="'+esc(p.id)+'">'+iMail()+' メール（履歴・送信）</button></div>';
     html += '</div>';
     html += '</div>'; // end grid
