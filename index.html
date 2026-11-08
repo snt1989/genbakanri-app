@@ -131,6 +131,10 @@
 
   select.status-quick{appearance:none;-webkit-appearance:none;border:none;cursor:pointer;font-family:inherit;width:auto;margin:0;padding:4px 24px 4px 11px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23fff' stroke-width='3.4' stroke-linecap='round'/%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23555' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 9px center}
   select.status-quick:hover{filter:brightness(.96)}
+  .badge.stq{position:relative;cursor:pointer;padding-right:24px;width:auto;max-width:100%;}
+  .badge.stq::after{content:"";position:absolute;right:9px;top:50%;width:6px;height:6px;margin-top:-5px;border-right:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(45deg);}
+  .badge.stq:hover{filter:brightness(.96)}
+  .badge.stq select.stq-sel{position:absolute;left:0;top:0;width:100%;height:100%;min-height:0!important;margin:0;padding:0!important;border:none;opacity:0;cursor:pointer;font-size:16px!important;}
   .badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:4px 11px;border-radius:999px;white-space:nowrap;}
   .badge.fill-black{background:var(--black-badge);color:var(--surface);}
   .badge.fill-green{background:var(--accent);color:var(--accent-ink);}
@@ -1182,7 +1186,8 @@
     var cur = p.status||"";
     if(!state.canWrite || isExternalViewer()) return '<span class="badge stc" style="'+statusColorStyle(cur)+'">'+esc(cur||"未入力")+'</span>';
     var opts = STATUS_LIST.slice(); if(cur && opts.indexOf(cur)===-1) opts.push(cur); if(!cur) opts.unshift("");
-    return '<select class="badge status-quick stc" style="'+statusColorStyle(cur)+'" data-status-quick="'+esc(p.id)+'" title="クリックして進捗を変更">'+opts.map(function(o){ return '<option value="'+esc(o)+'"'+(o===cur?" selected":"")+'>'+esc(o||"未入力")+'</option>'; }).join("")+'</select>';
+    // 進捗名の長さに合わせたバッジの上に、透明なプルダウンを重ねる（選択肢に長い名前があっても、バッジが横に伸びない）
+    return '<span class="badge stc stq" style="'+statusColorStyle(cur)+'">'+esc(cur||"未入力")+'<select class="stq-sel" data-status-quick="'+esc(p.id)+'" title="クリックして進捗を変更">'+opts.map(function(o){ return '<option value="'+esc(o)+'"'+(o===cur?" selected":"")+'>'+esc(o||"未入力")+'</option>'; }).join("")+'</select></span>';
   }
   var STATUS_COLORS = {"現地調査前":["#6b7885","#EEF1F4"],"現地調査済":["#0b95a6","#DDF3F6"],"見積提出済":["#e38a00","#FFF0D2"],"契約済":["#2f6be0","#E0EAFF"],"施工中":["#1c9c47","#D7F3E0"],"施工完了":["#7b4bd1","#ECE3FB"],"清算済":["#33495f","#E1E7ED"],"失注":["#d6302b","#FDE1DF"]};
   function statusColorStyle(st){
