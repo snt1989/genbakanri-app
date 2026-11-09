@@ -1891,7 +1891,9 @@
     // 案件一覧の担当者の絞り込みは、ログインしている担当者を初期値にする（ログインごとに1回）
     if(state.assigneeInitFor!==m.name){
       state.assigneeInitFor = m.name;
-      state.salesFilter.assignees = [m.name]; state.constFilter.assignees = [m.name];
+      readMyListPrefs();
+      state.salesFilter.assignees = myPrefAssignees("sales"); state.constFilter.assignees = myPrefAssignees("construction");
+      applyListDefaults();
       state.salesFilter.page = 1; state.constFilter.page = 1;
     }
     try{
@@ -2051,6 +2053,7 @@
     loadMobileNav();
     loadBrand();
     loadListDefaults();
+    loadMyListPrefs();
     loadPhotoCfg();
   }
 
@@ -3633,7 +3636,31 @@
   /* ============ 案件一覧の初期チェック（進捗） ============ */
   // 管理者が「設定 > 管理画面」で、営業・施工それぞれの案件一覧を開いたときに最初からチェックされている進捗を決める。全員共通。保存先: settings/listDefaults
   var LIST_DEFAULTS_BUILTIN = {sales: null, construction: ["契約済","施工中"]};   // null = すべての進捗
+  // 個人の初期チェック（自分用）。state.myListPrefs = { sales:{status:[...], assignee:"me"|"all"|[氏名...]}, construction:{...} }。保存先: 端末（localStorage）と settings/listPrefs_<メンバーID>
+  function myPrefKey(){ return "gc_listpref_"+(state.myName||""); }
+  function readMyListPrefs(){ try{ var j = JSON.parse(localStorage.getItem(myPrefKey())||"null"); state.myListPrefs = (j && typeof j==="object") ? j : {}; }catch(e){ state.myListPrefs = {}; } }
+  function myListPref(mode){ var x = state.myListPrefs && state.myListPrefs[mode]; return x && Array.isArray(x.status) ? x : null; }
+  function myPrefAssignees(mode){ var x = myListPref(mode); if(!x) return [state.myName]; return x.assignee==="all" ? [] : (Array.isArray(x.assignee) ? x.assignee.slice() : [state.myName]); }
+  function saveMyListPref(mode, val){   // val: {status, assignee} または null（自分用の設定をやめる）
+    state.myListPrefs = state.myListPrefs || {};
+    if(val) state.myListPrefs[mode] = val; else delete state.myListPrefs[mode];
+    try{ localStorage.setItem(myPrefKey(), JSON.stringify(state.myListPrefs)); }catch(e){}
+    var me = myMember(); if(db && me && me.id) db.doc("settings/listPrefs_"+me.id).set(Object.assign({}, state.myListPrefs, {updatedAt:new Date().toISOString()})).catch(function(){});
+  }
+  function loadMyListPrefs(){
+    var me = myMember(); if(!db || !me || !me.id) return;
+    db.doc("settings/listPrefs_"+me.id).get().then(function(snap){
+      var d = snap.exists ? snap.data() : null; if(!d) return;
+      var o = {}; ["sales","construction"].forEach(function(k){ if(d[k] && Array.isArray(d[k].status)) o[k] = d[k]; });
+      if(!Object.keys(o).length) return;
+      var had = JSON.stringify(state.myListPrefs||{}); state.myListPrefs = o;
+      try{ localStorage.setItem(myPrefKey(), JSON.stringify(o)); }catch(e){}
+      if(had!==JSON.stringify(o)){ applyListDefaults(); ["sales","construction"].forEach(function(k){ var f = k==="sales"?state.salesFilter:state.constFilter; if(myListPref(k)) f.assignees = myPrefAssignees(k); }); render(); }
+    }).catch(function(){});
+  }
   function listDefaultStatuses(mode){
+    var mine = myListPref(mode);
+    if(mine) return mine.status.filter(function(x){ return STATUS_LIST.indexOf(x)!==-1; });
     var saved = state.listDefaults && Array.isArray(state.listDefaults[mode]) ? state.listDefaults[mode] : LIST_DEFAULTS_BUILTIN[mode];
     return (saved || STATUS_LIST).filter(function(x){ return STATUS_LIST.indexOf(x)!==-1; });
   }
@@ -5620,6 +5647,7 @@
     html += '</div></details>';
     html += '</div>';
 
+    html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px;font-size:12px;color:var(--ink-soft)"><span>最初に開いたときのチェック：'+(myListPref(mode)?'<b>自分用の設定</b>':'共通の設定')+'</span><button type="button" class="btn sm" data-mypref-save="'+mode+'">いまの絞り込みを自分の初期にする</button>'+(myListPref(mode)?'<button type="button" class="btn sm" data-mypref-reset="'+mode+'">共通の設定に戻す</button>':'')+'</div>';
     if(f.assignees.length) html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:var(--accent-soft);border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:12.5px"><span>担当者：<b>'+esc(f.assignees.join("、"))+'</b> の案件を表示中</span><button type="button" class="btn sm" data-assignee-all>全員を表示</button></div>';
     if(state.projMode!=="full") html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:var(--surface-2,#f1f4f2);border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:12.5px"><span>表示を速くするため、<b>進行中の案件と、最近更新した案件</b>だけを読み込んでいます（清算済・失注の古い案件は含まれません）。</span><button class="btn sm" data-proj-loadall="1">過去の案件も読み込む</button></div>';
     html += '<div class="summary-line">'+
@@ -12094,6 +12122,16 @@
       c.querySelectorAll("[data-stall]").forEach(function(a){ a.addEventListener("click", function(e){ e.preventDefault(); f.status = STATUS_LIST.slice(); f.page = 1; render(); }); });
       c.querySelectorAll("[data-stnone]").forEach(function(a){ a.addEventListener("click", function(e){ e.preventDefault(); f.status = []; f.page = 1; render(); }); });
       c.querySelectorAll("[data-assignee-me]").forEach(function(b){ b.addEventListener("click", function(){ f.assignees = state.myName ? [state.myName] : []; f.page = 1; render(); }); });
+      c.querySelectorAll("[data-mypref-save]").forEach(function(b){ b.addEventListener("click", function(){
+        var mode = b.getAttribute("data-mypref-save"), ff = mode==="sales" ? state.salesFilter : state.constFilter;
+        saveMyListPref(mode, {status: ff.status.slice(), assignee: ff.assignees.length===0 ? "all" : (ff.assignees.length===1 && ff.assignees[0]===state.myName ? "me" : ff.assignees.slice())});
+        toast("いまの進捗・担当者の絞り込みを、あなたの初期設定にしました"); render();
+      }); });
+      c.querySelectorAll("[data-mypref-reset]").forEach(function(b){ b.addEventListener("click", function(){
+        var mode = b.getAttribute("data-mypref-reset"), ff = mode==="sales" ? state.salesFilter : state.constFilter;
+        saveMyListPref(mode, null); ff.status = listDefaultStatuses(mode); ff.assignees = [state.myName]; ff.page = 1;
+        toast("共通の設定に戻しました"); render();
+      }); });
       c.querySelectorAll("[data-assignee-all]").forEach(function(b){ b.addEventListener("click", function(){ f.assignees = []; f.page = 1; render(); }); });
       c.querySelectorAll("[data-assignee-grp]").forEach(function(btn){ btn.addEventListener("click", function(){
         var want = btn.getAttribute("data-assignee-grp")==="admin";
