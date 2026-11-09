@@ -145,6 +145,47 @@ async function run(b, req){
       })};
     }
 
+    // 見積書・発注書を、freee請求書API（/iv）に「下書き」として作成する（送付はfreee側で行う）
+    // { kind:"quotation"|"purchase_order", partnerId?, partnerName?, subject, date, dueDate?, memo?, note?, lines:[{description, quantity, unit, unitPrice, taxRate}] }
+    case "docs.create": {
+      t = await need(); cid = t.companyId;
+      var kind = b.kind === "purchase_order" ? "purchase_orders" : (b.kind === "quotation" ? "quotations" : "");
+      if(!kind) throw F.httpErr(400, "書類の種類が正しくありません");
+      var lines = (Array.isArray(b.lines) ? b.lines : []).slice(0, 100).map(function(l){
+        var q = Number(l.quantity), up = Number(l.unitPrice);
+        return {type: "item", description: String(l.description || "").slice(0, 200), quantity: isFinite(q) && q > 0 ? q : 1, unit: String(l.unit || "").slice(0, 10),
+          unit_price: String(isFinite(up) ? up : 0), tax_rate: [0, 8, 10].indexOf(Number(l.taxRate)) !== -1 ? Number(l.taxRate) : 10, reduced_tax_rate: false, withholding: false};
+      }).filter(function(l){ return l.description; });
+      if(!lines.length) throw F.httpErr(400, "明細がありません");
+      var date = isoDate(b.date); if(!date) throw F.httpErr(400, "発行日を入力してください");
+      var pid = Number(b.partnerId) || 0, pname = String(b.partnerName || "").trim();
+      if(!pid){
+        if(!pname) throw F.httpErr(400, "取引先を指定してください");
+        var fp = await F.freee("GET", "/api/1/partners", {query: {company_id: cid, keyword: pname, limit: 50}});
+        var nn = norm(pname), hit = (fp.partners || []).filter(function(p){ return p.available !== false; }).map(function(p){ return {p: p, s: similarity(norm(p.name), nn)}; }).sort(function(x, y){ return y.s - x.s; })[0];
+        if(!hit || hit.s < 0.85) throw F.httpErr(400, "freeeに取引先「" + pname + "」が見つかりません。freeeに取引先を登録するか、顧客を「freeeと連携」してください");
+        pid = hit.p.id;
+      }
+      var tpl = null;
+      try{ var tl = await F.freee("GET", "/iv/" + kind + "/templates", {query: {company_id: cid}}); tpl = (tl.templates || [])[0] || null; }catch(e){ if(e.status === 401) throw e; }
+      var body = {company_id: cid, partner_id: pid, partner_title: "御中", subject: String(b.subject || "").slice(0, 100), memo: String(b.memo || "").slice(0, 1000),
+        tax_entry_method: "out", tax_fraction: "omit", line_amount_fraction: "omit", withholding_tax_entry_method: "out", lines: lines};
+      if(tpl) body.template_id = tpl.id;
+      if(kind === "quotations"){
+        body.quotation_date = date; if(isoDate(b.dueDate)) body.expiration_date = b.dueDate; if(b.note) body.quotation_note = String(b.note).slice(0, 1000);
+      }else{
+        body.purchase_order_date = date; if(isoDate(b.dueDate)) body.collects_on = b.dueDate; if(b.note) body.note = String(b.note).slice(0, 1000);
+      }
+      var cr;
+      try{ cr = await F.freee("POST", "/iv/" + kind, {body: body}); }
+      catch(e){
+        if(e.status === 403 || e.status === 401) throw F.httpErr(e.status, "freeeアプリに「請求書」の書き込み権限がありません。freeeの連携を一度やり直して、見積書・発注書の作成を許可してください（" + e.message + "）");
+        throw e;
+      }
+      var doc = cr.quotation || cr.purchase_order || cr;
+      return {id: doc.id, number: doc.quotation_number || doc.purchase_order_number || "", url: doc.report_url || "", total: doc.total_amount == null ? null : doc.total_amount, partnerId: pid};
+    }
+
     case "partners.push": {
       t = await need(); cid = t.companyId;
       var list = (b.customers || []).slice(0, 40), results = [];

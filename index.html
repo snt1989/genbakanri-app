@@ -3369,7 +3369,7 @@
     var body = '<div id="bg-head" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">'+headHtml()+'</div>'+
       '<h3 style="font-size:13px;margin:0 0 4px">予算の明細</h3><div style="font-size:11.5px;color:var(--ink-faint);margin-bottom:6px">項目ごとに、勘定科目・数量・単価を入力します（金額は数量×単価で自動計算。金額だけを直接入力してもかまいません）。</div>'+
       '<div style="overflow-x:auto;flex:none"><table class="tbl" style="font-size:12.5px;min-width:700px"><thead><tr><th>勘定科目</th><th>項目名</th><th style="text-align:right">数量</th><th>単位</th><th style="text-align:right">単価</th><th style="text-align:right">金額</th><th style="text-align:right">実績</th><th style="text-align:right">残り</th><th></th></tr></thead><tbody id="bg-lines">'+linesHtml()+'</tbody></table></div>'+
-      '<div style="margin-top:8px"><button class="btn outline" id="bg-l-add">'+iPlus()+' 明細を追加</button></div>'+
+      '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn outline" id="bg-l-add">'+iPlus()+' 明細を追加</button>'+(freeeAvailable()?'<button class="btn outline" id="bg-doc-q" style="margin-left:auto">freeeで見積書を作成</button><button class="btn outline" id="bg-doc-po">freeeで発注書を作成</button>':'')+'</div>'+
       '<h3 style="font-size:13px;margin:18px 0 6px">勘定科目ごとの集計</h3><div style="overflow-x:auto;flex:none"><table class="tbl" style="font-size:12.5px"><thead><tr><th>勘定科目</th><th style="text-align:right">予算</th><th style="text-align:right">実績</th><th style="text-align:right">残り</th></tr></thead><tbody id="bg-cats">'+catHtml()+'</tbody></table></div>'+
       '<h3 style="font-size:13px;margin:18px 0 6px" id="bg-c-title">実績（実際にかかった費用）を追加</h3>'+
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;align-items:end">'+
@@ -3385,6 +3385,8 @@
     var $ = function(id){ return document.getElementById(id); };
     var mb = $("modal-box"); if(mb) mb.style.maxWidth = "960px";
     $("bg-detail").addEventListener("click", function(){ closeModal(); goProjectDetail(pid); });
+    var bgQ = $("bg-doc-q"); if(bgQ) bgQ.addEventListener("click", function(){ openBudgetDoc(pid, "quotation"); });
+    var bgP = $("bg-doc-po"); if(bgP) bgP.addEventListener("click", function(){ openBudgetDoc(pid, "purchase_order"); });
     var bgF = $("bg-freee"); if(bgF) bgF.addEventListener("click", function(){ openBudgetFreee(pid); });
     var refresh = function(full){
       $("bg-head").innerHTML = headHtml(); $("bg-cats").innerHTML = catHtml();
@@ -3470,6 +3472,61 @@
     }, function(e){ closeModal(); toast("freeeから読み込めませんでした："+(e.message||"")); });
   }
   function bgNormName(v){ return String(v||"").normalize("NFKC").toLowerCase().replace(/[\s\u3000・\-ー_]/g,""); }
+  // 予算管理から、freee請求書API で見積書（お客様向け）・発注書（協力会社向け）を下書き作成する
+  function openBudgetDoc(pid, kind){
+    if(!state.isAdmin) return;
+    var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
+    var isQ = kind==="quotation", label = isQ ? "見積書" : "発注書";
+    var cu = state.customers.find(function(c){ return c.id===p.customerId; }) || null;
+    var d = bgDoc(pid) || {}, today = localToday();
+    var vendors = []; (Array.isArray(d.costs)?d.costs:[]).forEach(function(x){ if(x.vendor && vendors.indexOf(x.vendor)===-1) vendors.push(x.vendor); });
+    var L = isQ ? [{description: p.name||"工事一式", quantity:1, unit:"式", unitPrice: bgNum(p.amount), taxRate:10}]
+      : bgLines(d).filter(function(l){ return l.name || bgNum(l.amount); }).map(function(l){ return {description:l.name||l.cat||"", quantity: bgNum(l.qty)||1, unit:l.unit||"", unitPrice: bgNum(l.price)||bgNum(l.amount), taxRate:10}; });
+    if(!L.length) L.push({description:"", quantity:1, unit:"式", unitPrice:0, taxRate:10});
+    var partnerName = isQ ? (cu?cu.name:(p.customerName||"")) : (vendors[0]||"");
+    var inp = function(i,f,v,w,al,type){ return '<input type="'+(type||"text")+'" data-dl="'+f+'" data-i="'+i+'" value="'+esc(v==null?"":v)+'" style="width:'+w+';'+(al?'text-align:right;':'')+'padding:6px 8px;font-size:12.5px">'; };
+    var sub = function(){ return L.reduce(function(a,l){ return a + Math.round(bgNum(l.quantity)*bgNum(l.unitPrice)); }, 0); };
+    var rowsHtml = function(){ return L.map(function(l,i){
+      return '<tr><td>'+inp(i,"description",l.description,"190px")+'</td><td>'+inp(i,"quantity",l.quantity,"56px",1)+'</td><td>'+inp(i,"unit",l.unit,"46px")+'</td><td>'+inp(i,"unitPrice",l.unitPrice,"92px",1)+'</td>'+
+        '<td><select data-dl="taxRate" data-i="'+i+'" style="padding:6px 4px;font-size:12.5px"><option value="10"'+(l.taxRate===10?' selected':'')+'>10%</option><option value="8"'+(l.taxRate===8?' selected':'')+'>8%</option><option value="0"'+(l.taxRate===0?' selected':'')+'>0%</option></select></td>'+
+        '<td class="num" style="text-align:right;white-space:nowrap" data-dl-amt="'+i+'">'+bgYen(Math.round(bgNum(l.quantity)*bgNum(l.unitPrice)))+'</td><td><button class="btn sm" data-dl-del="'+i+'">×</button></td></tr>';
+    }).join(""); };
+    var draw = function(){
+      openModal(label+"を作成（freee）",
+        '<div style="font-size:12px;color:var(--ink-soft);line-height:1.7;margin-bottom:10px">freee請求書に'+label+'の<b>下書き</b>を作成します（相手には送られません）。作成後、freeeの画面で内容を確認して発行・送付してください。</div>'+
+        '<div class="field-row"><label class="field">'+(isQ?'宛先（お客様）':'発注先（協力会社・取引先）')+'<input type="text" id="dl-partner" list="dl-vendors" value="'+esc(partnerName)+'" placeholder="freeeの取引先名"><datalist id="dl-vendors">'+vendors.map(function(v){ return '<option value="'+esc(v)+'">'; }).join("")+'</datalist></label>'+
+        '<label class="field">件名<input type="text" id="dl-subject" maxlength="100" value="'+esc(p.name||"")+'"></label></div>'+
+        '<div class="field-row"><label class="field">'+(isQ?'見積日':'発注日')+'<input type="date" id="dl-date" value="'+esc(today)+'"></label>'+
+        '<label class="field">'+(isQ?'有効期限':'納期・支払期日')+'<input type="date" id="dl-due" value="'+esc(isQ?addDays(today,30):"")+'"></label></div>'+
+        '<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px;min-width:560px"><thead><tr><th>品名・内容</th><th style="text-align:right">数量</th><th>単位</th><th style="text-align:right">単価（税抜）</th><th>税率</th><th style="text-align:right">金額</th><th></th></tr></thead><tbody id="dl-rows">'+rowsHtml()+'</tbody></table></div>'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><button class="btn outline" id="dl-add">'+iPlus()+' 明細を追加</button><div style="font-size:13px">小計（税抜）<b class="num" id="dl-sub" style="margin-left:6px">'+bgYen(sub())+'</b></div></div>'+
+        '<label class="field" style="margin-top:10px">備考（'+(isQ?'見積書':'発注書')+'に載ります）<textarea id="dl-note" style="min-height:50px"></textarea></label>'+
+        (isQ?'<div class="cell-sub" style="margin-top:6px">契約金額を「一式」1行で入れています。金額は税抜として扱うので、内容と金額を確認してください。</div>':'<div class="cell-sub" style="margin-top:6px">予算の明細を入れています。不要な行は「×」で消し、単価を確認してください。</div>'),
+        '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="dl-go">freeeに'+label+'を作成</button>');
+      var box = document.getElementById("modal-box");
+      var refresh = function(){ L.forEach(function(l,i){ var el = box.querySelector('[data-dl-amt="'+i+'"]'); if(el) el.textContent = bgYen(Math.round(bgNum(l.quantity)*bgNum(l.unitPrice))); }); document.getElementById("dl-sub").textContent = bgYen(sub()); };
+      box.querySelectorAll("[data-dl]").forEach(function(el){ el.addEventListener("input", function(){ var l = L[+el.getAttribute("data-i")], f = el.getAttribute("data-dl"); l[f] = (f==="description"||f==="unit") ? el.value : (f==="taxRate" ? Number(el.value) : el.value); refresh(); }); });
+      box.querySelectorAll("[data-dl-del]").forEach(function(b){ b.addEventListener("click", function(){ L.splice(+b.getAttribute("data-dl-del"),1); if(!L.length) L.push({description:"", quantity:1, unit:"式", unitPrice:0, taxRate:10}); keep(); draw(); }); });
+      document.getElementById("dl-add").addEventListener("click", function(){ keep(); L.push({description:"", quantity:1, unit:"式", unitPrice:0, taxRate:10}); draw(); });
+      document.getElementById("dl-go").addEventListener("click", function(){
+        keep();
+        var btn = this, pn = partnerName.trim(), lines = L.filter(function(l){ return String(l.description||"").trim(); });
+        if(!pn){ toast("取引先を入力してください"); return; }
+        if(!lines.length){ toast("明細を1行以上入力してください"); return; }
+        var date = document.getElementById("dl-date").value; if(!date){ toast("日付を入力してください"); return; }
+        if(!window.confirm("freeeに"+label+"の下書きを作成します。\\n取引先：" + pn + "\\n小計（税抜）：" + bgYen(sub()) + "\\nよろしいですか？")) return;
+        btn.disabled = true; btn.textContent = "作成中…";
+        freeeCall("docs.create", {kind:kind, partnerId: (isQ && cu && cu.freeePartnerId && pn===cu.name) ? cu.freeePartnerId : "", partnerName: pn, subject: document.getElementById("dl-subject").value, date: date, dueDate: document.getElementById("dl-due").value,
+          note: document.getElementById("dl-note").value, memo: p.name||"", lines: lines.map(function(l){ return {description:l.description, quantity:bgNum(l.quantity), unit:l.unit, unitPrice:bgNum(l.unitPrice), taxRate:l.taxRate}; })}).then(function(j){
+          if(j && j.configured===false){ toast("freeeが連携されていません"); btn.disabled = false; btn.textContent = "freeeに"+label+"を作成"; return; }
+          openModal(label+"を作成しました", '<div style="line-height:1.8">freeeに'+label+'の下書きを作成しました。'+(j.number?'<br>番号：<b>'+esc(j.number)+'</b>':'')+(j.total!=null?'<br>合計（税込）：<b>'+bgYen(j.total)+'</b>':'')+'<br>内容を確認して、発行・送付はfreeeの画面で行ってください。</div>',
+            '<button class="btn" data-close-modal>閉じる</button>'+(j.url?'<a class="btn primary" href="'+esc(j.url)+'" target="_blank" rel="noopener">freeeで開く</a>':''));
+        }).catch(function(e){ toast(e.message||"作成できませんでした"); btn.disabled = false; btn.textContent = "freeeに"+label+"を作成"; });
+      });
+      function keep(){ var pe = document.getElementById("dl-partner"); if(pe) partnerName = pe.value; var sj = document.getElementById("dl-subject"); if(sj) p = Object.assign({}, p, {name: sj.value}); }
+    };
+    draw();
+  }
   function openBudgetFreee(pid){
     if(!state.isAdmin) return;
     var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
