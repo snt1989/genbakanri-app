@@ -6135,7 +6135,15 @@
     var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
     if(!db){ p.memos = arr; closeModal(); toast(msg+"（プレビューのみ）"); render(); return; }
     // メモの追加・編集は「案件の最終編集者」には含めない
-    db.collection("projects").doc(pid).update({memos:arr}).then(function(){ closeModal(); toast(msg); }).catch(function(){ toast("保存に失敗しました"); });
+    // 清算済・失注などの案件は、一度だけ読み込んだ控え（projSets.X）から表示しており、更新が自動では届かない。
+    // メモは「更新日」を変えないため、最近更新の監視にも入らない。そのため保存後に、手元のデータも書き換えて画面を更新する
+    var prev = p.memos;
+    var patchLocal = function(v){
+      [projSets.X, projSets.A, projSets.B].forEach(function(set){ if(set && set[pid]) set[pid].memos = v; });
+      var q = state.projects.find(function(x){ return x.id===pid; }); if(q) q.memos = v;
+    };
+    patchLocal(arr);
+    db.collection("projects").doc(pid).update({memos:arr}).then(function(){ closeModal(); toast(msg); render(); }).catch(function(){ patchLocal(prev); toast("保存に失敗しました"); render(); });
   }
   function openMemoModal(pid, memoId){
     var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
