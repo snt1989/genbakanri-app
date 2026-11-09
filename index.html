@@ -5341,8 +5341,8 @@
     var d = done ? {done:true, doneAt:new Date().toISOString(), doneBy:state.myName||""} : {done:false, doneAt:"", doneBy:""};
     writeDoc("tasks", id, d, done ? "タスクを完了しました" : "タスクを未完了に戻しました");
   }
-  function openTaskModal(t){
-    var x = t || {dueDate:todayISO(), done:false};
+  function openTaskModal(t, pre){
+    var x = t || Object.assign({dueDate:todayISO(), done:false}, pre||{});
     var projs = state.projects.slice().sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");});
     openModal(t?"タスクの編集":"タスクの追加",
       field("タイトル",'<input type="text" id="f-ttitle" maxlength="80" placeholder="例）見積書送付、現地確認" value="'+esc(x.title||"")+'">')+
@@ -6237,6 +6237,12 @@
     }
     html += '<div style="display:flex;gap:8px;margin-top:12px"><button class="btn sm outline" data-chat-project="'+p.id+'">チャットする</button><button class="btn sm primary" data-edit-section="members">'+iPlus()+' メンバー追加</button></div>';
     html += '</div>';
+    // この案件のタスク（一覧＋追加）
+    var ptasks = state.tasks.filter(function(t){ return t.projectId===p.id; }).sort(function(a,b){ return (a.done?1:0)-(b.done?1:0) || String(a.dueDate||"").localeCompare(String(b.dueDate||"")); });
+    html += '<div class="card" style="margin-top:14px;padding:12px 14px"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><b style="font-size:14px">この案件のタスク'+(ptasks.length?'（'+ptasks.filter(function(t){ return !t.done; }).length+'件 未完了）':'')+'</b><button class="btn sm primary" data-pt-add="'+p.id+'">＋ タスクを追加</button></div>'+
+      (ptasks.length ? ptasks.map(function(t){
+        return '<div data-pt-edit="'+esc(t.id)+'" style="display:flex;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line);cursor:pointer"><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600;'+(t.done?'text-decoration:line-through;color:var(--ink-faint)':'')+'">'+esc(t.title||"タスク")+'</div><div class="cell-sub">'+(t.dueDate?'期限 '+esc(fmtDate(t.dueDate)):'')+(t.assignee?'　担当 '+esc(t.assignee):'')+'</div></div>'+(t.done?'<span class="badge">完了</span>':'')+'</div>';
+      }).join("") : '<div class="cell-sub" style="margin-top:6px">まだタスクがありません。</div>')+'</div>';
     html += '<div style="margin-top:14px"><button class="btn outline" style="width:100%;justify-content:center" data-copy-summary="'+p.id+'">'+iDownload()+' 案件情報をコピー</button></div>';
     html += '<div style="margin-top:8px"><button class="btn outline" style="width:100%;justify-content:center" data-copy-new="'+p.id+'">この案件をコピーして新規作成</button></div>';
     if(state.isAdmin) html += '<div style="margin-top:8px"><button class="btn outline" style="width:100%;justify-content:center" data-sns-post="'+p.id+'">'+iShare()+' SNS投稿を作る（Instagram）</button></div>';
@@ -11949,6 +11955,11 @@
     c.querySelectorAll("[data-edit-member]").forEach(function(el){ el.addEventListener("click", function(){ editMember(el.getAttribute("data-edit-member")); }); });
     c.querySelectorAll("[data-goto-memberform]").forEach(function(el){ el.addEventListener("click", function(){ goMemberForm(el.getAttribute("data-goto-memberform")==="ext"); }); });
     c.querySelectorAll("[data-mail-project]").forEach(function(el){ el.addEventListener("click", function(){ openMailModal(el.getAttribute("data-mail-project")); }); });
+    c.querySelectorAll("[data-pt-add]").forEach(function(el){ el.addEventListener("click", function(){
+      var pid = el.getAttribute("data-pt-add"), pr = state.projects.find(function(x){ return x.id===pid; });
+      openTaskModal(null, {projectId:pid, assignee: (state.myName||"")});
+    }); });
+    c.querySelectorAll("[data-pt-edit]").forEach(function(el){ el.addEventListener("click", function(){ var t = state.tasks.find(function(x){ return x.id===el.getAttribute("data-pt-edit"); }); if(t) openTaskModal(t); }); });
     c.querySelectorAll("[data-copy-new]").forEach(function(el){ el.addEventListener("click", function(){ copyProjectToNew(el.getAttribute("data-copy-new")); }); });
     c.querySelectorAll("[data-copy-summary]").forEach(function(el){ el.addEventListener("click", function(){ copyProjectSummary(el.getAttribute("data-copy-summary")); }); });
     c.querySelectorAll("[data-toggle-assignee]").forEach(function(el){
