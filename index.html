@@ -3510,7 +3510,9 @@
       : bgLines(d).filter(function(l){ return l.name || bgNum(l.amount); }).map(function(l){ return {description:l.name||l.cat||"", quantity: bgNum(l.qty)||1, unit:l.unit||"", unitPrice: bgNum(l.price)||bgNum(l.amount), taxRate:10, lineId:l.id, cat:l.cat||""}; });
     if(!L.length) L.push({description:"", quantity:1, unit:"式", unitPrice:0, taxRate:10});
     var partnerName = isQ ? (cu?cu.name:(p.customerName||"")) : (vendors[0]||"");
-    var dToCost = true, dDate = today, dDue = isQ ? addDays(today,30) : "", dNote = "", dSubject = p.name||"", dMemo = p.name||"";
+    var tcKey = "gc_po_tocost_"+(state.myName||""), dToCost = true;
+    try{ if(localStorage.getItem(tcKey)==="0") dToCost = false; }catch(e){}
+    var dDate = today, dDue = isQ ? addDays(today,30) : "", dNote = "", dSubject = p.name||"", dMemo = p.name||"";
     if(draft){ L = (draft.lines||[]).map(function(l){ return {description:l.description||"", quantity:l.quantity, unit:l.unit||"", unitPrice:l.unitPrice, taxRate:Number(l.taxRate), lineId:l.lineId||"", cat:l.cat||""}; }); if(!L.length) L.push({description:"", quantity:1, unit:"式", unitPrice:0, taxRate:10}); partnerName = draft.partnerName||""; dDate = draft.date||today; dDue = draft.dueDate||""; dNote = draft.note||""; dSubject = draft.subject||""; }
     // freeeに登録済みの取引先から選ぶ（候補を読み込み、入力した名前が登録済みか確認する）
     var nzp = function(x){ return String(x||"").normalize("NFKC").replace(/[\s\u3000]/g,"").toLowerCase(); };
@@ -3566,6 +3568,7 @@
         (isQ?'<div class="cell-sub" style="margin-top:6px">契約金額を「一式」1行で入れています。金額は税抜として扱うので、内容と金額を確認してください。</div>':'<div class="cell-sub" style="margin-top:6px">予算の明細を入れています。不要な行は「×」で消し、単価を確認してください。</div>'),
         '<button class="btn" id="dl-back" style="margin-right:auto">予算管理に戻る</button><button class="btn" id="dl-draft">下書きを保存</button><button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="dl-go">freeeに'+label+'を作成</button>');
       var box = document.getElementById("modal-box");
+      var tcEl = document.getElementById("dl-tocost"); if(tcEl) tcEl.addEventListener("change", function(){ dToCost = tcEl.checked; try{ localStorage.setItem(tcKey, tcEl.checked ? "1" : "0"); }catch(e){} });
       var pin = document.getElementById("dl-partner"); pin.addEventListener("input", function(){ partnerName = pin.value; updPstat(); }); updPstat();
       var refresh = function(){ L.forEach(function(l,i){ var el = box.querySelector('[data-dl-amt="'+i+'"]'); if(el) el.textContent = bgYen(Math.round(bgNum(l.quantity)*bgNum(l.unitPrice))); }); document.getElementById("dl-sub").textContent = bgYen(sub()); };
       box.querySelectorAll("[data-dl]").forEach(function(el){ el.addEventListener("input", function(){ var l = L[+el.getAttribute("data-i")], f = el.getAttribute("data-dl"); l[f] = (f==="description"||f==="unit") ? el.value : (f==="taxRate" ? Number(el.value) : el.value); refresh(); }); });
