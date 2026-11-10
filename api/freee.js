@@ -179,7 +179,7 @@ async function run(b, req){
       var cr;
       try{ cr = await F.freee("POST", "/iv/" + kind, {body: body}); }
       catch(e){
-        if(e.status === 403 || e.status === 401) throw F.httpErr(e.status, "freeeアプリに「請求書」の書き込み権限がありません。freeeの連携を一度やり直して、見積書・発注書の作成を許可してください（" + e.message + "）");
+        if(/アクセス権限|権限がない|forbidden|insufficient/i.test(String(e.message || "")) || e.status === 403 || e.status === 401) throw F.httpErr(e.status === 401 ? 401 : 403, "freeeのアプリに「請求書」の書き込み権限がありません。freeeの開発者ページでアプリの権限に「請求書」（参照・更新）を追加し、アプリの「設定 → freee連携」でもう一度連携してください（" + e.message + "）");
         throw e;
       }
       var doc = cr.quotation || cr.purchase_order || cr;
