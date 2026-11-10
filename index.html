@@ -6351,7 +6351,7 @@
     var p = state.projects.find(function(q){ return q.id===pid; }); if(!p) return;
     var x = projInstr(p).find(function(i){ return i.id===id; }); if(!x) return;
     openModal(x.title||"作業指示書", '<iframe id="in-frame" style="width:100%;height:64vh;border:1px solid var(--border);border-radius:8px;background:#fff"></iframe>',
-      (state.canWrite?'<button class="btn" id="in-edit" style="margin-right:auto">'+iEdit()+' 編集</button>'+(x.status!=="作業完了"?'<button class="btn" id="in-done">作業完了にする</button>':''):'')+'<button class="btn" id="in-copy">文章をコピー</button><button class="btn primary" id="in-print">印刷・PDF保存</button>');
+      (state.canWrite?'<button class="btn" id="in-edit" style="margin-right:auto">'+iEdit()+' 編集</button>'+(x.status!=="作業完了"?'<button class="btn" id="in-done">作業完了にする</button>':''):'')+'<button class="btn" id="in-chat">チャットに投稿</button><button class="btn" id="in-copy">文章をコピー</button><button class="btn primary" id="in-print">印刷・PDF保存</button>');
     document.getElementById("modal-box").style.maxWidth = "900px";
     var fr = document.getElementById("in-frame"); fr.srcdoc = instrHtml(p, x);
     document.getElementById("in-print").addEventListener("click", function(){ try{ fr.contentWindow.focus(); fr.contentWindow.print(); }catch(e){ toast("印刷できませんでした"); } });
@@ -6359,6 +6359,7 @@
       var t = instrText(p, x);
       if(navigator.clipboard) navigator.clipboard.writeText(t).then(function(){ toast("コピーしました"); }, function(){ toast("コピーできませんでした"); }); else toast("コピーできませんでした");
     });
+    document.getElementById("in-chat").addEventListener("click", function(){ sendInstrToChat(pid, id); });
     var ed = document.getElementById("in-edit"); if(ed) ed.addEventListener("click", function(){ openInstrModal(pid, id); });
     var dn = document.getElementById("in-done"); if(dn) dn.addEventListener("click", function(){ var fresh = state.projects.find(function(q){ return q.id===pid; }) || p; saveInstr(pid, projInstr(fresh).map(function(i){ return i.id===id ? Object.assign({}, i, {status:"作業完了", edited:new Date().toISOString()}) : i; }), "作業完了にしました"); });
   }
@@ -6450,6 +6451,25 @@
       if(!confirm("この指示書を削除します。よろしいですか？")) return;
       var fresh = state.projects.find(function(q){ return q.id===pid; }) || p;
       saveInstr(pid, projInstr(fresh).filter(function(i){ return i.id!==cur.id; }), "指示書を削除しました");
+    });
+  }
+  // 指示書を、その案件のチャットに投稿する（チャットのメンバー全員に見える）
+  function sendInstrToChat(pid, id){
+    var p = state.projects.find(function(q){ return q.id===pid; }); if(!p) return;
+    var x = projInstr(p).find(function(i){ return i.id===id; }); if(!x) return;
+    if(!seesAllProjects() && !isMyProject(p)){ toast("この案件の担当者ではないため、チャットに投稿できません"); return; }
+    if(PROJ_ARCHIVED.indexOf(p.status)!==-1){ toast("清算済・失注の案件のチャットは非表示です。ステータスを戻すと投稿できます"); return; }
+    var chat = state.chats.find(function(c){ return c.projectId===pid; });
+    if(!confirm("この指示書を、案件のチャット「"+(chat?chat.name:p.name)+"」に投稿します。チャットのメンバー全員に見えます。"+(x.status==="下書き"?"\n\n※状態が「下書き」のままです。":"")+"\n\nよろしいですか？")) return;
+    ensureProjectChat(p, function(cid){
+      var msg = {text:instrText(p, x).slice(0,4000), author:state.myName||"自分", ts:new Date().toISOString(), instr:{pid:pid, iid:id, title:x.title||"作業指示書"}};
+      var after = function(){ closeModal(); toast("チャットに投稿しました"); state.activeChat = cid; setTab("chat"); };
+      if(!db){ msg.id = uid(); state.chatMsgs[cid] = (state.chatMsgs[cid]||[]).concat([msg]); var ch = state.chats.find(function(z){ return z.id===cid; }); if(ch) ch.updatedAt = msg.ts; after(); return; }
+      db.collection("chats").doc(cid).collection("messages").add(msg).then(function(){
+        db.collection("chats").doc(cid).update({updatedAt:msg.ts}).catch(function(){});
+        pushNotify(cid, "【作業指示書】"+(x.title||p.name)+"（"+fmtDate(x.date)+"）");
+        after();
+      }).catch(function(){ toast("投稿に失敗しました"); });
     });
   }
   function dupInstr(pid, id){
@@ -8150,7 +8170,7 @@
               '<a href="'+esc(m.attachment.url)+'" target="_blank" rel="noopener"><img class="catt" src="'+esc(m.attachment.url)+'" alt=""></a>' :
               '<br><a class="cfile" href="'+esc(m.attachment.url)+'" target="_blank" rel="noopener">'+iDoc()+esc(m.attachment.filename||"ファイル")+'</a>') : '';
           return out+'<div class="cm'+(mine?" me":"")+'" id="cm-'+esc(m.id||"")+'">'+(mine?'':'<div class="cav" style="background:'+avaColor(m.author)+'">'+esc(initials(m.author))+'</div>')+
-            '<div class="cbody">'+(mine?'':'<div class="cname">'+esc(m.author)+'</div>')+'<div class="crow"><div class="cbub'+(m.stamp?" stampb":"")+'">'+(m.replyTo?'<div class="cquote" data-chat-jump="'+esc(m.replyTo.id||"")+'"><b>'+esc(m.replyTo.author||"")+'</b><span>'+esc(m.replyTo.text||"")+'</span></div>':'')+(m.stamp?stampHtml(m.stamp):chatText(m.text))+att+loc+'</div><div class="ctime">'+esc(chatTime(m.ts))+(m.edited?'<span class="cedited">編集済み</span>':'')+'</div>'+
+            '<div class="cbody">'+(mine?'':'<div class="cname">'+esc(m.author)+'</div>')+'<div class="crow"><div class="cbub'+(m.stamp?" stampb":"")+'">'+(m.replyTo?'<div class="cquote" data-chat-jump="'+esc(m.replyTo.id||"")+'"><b>'+esc(m.replyTo.author||"")+'</b><span>'+esc(m.replyTo.text||"")+'</span></div>':'')+(m.stamp?stampHtml(m.stamp):chatText(m.text))+att+loc+(m.instr&&m.instr.pid?'<br><button type="button" class="btn sm primary" data-chat-instr="'+esc(m.instr.pid)+':'+esc(m.instr.iid)+'" style="margin-top:6px">指示書を開く（写真つき）</button>':'')+'</div><div class="ctime">'+esc(chatTime(m.ts))+(m.edited?'<span class="cedited">編集済み</span>':'')+'</div>'+
             (m.id ? '<div class="cact"><button data-chat-reply="'+esc(m.id)+'" title="返信">'+iReply()+'</button><button data-chat-react="'+esc(m.id)+'" title="スタンプを付ける"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="12" r="8.5"/><path d="M8 14c.8 1.1 1.8 1.7 3 1.7s2.2-.6 3-1.7M8.7 9.7h.01M13.3 9.7h.01M19 3v5M16.5 5.5h5"/></svg></button>'+(mine&&!m.stamp?'<button data-chat-medit="'+esc(m.id)+'" title="編集">'+iEdit()+'</button>':'')+((mine||state.isAdmin)?'<button class="del" data-chat-mdel="'+esc(m.id)+'" title="削除">'+iTrash()+'</button>':'')+'</div>' : '')+
             '</div>'+rxHtml(m)+readLine(chat, m, mine)+'</div></div>';
         }).join("");
@@ -12540,6 +12560,12 @@
       document.getElementById("chat-qbtn").addEventListener("click", doSearch);
       chatQ.addEventListener("keydown", function(e){ if(e.key==="Enter") doSearch(); });
     }
+    c.querySelectorAll("[data-chat-instr]").forEach(function(el){ el.addEventListener("click", function(){
+      var k = el.getAttribute("data-chat-instr").split(":"), pr = state.projects.find(function(q){ return q.id===k[0]; });
+      if(isExternalViewer()){ toast("指示書は社外メンバーには表示されません。メッセージの文章をご確認ください"); return; }
+      if(!pr || !projInstr(pr).some(function(i){ return i.id===k[1]; })){ toast("指示書が見つかりません（削除された可能性があります）"); return; }
+      openInstrView(k[0], k[1]);
+    }); });
     c.querySelectorAll("[data-chat-back]").forEach(function(el){ el.addEventListener("click", function(){ state.chatPaneOpen = false; render(); }); });
     c.querySelectorAll("details.flt-more").forEach(function(el){ el.addEventListener("toggle", function(){ if(window.matchMedia && window.matchMedia("(max-width:640px)").matches) state.fltMoreOpen = el.open; }); });
     var sendBtn = document.getElementById("chat-send");
