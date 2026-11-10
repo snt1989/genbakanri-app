@@ -1596,6 +1596,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-10-3", title:"11月10日の更新（その3）", items:[
+      {t:"「使い方・Q&A」に、機能ごとの利用権限一覧を追加しました", d:"管理者・一般・社外のそれぞれが、どの機能を使えるかを表で確認できます。自分の権限も表の上に表示されます。"}
+    ]},
     {id:"2026-11-10-2", title:"11月10日の更新（その2）", items:[
       {t:"アプリの更新が、開いたままでもすぐ分かります", d:"新しいバージョンが公開されると、画面の上に「新しいバージョンがあります」と出ます。「今すぐ更新」で最新になります。更新後は「アプリが新しくなりました」が出て、変更点をすぐ読めます。"},
       {t:"指示書の写真に、書き込みや加工ができます", d:"指示書の編集で写真を選び、「加工・文字入れ」から、ペン・矢印・四角・丸・黒塗り・文字を書き込めます。明るさ・コントラスト・白黒も調整できます。元の写真は変わりません。"},
@@ -8942,6 +8945,44 @@
       ["操作を間違えて消した／変えた","削除したものは、管理者が「ゴミ箱」から戻せます。内容の変更は元に戻す機能がないため、重要な変更の前には管理者にバックアップを依頼してください。"]
     ]}
   ];
+  // 機能ごとの利用権限の一覧（◎=すべて ○=自分の担当案件のみ △=一部 ×=使えない）
+  var PERM_ROWS = [
+    ["メニュー", null],
+    ["ホーム・タスク管理・営業案件一覧・施工案件一覧・工程表・報告書・チャット・写真ファイル","◎","○","○","一般・社外は自分が担当の案件に関するものだけ表示されます（管理者は全案件）"],
+    ["顧客管理","◎","◎","◎","顧客の登録・編集は全員可。ただし案件の画面では、社外メンバーに顧客情報は出ません"],
+    ["メンバー管理","◎","△","△","一覧は全員が見られます。登録・編集・権限変更は管理者のみ"],
+    ["連携アプリ","◎","◎","◎","LINE WORKSなど、接続済みの連携アプリが開けます"],
+    ["使い方・Q&A","◎","◎","◎","この一覧表も含め、全員が見られます"],
+    ["予算管理","◎","×","×","管理者専用（メニューに盾マーク）"],
+    ["SNS投稿","◎","×","×","管理者専用"],
+    ["名刺管理","◎","△","×","管理者と、管理者が「許可」したメンバーのみ"],
+    ["案件の画面", null],
+    ["案件の登録・編集","◎","○","○","一般・社外は自分が担当の案件のみ。社外秘に設定された項目は社外メンバーに見えません"],
+    ["メモ・タスク・工程表・報告書","◎","○","○","社外秘にしたものは社外メンバーに見えません。メモの編集は書いた本人か管理者"],
+    ["指示書（写真つき）","◎","○","×","社外メンバーには表示されません。チャット送付時は文章のみ確認できます"],
+    ["案件のチャット","◎","○","×","担当案件のチャットのみ。社外メンバーには表示されません"],
+    ["見積書・発注書（freee）・予算","◎","×","×","管理者のみ（予算管理の中で作成）"],
+    ["社外秘フォルダ・ファイル","◎","◎","×","社外メンバーには非表示"],
+    ["その他", null],
+    ["AIロボ（アシスタント）","◎","◎","×","社外メンバーには表示されません。操作の実行は必ず本人の確認後"],
+    ["CSV出力・取り込み（メンバーなど）","◎","△","△","メンバーのCSVは管理者のみ"],
+    ["設定：個人情報（自分の情報・パスワード）","◎","◎","◎","自分の情報だけ編集できます"],
+    ["設定：会社情報・管理画面・ログイン履歴・マスタ・ゴミ箱","◎","×","×","管理者のみ"],
+    ["設定：freee連携・バックアップ","◎","×","×","管理者のみ"],
+    ["設定：LINE WORKS","◎","◎","◎","連携が有効なときのみ表示"]
+  ];
+  function permMatrixHtml(){
+    var cell = function(v){ var c = v==="◎"?"#1f7a4d":v==="○"?"#2f5bea":v==="△"?"#b7791f":"#b4443a"; return '<td style="text-align:center;font-size:17px;font-weight:700;color:'+c+';white-space:nowrap">'+v+'</td>'; };
+    var rows = PERM_ROWS.map(function(r){
+      if(r[1]===null) return '<tr><td colspan="5" style="background:var(--surface-2,#f3f5f8);font-weight:700;font-size:12.5px">'+esc(r[0])+'</td></tr>';
+      return '<tr><td style="font-weight:600;font-size:13px">'+esc(r[0])+'</td>'+cell(r[1])+cell(r[2])+cell(r[3])+'<td style="font-size:12px;color:var(--ink-soft);line-height:1.6">'+esc(r[4])+'</td></tr>';
+    }).join("");
+    var mine = state.isAdmin ? "管理者" : (isExternalViewer() ? "社外" : "一般");
+    return '<div class="card" style="padding:16px 20px;margin-bottom:16px">'+
+      '<h2 style="font-size:16px;margin:0 0 4px">機能ごとの利用権限一覧</h2>'+
+      '<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.7;margin-bottom:10px">あなたの権限：<b>'+mine+'</b>　／　<span style="color:#1f7a4d;font-weight:700">◎</span>すべて使える　<span style="color:#2f5bea;font-weight:700">○</span>自分の担当案件の範囲で使える　<span style="color:#b7791f;font-weight:700">△</span>一部のみ　<span style="color:#b4443a;font-weight:700">×</span>使えない</div>'+
+      '<div style="overflow-x:auto"><table class="tbl" style="font-size:13px;min-width:640px"><thead><tr><th>機能</th><th style="text-align:center;white-space:nowrap;min-width:52px">管理者</th><th style="text-align:center;white-space:nowrap;min-width:52px">一般</th><th style="text-align:center;white-space:nowrap;min-width:52px">社外</th><th>補足</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+  }
   function renderHelpPage(){
     var q = (state.helpQ||"").trim().toLowerCase();
     var cat = state.helpCat==null ? -1 : state.helpCat;
@@ -8968,8 +9009,9 @@
           return '<details style="border-top:1px solid var(--border);padding:11px 0"'+(q?" open":"")+'><summary style="cursor:pointer;font-weight:700;font-size:14px;line-height:1.6">Q. '+esc(it[0])+'</summary><div style="font-size:13.5px;line-height:1.9;color:var(--ink-soft);margin-top:8px;padding:10px 12px;background:var(--bg-soft,rgba(0,0,0,.03));border-radius:8px;white-space:pre-wrap">'+esc(it[1])+'</div></details>';
         }).join("")+'</div>';
     });
+    if(!q && cat===-1) html += permMatrixHtml();
     html += cards;
-    if(!shown) html += emptyState(iBox,"該当する項目がありません","別のキーワードで探してみてください");
+    if(!shown && (q || cat!==-1)) html += emptyState(iBox,"該当する項目がありません","別のキーワードで探してみてください");
     return html+'</div>';
   }
   function renderSettingsHelp(){
