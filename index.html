@@ -3476,6 +3476,7 @@
   }
   function bgNormName(v){ return String(v||"").normalize("NFKC").toLowerCase().replace(/[\s\u3000・\-ー_]/g,""); }
   // 予算管理から、freee請求書API で見積書（お客様向け）・発注書（協力会社向け）を下書き作成する
+  var freeePartnerCache = {list:null, at:0, err:false};
   function openBudgetDoc(pid, kind){
     if(!state.isAdmin) return;
     var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
@@ -3487,6 +3488,26 @@
       : bgLines(d).filter(function(l){ return l.name || bgNum(l.amount); }).map(function(l){ return {description:l.name||l.cat||"", quantity: bgNum(l.qty)||1, unit:l.unit||"", unitPrice: bgNum(l.price)||bgNum(l.amount), taxRate:10}; });
     if(!L.length) L.push({description:"", quantity:1, unit:"式", unitPrice:0, taxRate:10});
     var partnerName = isQ ? (cu?cu.name:(p.customerName||"")) : (vendors[0]||"");
+    // freeeに登録済みの取引先から選ぶ（候補を読み込み、入力した名前が登録済みか確認する）
+    var nzp = function(x){ return String(x||"").normalize("NFKC").replace(/[\s\u3000]/g,"").toLowerCase(); };
+    var findPartner = function(name){ var n = nzp(name); return n && freeePartnerCache.list ? (freeePartnerCache.list.find(function(x){ return nzp(x.name)===n; }) || null) : null; };
+    var partnerChoices = function(){
+      var seen = {}, out = [];
+      var add = function(n){ n = String(n||"").trim(); if(n && !seen[n]){ seen[n] = 1; out.push(n); } };
+      if(freeePartnerCache.list){ freeePartnerCache.list.forEach(function(x){ add(x.name); }); }
+      else{ if(isQ) state.customers.forEach(function(c){ if(c.freeePartnerId) add(c.name); }); vendors.forEach(add); }
+      return out;
+    };
+    var updPstat = function(){
+      var el = document.getElementById("dl-pstat"), inpEl = document.getElementById("dl-partner"); if(!el || !inpEl) return;
+      var pn = inpEl.value.trim();
+      if(freeePartnerCache.err){ el.style.color = "var(--ink-faint)"; el.textContent = "登録済みの取引先を読み込めませんでした（名前が近い取引先に自動で結びつけます）"; return; }
+      if(!freeePartnerCache.list){ el.style.color = "var(--ink-faint)"; el.textContent = "freeeの登録済み取引先を読み込み中…"; return; }
+      if(!pn){ el.style.color = "var(--ink-faint)"; el.textContent = "freeeに登録済みの取引先 "+freeePartnerCache.list.length+"件から、名前を入力して選べます"; return; }
+      var m = findPartner(pn);
+      if(m){ el.style.color = "var(--success,#1f7a4d)"; el.textContent = "✔ freeeに登録済み"+(m.phone?"（"+m.phone+"）":""); }
+      else{ el.style.color = "var(--danger)"; el.textContent = "freeeに登録されていない名前です。候補から選んでください"; }
+    };
     var inp = function(i,f,v,w,al,type){ return '<input type="'+(type||"text")+'" data-dl="'+f+'" data-i="'+i+'" value="'+esc(v==null?"":v)+'" style="width:'+w+';'+(al?'text-align:right;':'')+'padding:6px 8px;font-size:12.5px">'; };
     var sub = function(){ return L.reduce(function(a,l){ return a + Math.round(bgNum(l.quantity)*bgNum(l.unitPrice)); }, 0); };
     var rowsHtml = function(){ return L.map(function(l,i){
@@ -3497,7 +3518,7 @@
     var draw = function(){
       openModal(label+"を作成（freee）",
         '<div style="font-size:12px;color:var(--ink-soft);line-height:1.7;margin-bottom:10px">freee請求書に'+label+'の<b>下書き</b>を作成します（相手には送られません）。作成後、freeeの画面で内容を確認して発行・送付してください。</div>'+
-        '<div class="field-row"><label class="field">'+(isQ?'宛先（お客様）':'発注先（協力会社・取引先）')+'<input type="text" id="dl-partner" list="dl-vendors" value="'+esc(partnerName)+'" placeholder="freeeの取引先名"><datalist id="dl-vendors">'+vendors.map(function(v){ return '<option value="'+esc(v)+'">'; }).join("")+'</datalist></label>'+
+        '<div class="field-row"><label class="field">'+(isQ?'宛先（お客様）':'発注先（協力会社・取引先）')+'<input type="text" id="dl-partner" list="dl-vendors" value="'+esc(partnerName)+'" placeholder="登録済みの取引先名を入力して選択" autocomplete="off"><datalist id="dl-vendors">'+partnerChoices().map(function(v){ return '<option value="'+esc(v)+'">'; }).join("")+'</datalist><span id="dl-pstat" style="font-size:11.5px;margin-top:3px;display:block"></span></label>'+
         '<label class="field">件名<input type="text" id="dl-subject" maxlength="100" value="'+esc(p.name||"")+'"></label></div>'+
         '<div class="field-row"><label class="field">'+(isQ?'見積日':'発注日')+'<input type="date" id="dl-date" value="'+esc(today)+'"></label>'+
         '<label class="field">'+(isQ?'有効期限':'納期・支払期日')+'<input type="date" id="dl-due" value="'+esc(isQ?addDays(today,30):"")+'"></label></div>'+
@@ -3507,6 +3528,7 @@
         (isQ?'<div class="cell-sub" style="margin-top:6px">契約金額を「一式」1行で入れています。金額は税抜として扱うので、内容と金額を確認してください。</div>':'<div class="cell-sub" style="margin-top:6px">予算の明細を入れています。不要な行は「×」で消し、単価を確認してください。</div>'),
         '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="dl-go">freeeに'+label+'を作成</button>');
       var box = document.getElementById("modal-box");
+      var pin = document.getElementById("dl-partner"); pin.addEventListener("input", function(){ partnerName = pin.value; updPstat(); }); updPstat();
       var refresh = function(){ L.forEach(function(l,i){ var el = box.querySelector('[data-dl-amt="'+i+'"]'); if(el) el.textContent = bgYen(Math.round(bgNum(l.quantity)*bgNum(l.unitPrice))); }); document.getElementById("dl-sub").textContent = bgYen(sub()); };
       box.querySelectorAll("[data-dl]").forEach(function(el){ el.addEventListener("input", function(){ var l = L[+el.getAttribute("data-i")], f = el.getAttribute("data-dl"); l[f] = (f==="description"||f==="unit") ? el.value : (f==="taxRate" ? Number(el.value) : el.value); refresh(); }); });
       box.querySelectorAll("[data-dl-del]").forEach(function(b){ b.addEventListener("click", function(){ L.splice(+b.getAttribute("data-dl-del"),1); if(!L.length) L.push({description:"", quantity:1, unit:"式", unitPrice:0, taxRate:10}); keep(); draw(); }); });
@@ -3515,11 +3537,13 @@
         keep();
         var btn = this, pn = partnerName.trim(), lines = L.filter(function(l){ return String(l.description||"").trim(); });
         if(!pn){ toast("取引先を入力してください"); return; }
+        var regP = findPartner(pn);
+        if(freeePartnerCache.list && !regP){ toast("freeeに登録済みの取引先から選んでください（新しい取引先は、先にfreeeか顧客管理で登録します）"); return; }
         if(!lines.length){ toast("明細を1行以上入力してください"); return; }
         var date = document.getElementById("dl-date").value; if(!date){ toast("日付を入力してください"); return; }
         if(!window.confirm("freeeに"+label+"の下書きを作成します。\\n取引先：" + pn + "\\n小計（税抜）：" + bgYen(sub()) + "\\nよろしいですか？")) return;
         btn.disabled = true; btn.textContent = "作成中…";
-        freeeCall("docs.create", {kind:kind, partnerId: (isQ && cu && cu.freeePartnerId && pn===cu.name) ? cu.freeePartnerId : "", partnerName: pn, subject: document.getElementById("dl-subject").value, date: date, dueDate: document.getElementById("dl-due").value,
+        freeeCall("docs.create", {kind:kind, partnerId: regP ? regP.id : ((isQ && cu && cu.freeePartnerId && pn===cu.name) ? cu.freeePartnerId : ""), partnerName: pn, subject: document.getElementById("dl-subject").value, date: date, dueDate: document.getElementById("dl-due").value,
           note: document.getElementById("dl-note").value, memo: p.name||"", lines: lines.map(function(l){ return {description:l.description, quantity:bgNum(l.quantity), unit:l.unit, unitPrice:bgNum(l.unitPrice), taxRate:l.taxRate}; })}).then(function(j){
           if(j && j.configured===false){ toast("freeeが連携されていません"); btn.disabled = false; btn.textContent = "freeeに"+label+"を作成"; return; }
           openModal(label+"を作成しました", '<div style="line-height:1.8">freeeに'+label+'の下書きを作成しました。'+(j.number?'<br>番号：<b>'+esc(j.number)+'</b>':'')+(j.total!=null?'<br>合計（税込）：<b>'+bgYen(j.total)+'</b>':'')+'<br>内容を確認して、発行・送付はfreeeの画面で行ってください。</div>',
@@ -3529,6 +3553,12 @@
       function keep(){ var pe = document.getElementById("dl-partner"); if(pe) partnerName = pe.value; var sj = document.getElementById("dl-subject"); if(sj) p = Object.assign({}, p, {name: sj.value}); }
     };
     draw();
+    if(!freeePartnerCache.list || Date.now()-freeePartnerCache.at>30*60000){
+      freeeCall("partners.list", {}).then(function(j){ freeePartnerCache.list = j.partners||[]; freeePartnerCache.at = Date.now(); freeePartnerCache.err = false; })
+        .catch(function(){ freeePartnerCache.err = true; })
+        .then(function(){ var pe = document.getElementById("dl-partner"); if(pe){ keepP(); draw(); } });
+    }
+    function keepP(){ var pe = document.getElementById("dl-partner"); if(pe) partnerName = pe.value; var sj = document.getElementById("dl-subject"); if(sj) p = Object.assign({}, p, {name: sj.value}); }
   }
   function openBudgetFreee(pid){
     if(!state.isAdmin) return;
