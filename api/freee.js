@@ -182,8 +182,9 @@ async function run(b, req){
         if(!hit || hit.s < 0.85) throw F.httpErr(400, "freeeに取引先「" + pname + "」が見つかりません。freeeに取引先を登録するか、顧客を「freeeと連携」してください");
         pid = hit.p.id;
       }
+      var editId = Number(b.docId) || 0;   // 指定があれば、作成済みの書類を更新（PUT）する
       var tpl = null;
-      try{ var tl = await F.freee("GET", "/iv/" + kind + "/templates", {query: {company_id: cid}}); tpl = (tl.templates || [])[0] || null; }catch(e){ if(e.status === 401) throw e; }
+      if(!editId) try{ var tl = await F.freee("GET", "/iv/" + kind + "/templates", {query: {company_id: cid}}); tpl = (tl.templates || [])[0] || null; }catch(e){ if(e.status === 401) throw e; }
       var body = {company_id: cid, partner_id: pid, partner_title: "御中", subject: String(b.subject || "").slice(0, 100), memo: String(b.memo || "").slice(0, 1000),
         tax_entry_method: "out", tax_fraction: "omit", line_amount_fraction: "omit", withholding_tax_entry_method: "out", lines: lines};
       if(tpl) body.template_id = tpl.id;
@@ -193,13 +194,13 @@ async function run(b, req){
         body.purchase_order_date = date; if(isoDate(b.dueDate)) body.collects_on = b.dueDate; if(b.note) body.purchase_order_note = String(b.note).slice(0, 1000);
       }
       var cr;
-      try{ cr = await F.freee("POST", "/iv/" + kind, {body: body}); }
+      try{ cr = editId ? await F.freee("PUT", "/iv/" + kind + "/" + editId, {body: body}) : await F.freee("POST", "/iv/" + kind, {body: body}); }
       catch(e){
         if(/アクセス権限|権限がない|forbidden|insufficient/i.test(String(e.message || "")) || e.status === 403 || e.status === 401) throw F.httpErr(e.status === 401 ? 401 : 403, "freeeのアプリに「請求書」の書き込み権限がありません。freeeの開発者ページでアプリの権限に「請求書」（参照・更新）を追加し、アプリの「設定 → freee連携」でもう一度連携してください（" + e.message + "）");
         throw e;
       }
       var doc = cr.quotation || cr.purchase_order || cr;
-      return {id: doc.id, number: doc.quotation_number || doc.purchase_order_number || "", url: doc.report_url || "", total: doc.total_amount == null ? null : doc.total_amount, partnerId: pid};
+      return {updated: !!editId, id: doc.id || editId, number: doc.quotation_number || doc.purchase_order_number || "", url: doc.report_url || "", total: doc.total_amount == null ? null : doc.total_amount, partnerId: pid};
     }
 
     case "partners.push": {

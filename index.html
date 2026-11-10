@@ -1602,6 +1602,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-10-13", admin:true, title:"11月10日の更新（その13）", items:[
+      {t:"freeeに作成した見積書を、アプリから編集してfreeeにも反映できるようにしました", d:"予算管理の「保存した見積書・発注書」から、freeeに作成済みの見積書を「開く」と、取引先・件名・日付・明細・備考を直して「freeeの見積書を更新」で、freee側も同じ内容に書き換わります。アプリの中だけ直したいときは「アプリ内のみ保存」を使います。"}
+    ]},
     {id:"2026-11-10-12", title:"11月10日の更新（その12）", items:[
       {t:"指示書が保存できない不具合を修正しました", d:"写真にペンで書き込んだ指示書が、データの形式の都合で保存できないことがありました。保存できる形に直しました。保存に失敗したときは、原因のコードも表示します。"}
     ]},
@@ -3627,6 +3630,7 @@
     var cu = state.customers.find(function(c){ return c.id===p.customerId; }) || null;
     var d = bgDoc(pid) || {}, today = localToday();
     var draft = draftId ? (bgDraftsOf(pid).find(function(x){ return x.id===draftId; }) || null) : null;
+    var editFreee = (isQ && draft && draft.freeeId) ? draft : null;   // freeeに作成済みの見積書：内容を直して、freeeにも反映できる
     var vendors = []; (Array.isArray(d.costs)?d.costs:[]).forEach(function(x){ if(x.vendor && vendors.indexOf(x.vendor)===-1) vendors.push(x.vendor); });
     var L = isQ ? [{description: p.name||"工事一式", quantity:1, unit:"式", unitPrice: bgNum(p.amount), taxRate:10}]
       : bgLines(d).filter(function(l){ return l.name || bgNum(l.amount); }).map(function(l){ return {description:l.name||l.cat||"", quantity: bgNum(l.qty)||1, unit:l.unit||"", unitPrice: bgNum(l.price)||bgNum(l.amount), taxRate:10, lineId:l.id, cat:l.cat||""}; });
@@ -3678,8 +3682,8 @@
     }).join(""); };
     var draw = function(){
       autoPick();
-      openModal(label+"を作成（freee）",
-        '<div style="font-size:12px;color:var(--ink-soft);line-height:1.7;margin-bottom:10px">freee請求書に'+label+'の<b>下書き</b>を作成します（相手には送られません）。作成後、freeeの画面で内容を確認して発行・送付してください。</div>'+
+      openModal(label+(editFreee?"を編集（freee）":"を作成（freee）"),
+        '<div style="font-size:12px;color:var(--ink-soft);line-height:1.7;margin-bottom:10px">'+(editFreee ? 'freeeに作成済みの'+label+'（番号：<b>'+esc(editFreee.freeeNumber||"")+'</b>）を編集します。「freeeの'+label+'を更新」を押すと、<b>freee側の内容も、この内容で書き換わります</b>。' : 'freee請求書に'+label+'の<b>下書き</b>を作成します（相手には送られません）。作成後、freeeの画面で内容を確認して発行・送付してください。')+'</div>'+
         '<div class="field-row"><label class="field">'+(isQ?'宛先（お客様）':'発注先（協力会社・取引先）')+'<input type="text" id="dl-partner" list="dl-vendors" value="'+esc(partnerName)+'" placeholder="登録済みの取引先名を入力して選択" autocomplete="off"><datalist id="dl-vendors">'+partnerChoices().map(function(v){ return '<option value="'+esc(v)+'">'; }).join("")+'</datalist><span id="dl-pstat" style="font-size:11.5px;margin-top:3px;display:block"></span></label>'+
         '<label class="field">件名<input type="text" id="dl-subject" maxlength="100" value="'+esc(dSubject)+'"></label></div>'+
         '<div class="field-row"><label class="field">'+(isQ?'見積日':'発注日')+'<input type="date" id="dl-date" value="'+esc(dDate)+'"></label>'+
@@ -3688,7 +3692,7 @@
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><button class="btn outline" id="dl-add">'+iPlus()+' 明細を追加</button><div style="font-size:13px">小計（税抜）<b class="num" id="dl-sub" style="margin-left:6px">'+bgYen(sub())+'</b></div></div>'+
         '<label class="field" style="margin-top:10px">備考（'+(isQ?'見積書':'発注書')+'に載ります）<textarea id="dl-note" style="min-height:50px">'+esc(dNote)+'</textarea></label>'+(isQ?'':'<label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:12.5px;line-height:1.6;cursor:pointer"><input type="checkbox" id="dl-tocost"'+(dToCost?' checked':'')+' style="margin-top:3px"><span>freeeに作成できたら、予算管理の<b>実績</b>と<b>予算の明細</b>に反映する<br><span style="font-size:11.5px;color:var(--ink-faint)">発注額（税抜）を実績に追加します。予算の明細にない項目は、予算の明細にも追加します（予算合計が増えます）。後でfreeeの経費を取り込むと二重になるので、実績の一覧で「発注書」の印の行を削除してください。</span></span></label>')+'<div id="dl-err" style="color:var(--danger);font-size:12.5px;line-height:1.6;margin-top:8px;white-space:pre-wrap"></div>'+
         (isQ?'<div class="cell-sub" style="margin-top:6px">契約金額を「一式」1行で入れています。金額は税抜として扱うので、内容と金額を確認してください。</div>':'<div class="cell-sub" style="margin-top:6px">予算の明細を入れています。不要な行は「×」で消し、単価を確認してください。</div>'),
-        '<button class="btn" id="dl-back" style="margin-right:auto">予算管理に戻る</button><button class="btn" id="dl-draft">下書きを保存</button><button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="dl-go">freeeに'+label+'を作成</button>');
+        '<button class="btn" id="dl-back" style="margin-right:auto">予算管理に戻る</button><button class="btn" id="dl-draft">'+(editFreee?"アプリ内のみ保存":"下書きを保存")+'</button><button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="dl-go">'+(editFreee ? "freeeの"+label+"を更新" : "freeeに"+label+"を作成")+'</button>');
       var box = document.getElementById("modal-box");
       var tcEl = document.getElementById("dl-tocost"); if(tcEl) tcEl.addEventListener("change", function(){ dToCost = tcEl.checked; try{ localStorage.setItem(tcKey, tcEl.checked ? "1" : "0"); }catch(e){} });
       var pin = document.getElementById("dl-partner"); pin.addEventListener("input", function(){ partnerName = pin.value; updPstat(); }); updPstat();
@@ -3704,7 +3708,19 @@
         if(freeePartnerCache.list && !regP){ toast("freeeに登録済みの取引先から選んでください"); updPstat(); return; }
         if(!lines.length){ toast("明細を1行以上入力してください"); return; }
         var date = document.getElementById("dl-date").value; if(!date){ toast("日付を入力してください"); return; }
-        if(!window.confirm("freeeに"+label+"の下書きを作成します。\\n取引先：" + pn + "\\n小計（税抜）：" + bgYen(sub()) + "\\nよろしいですか？")) return;
+        if(editFreee){
+          if(!window.confirm("freeeの"+label+"（"+(editFreee.freeeNumber||"")+"）を、この内容に更新します。\n取引先：" + pn + "\n小計（税抜）：" + bgYen(sub()) + "\nfreee側の内容が書き換わります。よろしいですか？")) return;
+          btn.disabled = true; btn.textContent = "更新中…";
+          freeeCall("docs.create", {kind:kind, docId:editFreee.freeeId, partnerId: regP ? regP.id : ((cu && cu.freeePartnerId && pn===cu.name) ? cu.freeePartnerId : ""), partnerName: pn, subject: document.getElementById("dl-subject").value, date: date, dueDate: document.getElementById("dl-due").value,
+            note: document.getElementById("dl-note").value, memo: dMemo, lines: lines.map(function(l){ return {description:l.description, quantity:bgNum(l.quantity), unit:l.unit, unitPrice:bgNum(l.unitPrice), taxRate:l.taxRate}; })}).then(function(j){
+            if(j && j.configured===false){ toast("freeeが連携されていません"); btn.disabled = false; btn.textContent = "freeeの"+label+"を更新"; return; }
+            document.getElementById("dl-draft").click();   // アプリ内の保存内容も同じ内容にそろえる
+            openModal(label+"を更新しました", '<div style="line-height:1.8">freeeの'+label+'を更新しました。'+(j.number?'<br>番号：<b>'+esc(j.number)+'</b>':'')+(j.total!=null?'<br>合計（税込）：<b>'+bgYen(j.total)+'</b>':'')+'<br><span style="font-size:12px;color:var(--ink-soft)">アプリ内の内容も同じに更新しました。</span></div>',
+              '<button class="btn" data-close-modal>閉じる</button>'+(j.url?'<a class="btn primary" href="'+esc(j.url)+'" target="_blank" rel="noopener">freeeで開く</a>':''));
+          }).catch(function(e){ var em = (e && e.message) || "更新できませんでした"; toast(em); var er = document.getElementById("dl-err"); if(er) er.textContent = "更新できませんでした：\n"+em; btn.disabled = false; btn.textContent = "freeeの"+label+"を更新"; });
+          return;
+        }
+        if(!window.confirm("freeeに"+label+"の下書きを作成します。\n取引先：" + pn + "\n小計（税抜）：" + bgYen(sub()) + "\nよろしいですか？")) return;
         btn.disabled = true; btn.textContent = "作成中…";
         freeeCall("docs.create", {kind:kind, partnerId: regP ? regP.id : ((isQ && cu && cu.freeePartnerId && pn===cu.name) ? cu.freeePartnerId : ""), partnerName: pn, subject: document.getElementById("dl-subject").value, date: date, dueDate: document.getElementById("dl-due").value,
           note: document.getElementById("dl-note").value, memo: dMemo, lines: lines.map(function(l){ return {description:l.description, quantity:bgNum(l.quantity), unit:l.unit, unitPrice:bgNum(l.unitPrice), taxRate:l.taxRate}; })}).then(function(j){
@@ -3744,7 +3760,7 @@
         var now = new Date().toISOString(), id = draft ? draft.id : uid();
         var rec = {id:id, kind:kind, partnerName:partnerName.trim(), subject:dSubject, date:dDate, dueDate:dDue, note:dNote, lines:L.map(function(l){ return {description:String(l.description||""), quantity:bgNum(l.quantity), unit:l.unit||"", unitPrice:bgNum(l.unitPrice), taxRate:Number(l.taxRate), lineId:l.lineId||"", cat:l.cat||""}; }),
           by:draft?draft.by:(state.myName||""), at:draft?draft.at:now};
-        if(draft){ rec.edited = now; if(draft.freeeNumber) rec.freeeNumber = draft.freeeNumber; }
+        if(draft){ rec.edited = now; if(draft.freeeNumber) rec.freeeNumber = draft.freeeNumber; if(draft.freeeId) rec.freeeId = draft.freeeId; if(draft.freeeUrl) rec.freeeUrl = draft.freeeUrl; }
         if(!rec.partnerName && !rec.lines.some(function(l){ return l.description.trim(); })){ toast("取引先か明細を入力してから保存してください"); return; }
         var arr = bgDraftsOf(pid).slice(), k = arr.findIndex(function(x){ return x.id===id; });
         if(k>-1) arr[k] = rec; else { if(arr.length>=100){ toast("下書きは1案件につき100件までです"); return; } arr.push(rec); }
