@@ -3365,7 +3365,7 @@
     var costRows = function(){ var c = cur(), costs = c.costs.slice().sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")); });
       var nm = {}; L.forEach(function(l){ nm[l.id] = l.name; });
       return costs.length ? costs.map(function(x){
-        return '<div data-bg-cost="'+esc(x.id)+'" style="border-top:1px solid var(--border);padding:10px 2px"><div style="display:flex;gap:10px;align-items:baseline;justify-content:space-between"><div style="min-width:0"><span class="num" style="font-size:12px;color:var(--ink-soft)">'+esc(fmtDate(x.date))+'</span> <b style="font-size:13px">'+esc(x.cat||"")+'</b>'+(x.lineId&&nm[x.lineId]?' <span style="font-size:11.5px;color:var(--ink-faint)">／ '+esc(nm[x.lineId])+'</span>':'')+'</div><div class="num" style="font-weight:800;font-size:13.5px;white-space:nowrap">'+bgYen(bgNum(x.amount))+'</div></div>'+
+        return '<div data-bg-cost="'+esc(x.id)+'" style="border-top:1px solid var(--border);padding:10px 2px"><div style="display:flex;gap:10px;align-items:baseline;justify-content:space-between"><div style="min-width:0"><span class="num" style="font-size:12px;color:var(--ink-soft)">'+esc(fmtDate(x.date))+'</span> <b style="font-size:13px">'+esc(x.cat||"")+'</b>'+(x.source==="po"?' <span class="badge soft-warning" style="margin-left:4px">発注書</span>':'')+''+(x.lineId&&nm[x.lineId]?' <span style="font-size:11.5px;color:var(--ink-faint)">／ '+esc(nm[x.lineId])+'</span>':'')+'</div><div class="num" style="font-weight:800;font-size:13.5px;white-space:nowrap">'+bgYen(bgNum(x.amount))+'</div></div>'+
           ((x.vendor||x.memo)?'<div style="font-size:12px;color:var(--ink-soft);margin-top:3px;word-break:break-all">'+esc(x.vendor||"")+(x.vendor&&x.memo?' ／ ':'')+esc(x.memo||"")+'</div>':'')+
           '<div style="display:flex;gap:8px;margin-top:7px"><button class="btn sm" data-bg-editcost="'+esc(x.id)+'">編集</button><button class="btn sm" data-bg-delcost="'+esc(x.id)+'">削除</button></div></div>';
       }).join("") : '<div style="color:var(--ink-faint);text-align:center;padding:14px;border-top:1px solid var(--border)">まだ実績がありません</div>'; };
@@ -3507,11 +3507,11 @@
     var draft = draftId ? (bgDraftsOf(pid).find(function(x){ return x.id===draftId; }) || null) : null;
     var vendors = []; (Array.isArray(d.costs)?d.costs:[]).forEach(function(x){ if(x.vendor && vendors.indexOf(x.vendor)===-1) vendors.push(x.vendor); });
     var L = isQ ? [{description: p.name||"工事一式", quantity:1, unit:"式", unitPrice: bgNum(p.amount), taxRate:10}]
-      : bgLines(d).filter(function(l){ return l.name || bgNum(l.amount); }).map(function(l){ return {description:l.name||l.cat||"", quantity: bgNum(l.qty)||1, unit:l.unit||"", unitPrice: bgNum(l.price)||bgNum(l.amount), taxRate:10}; });
+      : bgLines(d).filter(function(l){ return l.name || bgNum(l.amount); }).map(function(l){ return {description:l.name||l.cat||"", quantity: bgNum(l.qty)||1, unit:l.unit||"", unitPrice: bgNum(l.price)||bgNum(l.amount), taxRate:10, lineId:l.id, cat:l.cat||""}; });
     if(!L.length) L.push({description:"", quantity:1, unit:"式", unitPrice:0, taxRate:10});
     var partnerName = isQ ? (cu?cu.name:(p.customerName||"")) : (vendors[0]||"");
-    var dDate = today, dDue = isQ ? addDays(today,30) : "", dNote = "", dSubject = p.name||"", dMemo = p.name||"";
-    if(draft){ L = (draft.lines||[]).map(function(l){ return {description:l.description||"", quantity:l.quantity, unit:l.unit||"", unitPrice:l.unitPrice, taxRate:Number(l.taxRate)}; }); if(!L.length) L.push({description:"", quantity:1, unit:"式", unitPrice:0, taxRate:10}); partnerName = draft.partnerName||""; dDate = draft.date||today; dDue = draft.dueDate||""; dNote = draft.note||""; dSubject = draft.subject||""; }
+    var dToCost = true, dDate = today, dDue = isQ ? addDays(today,30) : "", dNote = "", dSubject = p.name||"", dMemo = p.name||"";
+    if(draft){ L = (draft.lines||[]).map(function(l){ return {description:l.description||"", quantity:l.quantity, unit:l.unit||"", unitPrice:l.unitPrice, taxRate:Number(l.taxRate), lineId:l.lineId||"", cat:l.cat||""}; }); if(!L.length) L.push({description:"", quantity:1, unit:"式", unitPrice:0, taxRate:10}); partnerName = draft.partnerName||""; dDate = draft.date||today; dDue = draft.dueDate||""; dNote = draft.note||""; dSubject = draft.subject||""; }
     // freeeに登録済みの取引先から選ぶ（候補を読み込み、入力した名前が登録済みか確認する）
     var nzp = function(x){ return String(x||"").normalize("NFKC").replace(/[\s\u3000]/g,"").toLowerCase(); };
     var findPartner = function(name){ var n = nzp(name); return n && freeePartnerCache.list ? (freeePartnerCache.list.find(function(x){ return nzp(x.name)===n; }) || null) : null; };
@@ -3562,7 +3562,7 @@
         '<label class="field">'+(isQ?'有効期限':'納期・支払期日')+'<input type="date" id="dl-due" value="'+esc(dDue)+'"></label></div>'+
         '<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px;min-width:560px"><thead><tr><th>品名・内容</th><th style="text-align:right">数量</th><th>単位</th><th style="text-align:right">単価（税抜）</th><th>税率</th><th style="text-align:right">金額</th><th></th></tr></thead><tbody id="dl-rows">'+rowsHtml()+'</tbody></table></div>'+
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><button class="btn outline" id="dl-add">'+iPlus()+' 明細を追加</button><div style="font-size:13px">小計（税抜）<b class="num" id="dl-sub" style="margin-left:6px">'+bgYen(sub())+'</b></div></div>'+
-        '<label class="field" style="margin-top:10px">備考（'+(isQ?'見積書':'発注書')+'に載ります）<textarea id="dl-note" style="min-height:50px">'+esc(dNote)+'</textarea></label>'+'<div id="dl-err" style="color:var(--danger);font-size:12.5px;line-height:1.6;margin-top:8px;white-space:pre-wrap"></div>'+
+        '<label class="field" style="margin-top:10px">備考（'+(isQ?'見積書':'発注書')+'に載ります）<textarea id="dl-note" style="min-height:50px">'+esc(dNote)+'</textarea></label>'+(isQ?'':'<label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:12.5px;line-height:1.6;cursor:pointer"><input type="checkbox" id="dl-tocost"'+(dToCost?' checked':'')+' style="margin-top:3px"><span>freeeに作成できたら、予算管理の<b>実績</b>に発注額（税抜）を追加する<br><span style="font-size:11.5px;color:var(--ink-faint)">案件の「実績合計」「残り予算」に反映されます。後でfreeeの経費を取り込むと二重になるので、実績の一覧で「発注書」の印の行を削除してください。</span></span></label>')+'<div id="dl-err" style="color:var(--danger);font-size:12.5px;line-height:1.6;margin-top:8px;white-space:pre-wrap"></div>'+
         (isQ?'<div class="cell-sub" style="margin-top:6px">契約金額を「一式」1行で入れています。金額は税抜として扱うので、内容と金額を確認してください。</div>':'<div class="cell-sub" style="margin-top:6px">予算の明細を入れています。不要な行は「×」で消し、単価を確認してください。</div>'),
         '<button class="btn" id="dl-back" style="margin-right:auto">予算管理に戻る</button><button class="btn" id="dl-draft">下書きを保存</button><button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="dl-go">freeeに'+label+'を作成</button>');
       var box = document.getElementById("modal-box");
@@ -3583,9 +3583,16 @@
         btn.disabled = true; btn.textContent = "作成中…";
         freeeCall("docs.create", {kind:kind, partnerId: regP ? regP.id : ((isQ && cu && cu.freeePartnerId && pn===cu.name) ? cu.freeePartnerId : ""), partnerName: pn, subject: document.getElementById("dl-subject").value, date: date, dueDate: document.getElementById("dl-due").value,
           note: document.getElementById("dl-note").value, memo: dMemo, lines: lines.map(function(l){ return {description:l.description, quantity:bgNum(l.quantity), unit:l.unit, unitPrice:bgNum(l.unitPrice), taxRate:l.taxRate}; })}).then(function(j){
+          var addedYen = 0;
+          if(j && j.number && !isQ && dToCost){
+            var d2 = bgDoc(pid) || {}, have = (d2.costs||[]).some(function(c){ return c.source==="po" && c.poNumber===j.number; });
+            var items = have ? [] : lines.map(function(l){ var amt = Math.round(bgNum(l.quantity)*bgNum(l.unitPrice)); return amt>0 ? {id:"c"+Date.now().toString(36)+Math.random().toString(36).slice(2,6), date:dDate, cat:l.cat||"外注費", lineId:l.lineId||"", vendor:pn, memo:"発注書 "+j.number+"："+l.description, amount:amt, source:"po", poNumber:j.number} : null; }).filter(Boolean);
+            addedYen = items.reduce(function(a,c){ return a + c.amount; }, 0);
+            if(items.length) bgSave(pid, {costs:(d2.costs||[]).concat(items)}, "", null, true);
+          }
           if(j && j.number && draft){ bgSave(pid, {docDrafts:bgDraftsOf(pid).map(function(x){ return x.id===draft.id ? Object.assign({}, x, {freeeNumber:j.number}) : x; })}, "", null, true); }
           if(j && j.configured===false){ toast("freeeが連携されていません"); btn.disabled = false; btn.textContent = "freeeに"+label+"を作成"; return; }
-          openModal(label+"を作成しました", '<div style="line-height:1.8">freeeに'+label+'の下書きを作成しました。'+(j.number?'<br>番号：<b>'+esc(j.number)+'</b>':'')+(j.total!=null?'<br>合計（税込）：<b>'+bgYen(j.total)+'</b>':'')+'<br>内容を確認して、発行・送付はfreeeの画面で行ってください。</div>',
+          openModal(label+"を作成しました", '<div style="line-height:1.8">freeeに'+label+'の下書きを作成しました。'+(j.number?'<br>番号：<b>'+esc(j.number)+'</b>':'')+(j.total!=null?'<br>合計（税込）：<b>'+bgYen(j.total)+'</b>':'')+(addedYen?'<br>予算管理の実績に、発注額（税抜）<b>'+bgYen(addedYen)+'</b>を追加しました。':'')+'<br>内容を確認して、発行・送付はfreeeの画面で行ってください。</div>',
             '<button class="btn" data-close-modal>閉じる</button>'+(j.url?'<a class="btn primary" href="'+esc(j.url)+'" target="_blank" rel="noopener">freeeで開く</a>':''));
         }).catch(function(e){ var em = (e && e.message) || "作成できませんでした"; toast(em); var er = document.getElementById("dl-err"); if(er) er.textContent = "作成できませんでした：\n"+em; btn.disabled = false; btn.textContent = "freeeに"+label+"を作成"; });
       });
@@ -3593,7 +3600,7 @@
       document.getElementById("dl-draft").addEventListener("click", function(){
         keep();
         var now = new Date().toISOString(), id = draft ? draft.id : uid();
-        var rec = {id:id, kind:kind, partnerName:partnerName.trim(), subject:dSubject, date:dDate, dueDate:dDue, note:dNote, lines:L.map(function(l){ return {description:String(l.description||""), quantity:bgNum(l.quantity), unit:l.unit||"", unitPrice:bgNum(l.unitPrice), taxRate:Number(l.taxRate)}; }),
+        var rec = {id:id, kind:kind, partnerName:partnerName.trim(), subject:dSubject, date:dDate, dueDate:dDue, note:dNote, lines:L.map(function(l){ return {description:String(l.description||""), quantity:bgNum(l.quantity), unit:l.unit||"", unitPrice:bgNum(l.unitPrice), taxRate:Number(l.taxRate), lineId:l.lineId||"", cat:l.cat||""}; }),
           by:draft?draft.by:(state.myName||""), at:draft?draft.at:now};
         if(draft){ rec.edited = now; if(draft.freeeNumber) rec.freeeNumber = draft.freeeNumber; }
         if(!rec.partnerName && !rec.lines.some(function(l){ return l.description.trim(); })){ toast("取引先か明細を入力してから保存してください"); return; }
@@ -3601,7 +3608,7 @@
         if(k>-1) arr[k] = rec; else { if(arr.length>=100){ toast("下書きは1案件につき100件までです"); return; } arr.push(rec); }
         bgSave(pid, {docDrafts:arr}, label+"の下書きを保存しました", function(){ draft = rec; draftId = id; });
       });
-      function keep(){ var pe = document.getElementById("dl-partner"); if(pe) partnerName = pe.value; var sj = document.getElementById("dl-subject"); if(sj) dSubject = sj.value; var g = function(i){ var e = document.getElementById(i); return e ? e.value : null; }; var v1 = g("dl-date"); if(v1!==null) dDate = v1; v1 = g("dl-due"); if(v1!==null) dDue = v1; v1 = g("dl-note"); if(v1!==null) dNote = v1; }
+      function keep(){ var pe = document.getElementById("dl-partner"); if(pe) partnerName = pe.value; var sj = document.getElementById("dl-subject"); if(sj) dSubject = sj.value; var g = function(i){ var e = document.getElementById(i); return e ? e.value : null; }; var v1 = g("dl-date"); if(v1!==null) dDate = v1; v1 = g("dl-due"); if(v1!==null) dDue = v1; v1 = g("dl-note"); if(v1!==null) dNote = v1; var tc = document.getElementById("dl-tocost"); if(tc) dToCost = tc.checked; }
     };
     draw();
     if(!freeePartnerCache.list || Date.now()-freeePartnerCache.at>30*60000){
