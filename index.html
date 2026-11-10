@@ -1602,6 +1602,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-10-12", title:"11月10日の更新（その12）", items:[
+      {t:"指示書が保存できない不具合を修正しました", d:"写真にペンで書き込んだ指示書が、データの形式の都合で保存できないことがありました。保存できる形に直しました。保存に失敗したときは、原因のコードも表示します。"}
+    ]},
     {id:"2026-11-10-11", title:"11月10日の更新（その11）", items:[
       {t:"写真に入れる文字の大きさを変えられるようにしました", d:"写真の加工画面の「文字の大きさ」スライダーで、これから入れる文字の大きさを決められます。「移動」で文字を選んでスライダーを動かすと、入れ済みの文字の大きさも変えられます。"}
     ]},
@@ -6645,6 +6648,7 @@
   function instrDraftLoad(k){ try{ var j = JSON.parse(localStorage.getItem(k)||"null"); return j && j.rec ? j : null; }catch(e){ return null; } }
   function instrDraftClear(k){ try{ localStorage.removeItem(k); }catch(e){} }
   function saveInstr(pid, arr, msg, dkey, newTrash){
+    arr = instrSanitize(arr); if(newTrash) newTrash = instrSanitize(newTrash);
     var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
     var finished = false, done = function(){ if(finished) return; finished = true; if(dkey) instrDraftClear(dkey); closeModal(); toast(msg); render(); };
     if(!db){ p.instructions = arr; if(newTrash) p.instrTrash = newTrash; done(); return; }
@@ -6664,10 +6668,11 @@
       clearTimeout(slow);
       if(soft){ finished = true; if(dkey) instrDraftClear(dkey); toast("通信が戻り、指示書を保存しました"); return; }
       done();
-    }).catch(function(){
+    }).catch(function(err){
+      var why = String((err && (err.code || err.message)) || "").slice(0, 90);
       clearTimeout(slow); if(finished) return; patchLocal(prev, prevTrash);
       if(soft){ render(); toast("指示書を保存できませんでした。案件の「指示書」に出る黄色い欄の「開いて保存し直す」から、もう一度保存してください", 9000); return; }
-      toast("保存に失敗しました。入力内容はこの端末に控えてあります（画面はそのままです）。通信を確認して、もう一度「保存」を押してください", 6000);
+      toast("保存に失敗しました"+(why?"（"+why+"）":"")+"。入力内容はこの端末に控えてあります（画面はそのままです）。もう一度「保存」を押してください", 8000);
     });
   }
   function instrHtml(p, x){
@@ -6720,9 +6725,27 @@
   // 書き込みは、写真の幅を1とした座標（x:0〜1、y:0〜縦横比）で保存する。どの大きさで表示・印刷しても同じ位置に出る
   var PE_COLORS = ["#e53935","#ffd600","#1e88e5","#43a047","#ffffff","#111111"];
   function peFilter(fx){ fx = fx||{}; return "brightness("+(fx.b||100)+"%) contrast("+(fx.c||100)+"%)"+(fx.g?" grayscale(1)":""); }
+  // Firestoreは「配列の中に配列」を保存できないため、ペンの点は [x1,y1,x2,y2,…] の平らな形で保存する（表示・編集では [[x,y],…] に直して使う）
+  function pePairs(pts){
+    if(!pts || !pts.length) return [];
+    if(typeof pts[0]==="number"){ var o = []; for(var i=0;i+1<pts.length;i+=2) o.push([pts[i], pts[i+1]]); return o; }
+    return pts;
+  }
+  function peFlat(pts){ if(!pts || !pts.length || typeof pts[0]==="number") return pts||[]; var o = []; pts.forEach(function(q){ o.push(Math.round(q[0]*10000)/10000, Math.round(q[1]*10000)/10000); }); return o; }
+  // 保存前の整形：undefinedを除き、ペンの点を平らにする（Firestoreが受け付けない形で「保存できない」になるのを防ぐ）
+  function instrSanitize(v){
+    var c; try{ c = JSON.parse(JSON.stringify(v)); }catch(e){ return v; }
+    var fixRec = function(r){
+      if(!r || typeof r!=="object") return;
+      (r.photos||[]).forEach(function(ph){ (ph.marks||[]).forEach(function(m){ if(m.t==="pen") m.pts = peFlat(m.pts); }); });
+      (r.steps||[]).forEach(function(st){ (st.photos||[]).forEach(function(ph){ (ph.marks||[]).forEach(function(m){ if(m.t==="pen") m.pts = peFlat(m.pts); }); }); });
+    };
+    if(Array.isArray(c)) c.forEach(function(x){ if(x && x.t && x.reason!==undefined && x.tid) fixRec(x.t); else fixRec(x); });
+    return c;
+  }
   function peMarkSvg(m){
     var c = esc(m.c||"#e53935"), w = m.w||0.008, r = function(n){ return Math.round(n*10000)/10000; };
-    if(m.t==="pen") return '<polyline points="'+m.pts.map(function(q){ return r(q[0])+","+r(q[1]); }).join(" ")+'" fill="none" stroke="'+c+'" stroke-width="'+w+'" stroke-linecap="round" stroke-linejoin="round"/>';
+    if(m.t==="pen") return '<polyline points="'+pePairs(m.pts).map(function(q){ return r(q[0])+","+r(q[1]); }).join(" ")+'" fill="none" stroke="'+c+'" stroke-width="'+w+'" stroke-linecap="round" stroke-linejoin="round"/>';
     if(m.t==="rect") return '<rect x="'+r(Math.min(m.x,m.x+m.dx))+'" y="'+r(Math.min(m.y,m.y+m.dy))+'" width="'+r(Math.abs(m.dx))+'" height="'+r(Math.abs(m.dy))+'" fill="none" stroke="'+c+'" stroke-width="'+w+'" stroke-linejoin="round"/>';
     if(m.t==="fill") return '<rect x="'+r(Math.min(m.x,m.x+m.dx))+'" y="'+r(Math.min(m.y,m.y+m.dy))+'" width="'+r(Math.abs(m.dx))+'" height="'+r(Math.abs(m.dy))+'" fill="'+c+'"/>';
     if(m.t==="ell") return '<ellipse cx="'+r(m.x+m.dx/2)+'" cy="'+r(m.y+m.dy/2)+'" rx="'+r(Math.abs(m.dx)/2)+'" ry="'+r(Math.abs(m.dy)/2)+'" fill="none" stroke="'+c+'" stroke-width="'+w+'"/>';
@@ -6741,15 +6764,15 @@
   // 書き込みの外枠 [x1,y1,x2,y2]（移動・選択の当たり判定用）と、移動
   function peBBox(m){
     var pad = 0.012;
-    if(m.t==="pen"){ var xs = m.pts.map(function(q){ return q[0]; }), ys = m.pts.map(function(q){ return q[1]; }); return [Math.min.apply(null,xs)-pad, Math.min.apply(null,ys)-pad, Math.max.apply(null,xs)+pad, Math.max.apply(null,ys)+pad]; }
+    if(m.t==="pen"){ var pp = pePairs(m.pts), xs = pp.map(function(q){ return q[0]; }), ys = pp.map(function(q){ return q[1]; }); return [Math.min.apply(null,xs)-pad, Math.min.apply(null,ys)-pad, Math.max.apply(null,xs)+pad, Math.max.apply(null,ys)+pad]; }
     if(m.t==="text"){ var s = m.s||0.05, w = 0, t = String(m.text||""); for(var i=0;i<t.length;i++) w += t.charCodeAt(i)>255 ? s : s*0.6; return [m.x-pad/2, m.y-s*1.05, m.x+w+pad/2, m.y+s*0.25]; }
     return [Math.min(m.x,m.x+m.dx)-pad, Math.min(m.y,m.y+m.dy)-pad, Math.max(m.x,m.x+m.dx)+pad, Math.max(m.y,m.y+m.dy)+pad];
   }
   function peMoveMark(m, dx, dy){
-    if(m.t==="pen"){ m.pts = m.pts.map(function(q){ return [q[0]+dx, q[1]+dy]; }); } else { m.x += dx; m.y += dy; }
+    if(m.t==="pen"){ m.pts = pePairs(m.pts).map(function(q){ return [q[0]+dx, q[1]+dy]; }); } else { m.x += dx; m.y += dy; }
   }
   function openPhotoEditor(file, item, onDone){
-    var marks = JSON.parse(JSON.stringify(item.marks||[])), fx = Object.assign({b:100, c:100, g:false}, item.fx||{}), ar = item.ar||0.75;
+    var marks = JSON.parse(JSON.stringify(item.marks||[])).map(function(m){ if(m.t==="pen") m.pts = pePairs(m.pts); return m; }), fx = Object.assign({b:100, c:100, g:false}, item.fx||{}), ar = item.ar||0.75;
     var sel = -1, drag = null, tsz = 0.05;
     var tool = "arrow", color = PE_COLORS[0], wsel = 0.008, ov = document.createElement("div"); ov.id = "pe-ov";
     ov.style.cssText = "position:fixed;inset:0;background:rgba(10,14,12,.94);z-index:3000;display:flex;flex-direction:column;color:#fff;font-size:13px";
@@ -6836,7 +6859,7 @@
     var close = function(){ ov.remove(); };
     ov.querySelector("#pe-cancel").addEventListener("click", close);
     ov.querySelector("#pe-save").addEventListener("click", function(){
-      item.marks = marks; item.ar = Math.round(ar*10000)/10000;
+      item.marks = marks.map(function(m){ if(m.t!=="pen") return m; var c = Object.assign({}, m); c.pts = peFlat(m.pts); return c; }); item.ar = Math.round(ar*10000)/10000;
       item.fx = (fx.b!==100 || fx.c!==100 || fx.g) ? {b:fx.b, c:fx.c, g:!!fx.g} : null;
       close(); if(onDone) onDone();
     });
