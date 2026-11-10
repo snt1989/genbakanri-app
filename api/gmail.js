@@ -25,7 +25,7 @@ function decrypt(b64){
   return JSON.parse(Buffer.concat([d.update(buf.subarray(28)), d.final()]).toString("utf8"));
 }
 function sign(s){ return crypto.createHmac("sha256", key32()).update(s).digest("hex"); }
-function makeState(){ var p = crypto.randomBytes(8).toString("hex") + "." + Date.now(); return p + "." + sign(p); }
+function makeState(kind){ var p = (kind || "g") + crypto.randomBytes(8).toString("hex") + "." + Date.now(); return p + "." + sign(p); }
 function checkState(st){
   var parts = String(st || "").split(".");
   if(parts.length !== 3) return false;
@@ -61,6 +61,51 @@ async function gapi(token, path){
   if(!r.ok) throw F.httpErr(502, "Gmail: " + ((j.error && (j.error.message || j.error.status)) || r.status));
   return j;
 }
+// ---- Googleフォト（バックアップ用：写真を追加するだけの権限 photoslibrary.appendonly。既存の写真の閲覧・削除はできません）----
+var PHOTOS_SCOPE = "https://www.googleapis.com/auth/photoslibrary.appendonly";
+async function photosAccess(){
+  var d = await W.getDoc("settings/gphotosAuth");
+  if(!d || !d.enc) throw F.httpErr(409, "Googleフォトと連携されていません");
+  var a; try{ a = decrypt(d.enc); }catch(e){ throw F.httpErr(409, "Googleフォトの連携情報を読み取れません。連携し直してください"); }
+  var t = await tokenReq({grant_type: "refresh_token", refresh_token: a.refresh_token});
+  return {token: t.access_token, doc: d};
+}
+async function pjson(token, method, path, body){
+  var r = await fetch("https://photoslibrary.googleapis.com/v1/" + path, {method: method, headers: {Authorization: "Bearer " + token, "Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
+  var j = await r.json().catch(function(){ return {}; });
+  if(!r.ok) throw F.httpErr(502, "Googleフォト: " + ((j.error && (j.error.message || j.error.status)) || r.status));
+  return j;
+}
+async function photosAlbum(acc, title){
+  var map = {}; try{ map = JSON.parse(acc.doc.albumsJson || "{}"); }catch(e){}
+  if(map[title]) return {id: map[title], map: map};
+  var al = await pjson(acc.token, "POST", "albums", {album: {title: title.slice(0, 500)}});
+  map[title] = al.id;
+  await W.patchDoc("settings/gphotosAuth", {albumsJson: JSON.stringify(map)});
+  return {id: al.id, map: map};
+}
+async function photosUpload(acc, item){
+  var buf = Buffer.from(String(item.b64 || ""), "base64");
+  if(!buf.length) throw F.httpErr(400, "ファイルが空です");
+  if(buf.length > 4000000) throw F.httpErr(413, "ファイルが大きすぎます（約4MBまで）");
+  var type = String(item.type || "application/octet-stream");
+  var up = await fetch("https://photoslibrary.googleapis.com/v1/uploads", {method: "POST", headers: {Authorization: "Bearer " + acc.token, "Content-type": "application/octet-stream", "X-Goog-Upload-Content-Type": type, "X-Goog-Upload-Protocol": "raw"}, body: buf});
+  var tok = await up.text();
+  if(!up.ok || !tok) throw F.httpErr(502, "Googleフォトへの送信に失敗しました（" + up.status + "）");
+  var title = String(item.album || "現場管理アプリ").slice(0, 200);
+  var al = await photosAlbum(acc, title);
+  var send = function(albumId){ return pjson(acc.token, "POST", "mediaItems:batchCreate", {albumId: albumId, newMediaItems: [{description: String(item.desc || "").slice(0, 900), simpleMediaItem: {fileName: String(item.name || "photo").slice(0, 200), uploadToken: tok}}]}); };
+  var r;
+  try{ r = await send(al.id); }
+  catch(e){
+    // アルバムを手動で削除されていた場合は、作り直してもう一度
+    if(/album|not found|404/i.test(String(e.message))){ delete al.map[title]; await W.patchDoc("settings/gphotosAuth", {albumsJson: JSON.stringify(al.map)}); acc.doc.albumsJson = JSON.stringify(al.map); al = await photosAlbum(acc, title); r = await send(al.id); }
+    else throw e;
+  }
+  var st = ((r.newMediaItemResults || [])[0] || {}).status || {};
+  if(st.code && st.code !== 0) throw F.httpErr(502, "Googleフォト: " + (st.message || st.code));
+  return true;
+}
 function norm(s){ return String(s || "").normalize("NFKC").toLowerCase().replace(/[\s　]+/g, ""); }
 function labelKey(name){ return norm(String(name || "").replace(/^\s*案件\s*[\/／:：]\s*/, "")); }
 function dec64(s){ return Buffer.from(String(s || "").replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"); }
@@ -89,9 +134,14 @@ module.exports = async function handler(req, res){
     var back = function(q){ res.statusCode = 302; res.setHeader("Location", "/?gmail=" + q); res.end(); };
     try{
       var q = req.query || {};
-      if(q.error) return back("denied");
+      if(q.error){ if(String(q.state||"").charAt(0) === "p"){ res.statusCode = 302; res.setHeader("Location", "/?gphotos=denied"); return res.end(); } return back("denied"); }
       if(!configured() || !checkState(q.state) || !q.code) return back("invalid");
       var t = await tokenReq({grant_type: "authorization_code", code: q.code, redirect_uri: redirectUri(req)});
+      if(String(q.state).charAt(0) === "p"){
+        res.setHeader("Location", t.refresh_token ? "/?gphotos=ok" : "/?gphotos=norefresh"); res.statusCode = 302;
+        if(t.refresh_token) await W.patchDoc("settings/gphotosAuth", {enc: encrypt({refresh_token: t.refresh_token}), connectedAt: new Date().toISOString(), albumsJson: "{}"});
+        return res.end();
+      }
       if(!t.refresh_token) return back("norefresh");
       var prof = await gapi(t.access_token, "profile");
       await W.patchDoc("settings/gmailAuth", {enc: encrypt({refresh_token: t.refresh_token, email: prof.emailAddress || ""}), email: prof.emailAddress || "", connectedAt: new Date().toISOString()});
@@ -115,8 +165,29 @@ module.exports = async function handler(req, res){
       if(!admin) return res.status(403).json({error: "管理者のみ実行できます"});
       if(!configured()) return res.status(200).json({error: "notconfigured"});
       var u = "https://accounts.google.com/o/oauth2/v2/auth?" + new URLSearchParams({client_id: F.env("GOOGLE_CLIENT_ID"), redirect_uri: redirectUri(req), response_type: "code",
-        scope: "https://www.googleapis.com/auth/gmail.readonly", access_type: "offline", prompt: "consent", state: makeState()}).toString();
+        scope: "https://www.googleapis.com/auth/gmail.readonly", access_type: "offline", prompt: "consent", state: makeState("g")}).toString();
       return res.status(200).json({url: u});
+    }
+    if(b.action === "gphotos-status"){
+      var gd = configured() ? await W.getDoc("settings/gphotosAuth") : {};
+      return res.status(200).json({configured: configured(), connected: !!(gd && gd.enc), connectedAt: (gd && gd.connectedAt) || "", admin: admin});
+    }
+    if(b.action === "gphotos-authurl"){
+      if(!admin) return res.status(403).json({error: "管理者のみ実行できます"});
+      if(!configured()) return res.status(200).json({error: "notconfigured"});
+      return res.status(200).json({url: "https://accounts.google.com/o/oauth2/v2/auth?" + new URLSearchParams({client_id: F.env("GOOGLE_CLIENT_ID"), redirect_uri: redirectUri(req), response_type: "code", scope: PHOTOS_SCOPE, access_type: "offline", prompt: "consent", state: makeState("p")}).toString()});
+    }
+    if(b.action === "gphotos-disconnect"){
+      if(!admin) return res.status(403).json({error: "管理者のみ実行できます"});
+      await F.fsDelete("settings/gphotosAuth");
+      return res.status(200).json({ok: true});
+    }
+    if(b.action === "gphotos-upload"){
+      if(!admin) return res.status(403).json({error: "管理者のみ実行できます"});
+      if(!configured()) return res.status(200).json({error: "notconfigured"});
+      var acc = await photosAccess();
+      await photosUpload(acc, b);
+      return res.status(200).json({ok: true});
     }
     if(b.action === "disconnect"){
       if(!admin) return res.status(403).json({error: "管理者のみ実行できます"});

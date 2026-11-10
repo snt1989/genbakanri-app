@@ -1602,6 +1602,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-10-6", admin:true, title:"11月10日の更新（その6）", items:[
+      {t:"写真をGoogleフォトにバックアップできるようにしました", d:"設定の「バックアップ」から、Googleフォトを連携すると、案件の写真・動画を「案件名」のアルバムに保存できます（写真の追加のみの権限）。案件の「写真・ファイル」画面からは、その案件だけ保存できます。事前にGoogle Cloudの設定が必要です（GOOGLEPHOTOS.md）。"}
+    ]},
     {id:"2026-11-10-5", title:"11月10日の更新（その5）", items:[
       {t:"すべてのメニューに、誰が使えるかのマークをつけました", d:"左のメニューの各項目に「全員」「担当分」「閲覧のみ」「限定」「管理者」の印が出ます。各画面の上にも、管理者・一般・社外がそれぞれ使えるかが一目で分かる表示を追加しました。印の上にカーソルを置くと説明が出ます。"}
     ]},
@@ -4265,6 +4268,12 @@
       try{ history.replaceState(null, "", location.pathname); }catch(e){}
       if(state.isAdmin){ state.tab = "settings"; state.settingsSeg = "admin"; state.gmail = null; }
       setTimeout(function(){ toast(gr==="ok" ? "Gmailと連携しました" : (gr==="denied" ? "Gmailの許可がキャンセルされました" : (gr==="norefresh" ? "連携に失敗しました。Googleアカウントの「サードパーティのアクセス」で本アプリを削除してからやり直してください" : "Gmailとの連携に失敗しました。もう一度お試しください"))); }, 400);
+    }
+    if(GPHOTO_RETURN && state.myName){
+      var gpr = GPHOTO_RETURN; GPHOTO_RETURN = "";
+      try{ history.replaceState(null, "", location.pathname); }catch(e){}
+      if(state.isAdmin){ state.tab = "settings"; state.settingsSeg = "backup"; state.gphotos = null; }
+      setTimeout(function(){ toast(gpr==="ok" ? "Googleフォトと連携しました" : (gpr==="denied" ? "Googleフォトの許可がキャンセルされました" : "連携に失敗しました。Googleアカウントの「サードパーティのアクセス」で本アプリを削除してから、もう一度お試しください"), 5000); }, 600);
     }
     if(IG_RETURN && state.myName){
       var igr = IG_RETURN; IG_RETURN = "";
@@ -8030,6 +8039,7 @@
       '<button class="btn outline" id="pf-dl-all" style="border-radius:999px;padding:10px 22px">'+iDownload()+' '+(cur?'このフォルダをダウンロード':'すべてダウンロード')+'</button>'+
       '<button class="btn outline" data-files-reload="'+esc(p.id)+'" style="border-radius:999px;padding:10px 22px">写真・ファイルを読み込む</button>'+
       (state.isAdmin ? '<button class="btn outline" id="pf-lighten" style="border-radius:999px;padding:10px 22px">'+iAdmin()+' 写真を軽量化</button>' : '')+
+      (state.isAdmin && worksAvailable() ? '<button class="btn outline" id="pf-gphoto" style="border-radius:999px;padding:10px 22px">'+iAdmin()+' Googleフォトに保存</button>' : '')+
       (state.isAdmin ? '<button class="btn outline" id="pf-backup" style="border-radius:999px;padding:10px 22px">'+iAdmin()+' この案件のファイルをバックアップ</button>' : '')+
     '</div>';
     html += '<div class="pf-kind" role="tablist">'+[["all","すべて",all.length],["photo","写真・動画",nPhoto],["doc","書類",nDoc]].map(function(k){ return '<button type="button" data-pf-kind="'+k[0]+'" class="'+(kind===k[0]?'on':'')+'">'+k[1]+'<i>'+k[2]+'</i></button>'; }).join("")+'</div>';
@@ -8986,6 +8996,7 @@
       ["freeeと連携したい（管理者）","「設定 → freee連携」で連携します。顧客を取引先として登録、案件を売上取引として登録、入金状況の取得、freeeの取引先を顧客へ取り込み（見積書の履歴での絞り込みも可）ができます。設定の手順は連携画面に表示されます。"],
       ["LINE WORKSと連携したい（管理者）","「設定 → LINE WORKS」で、案件・報告書・タスクの通知、アプリからの共有、LINE WORKSのBotからの案件登録・照会ができます。連携の準備（Botの作成、環境変数の登録）が必要です。"],
       ["スマホ通知を使えるようにしたい（管理者）","「画面右上の名前 → 個人情報 → スマホ通知」で通知用のキーを作成し、表示された2つの値を、Vercelの環境変数（VAPID_PUBLIC_KEY・VAPID_PRIVATE_KEY）に登録して再デプロイします。そのあと、各メンバーが自分の端末で通知をオンにします。"],
+      ["写真をGoogleフォトにも保存したい（管理者）","「設定 → バックアップ」の「Googleフォトにバックアップ」でGoogleフォトを連携すると、写真・動画を案件名のアルバムに保存できます。案件の「写真・ファイル」画面の「Googleフォトに保存」なら、その案件だけ保存できます。保存済みの写真は重複しません。1枚あたり約3MBまでです。"],
       ["バックアップを取りたい（管理者）","「設定 → バックアップ」から、データをファイルに書き出せます。大きな変更（CSVの一括取り込みなど）の前に取ることをおすすめします。書き出したファイルから復元もできます。"],
       ["会社情報を変更したい（管理者）","「設定 → 会社情報」で、会社名・住所・電話番号などを編集できます。郵便番号を入れると住所が自動で入ります。管理者以外には編集できません。"]
     ]},
@@ -10004,6 +10015,68 @@
     return '<h2 style="font-size:13.5px;margin:4px 0 10px">Gmail連携</h2><div class="card" style="padding:14px 16px;margin-bottom:18px">'+body+'</div>';
   }
 
+
+  /* ============ Googleフォトへのバックアップ ============ */
+  var GPHOTO_RETURN = (function(){ try{ return new URLSearchParams(location.search).get("gphotos") || ""; }catch(e){ return ""; } })();
+  function gphotoCall(action, extra){
+    return mailCall2(action, extra).catch(function(e){
+      if(/Gmail連携が未設定/.test(e.message)) throw new Error("Google連携が未設定です。GOOGLEPHOTOS.md の手順で、Google CloudのOAuthクライアントを作り、Vercelに登録してください");
+      throw e;
+    });
+  }
+  function gphotoLoad(){
+    if(state.gphotos || state.gphotosLoading || !myMember() || !worksAvailable()) return;
+    state.gphotosLoading = true;
+    gphotoCall("gphotos-status").then(function(j){ state.gphotos = j; }, function(e){ state.gphotos = {failed:true, msg:e.message}; })
+      .then(function(){ state.gphotosLoading = false; if(state.tab==="settings" && state.settingsSeg==="backup") render(); });
+  }
+  function renderGphotosCard(){
+    if(!state.isAdmin || !worksAvailable()) return '';
+    var g = state.gphotos, body;
+    if(!g) body = '<div style="font-size:12.5px;color:var(--ink-soft)">状態を確認しています…</div>';
+    else if(g.failed) body = '<div style="font-size:12.5px;color:var(--danger)">'+esc(g.msg||"確認できません")+'</div>';
+    else if(!g.configured) body = '<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.7">未設定です。GOOGLEPHOTOS.md の手順（Gmail連携と同じGoogle Cloudのクライアントを使います）で、Photos Library APIを有効にしてください。</div>';
+    else if(!g.connected) body = '<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.7;margin-bottom:10px">案件の写真を、会社のGoogleフォトに「案件名」のアルバムとして保存します。アプリが付ける権限は<b>「写真の追加のみ」</b>で、Googleフォト内の既存の写真を見たり消したりはできません。</div><button class="btn primary" id="gp-connect">Googleフォトを連携する</button>';
+    else body = '<div style="font-size:13px;margin-bottom:6px"><span class="badge soft-success">連携中</span> '+(g.connectedAt?'<span style="font-size:11.5px;color:var(--ink-soft)">'+esc(String(g.connectedAt).slice(0,10))+' に連携</span>':'')+'</div>'+
+      '<div style="font-size:12px;color:var(--ink-soft);line-height:1.7;margin-bottom:10px">まだ保存していない写真・動画を、案件名のアルバムに保存します。保存済みの写真は印が付き、重複しません。</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="gp-run-all">すべての案件の写真を保存</button><button class="btn outline" id="gp-disconnect">連携を解除</button></div>';
+    return '<h2 style="font-size:13.5px;margin:18px 0 10px">Googleフォトにバックアップ</h2><div class="card" style="padding:14px 16px;max-width:560px;margin-bottom:18px">'+body+'</div>';
+  }
+  // 未保存の写真・動画を1枚ずつGoogleフォトへ送る（projectId なし＝全案件）
+  function gphotoRun(projectId){
+    if(!state.isAdmin) return;
+    if(state.gphotoRunning){ toast("Googleフォトへ保存中です"); return; }
+    if(!projectId && !lazyReady(true, false)){ backupWait(function(){ gphotoRun(projectId); }, false); return; }
+    var pname = function(id){ var p = state.projects.find(function(x){ return x.id===id; }); return p ? p.name : "案件なし"; };
+    var list = (state.files||[]).filter(function(f){ return (!projectId || f.projectId===projectId) && isMediaFile(f) && !f.chunked && !f.gphotoAt && !f.deleted; });
+    if(!list.length){ toast("Googleフォトに保存していない写真・動画はありません"); return; }
+    state.gphotoRunning = true;
+    var cancelled = false, ok = 0, skipped = [], failed = 0, lastErr = "", i = 0;
+    openModal("Googleフォトに保存中",'<div id="gp-prog" style="font-size:13px;line-height:1.9">準備しています…</div><div style="font-size:11.5px;color:var(--ink-faint);margin-top:8px">この画面を開いたままにしてください。途中でやめても、保存済みの分は残ります。</div>','<button class="btn" id="gp-cancel">やめる</button>');
+    var cb = document.getElementById("gp-cancel"); if(cb) cb.addEventListener("click", function(){ cancelled = true; });
+    var prog = function(){ var el = document.getElementById("gp-prog"); if(el) el.innerHTML = '保存済み <b>'+ok+'</b> / '+list.length+' 件'+(failed?' ／ 失敗 '+failed+'件':'')+(skipped.length?' ／ 大きすぎて除外 '+skipped.length+'件':''); };
+    var finish = function(){
+      state.gphotoRunning = false; closeModal();
+      toast("Googleフォトに "+ok+"件保存しました"+(skipped.length?"（"+skipped.length+"件は大きすぎるため除外）":"")+(failed?"（"+failed+"件は失敗："+lastErr+"）":""), 6000);
+      render();
+    };
+    var next = function(){
+      if(cancelled || i>=list.length || (failed>=3 && !ok)){ finish(); return; }
+      var f = list[i++]; prog();
+      fileBlob(f).then(function(blob){
+        if(blob.size > 3000000){ skipped.push(f.filename||f.id); return; }
+        return blobToB64(blob).then(function(b64){
+          return gphotoCall("gphotos-upload", {b64:b64, type:blob.type||f.contentType||"image/jpeg", name:f.filename||f.name||"photo.jpg", album:pname(f.projectId), desc:(f.title||f.filename||"")+(f.projectId?" ／ "+pname(f.projectId):"")});
+        }).then(function(){
+          ok++; var iso = new Date().toISOString(); f.gphotoAt = iso;
+          if(db) return db.collection("files").doc(f.id).update({gphotoAt:iso}).catch(function(){});
+        });
+      }).catch(function(e){ failed++; lastErr = (e&&e.message||"エラー").slice(0,80); })
+        .then(function(){ setTimeout(next, 150); });
+    };
+    next();
+  }
+
   var MAIL_API = "/api/mail";
   function iMail(){ return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>'; }
   function mailCall(action, extra){
@@ -10446,7 +10519,8 @@
     html += '</div>';
     return html;
   }
-  function renderSettingsBackup(){
+  function renderSettingsBackup(){ return renderSettingsBackup0() + renderGphotosCard(); }
+  function renderSettingsBackup0(){
     var last = lastBackupAt(), days = last ? Math.floor((Date.now()-new Date(last).getTime())/86400000) : null;
     var html = dataStateCardHtml() + '<h2 style="font-size:13.5px;margin:4px 0 10px">バックアップ</h2>';
     html += '<div class="card" style="padding:16px 18px;max-width:560px;display:flex;flex-direction:column;gap:12px">';
@@ -13242,6 +13316,11 @@
     }
 
     if(state.tab==="settings" && state.settingsSeg==="admin" && state.isAdmin && worksAvailable()) gmailLoad();
+    if(state.tab==="settings" && state.settingsSeg==="backup" && state.isAdmin) gphotoLoad();
+    var gpc = document.getElementById("gp-connect"); if(gpc) gpc.addEventListener("click", function(){ gpc.disabled = true; gphotoCall("gphotos-authurl").then(function(j){ location.href = j.url; }, function(e){ gpc.disabled = false; toast(e.message); }); });
+    var gpd = document.getElementById("gp-disconnect"); if(gpd) gpd.addEventListener("click", function(){ confirmDelete("Googleフォトの連携を解除しますか？（保存済みの写真はGoogleフォトに残ります）", function(){ gphotoCall("gphotos-disconnect").then(function(){ state.gphotos = null; toast("連携を解除しました"); render(); }, function(e){ toast(e.message); }); }); });
+    var gpa = document.getElementById("gp-run-all"); if(gpa) gpa.addEventListener("click", function(){ gphotoRun(null); });
+    var gpp = document.getElementById("pf-gphoto"); if(gpp) gpp.addEventListener("click", function(){ if(!state.gphotos){ gphotoLoad(); } if(state.gphotos && state.gphotos.failed){ toast(state.gphotos.msg); return; } if(state.gphotos && !state.gphotos.connected){ toast(state.gphotos.configured ? "先に「設定 → バックアップ」でGoogleフォトを連携してください" : "Googleフォトの連携が未設定です（設定 → バックアップ）"); return; } gphotoRun(state.filesProjectId); });
     var gmc = document.getElementById("gm-connect"); if(gmc) gmc.addEventListener("click", function(){ gmc.disabled = true; mailCall2("authurl").then(function(j){ location.href = j.url; }, function(e){ gmc.disabled = false; toast(e.message); }); });
     var gmd = document.getElementById("gm-disconnect"); if(gmd) gmd.addEventListener("click", function(){ confirmDelete("Gmailの連携を解除しますか？（取り込み済みの履歴は残ります）", function(){ mailCall2("disconnect").then(function(){ state.gmail = null; toast("連携を解除しました"); render(); }, function(e){ toast(e.message); }); }); });
     c.querySelectorAll("[data-reset-pw]").forEach(function(el){
