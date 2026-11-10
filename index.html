@@ -5905,7 +5905,9 @@
       if(n>0) return '<a href="#" class="wchip on" data-open-project="'+esc(p.id)+'" title="'+esc(label)+'は'+n+'件作成済み">'+esc(label)+' '+n+'</a>';
       return canAdd ? '<button type="button" class="wchip off" data-pd-add="'+key+'" data-pid="'+esc(p.id)+'" title="'+esc(label)+'を作成する">'+esc(label)+' 未作成</button>' : '<span class="wchip off">'+esc(label)+' 未作成</span>';
     };
-    return '<div class="wchips">'+chip("工程表",c.steps+c.events,c.steps||!c.events?"step":"event")+chip("報告書",c.reports,"report")+'</div>';
+    var ch = isExternalViewer() ? null : state.chats.find(function(x){ return x.projectId===p.id; });
+    var chatChip = isExternalViewer() ? '' : (ch ? '<a href="#" class="wchip on" data-chat-open-proj="'+esc(p.id)+'" title="この案件のチャットを開く（開設済み）">チャット 開設済</a>' : '<span class="wchip off" title="この案件のチャットはまだ開かれていません（案件の詳細の「チャットする」で開設できます）">チャット 未開設</span>');
+    return '<div class="wchips">'+chip("工程表",c.steps+c.events,c.steps||!c.events?"step":"event")+chip("報告書",c.reports,"report")+chatChip+'</div>';
   }
   function renderProjectList(mode){
     if(!state.loaded.projects || !state.loaded.members) return skeleton();
@@ -11223,7 +11225,7 @@
   var PROJ_COLS = {
     cust:{label:"顧客", sort:["cust","custr"], html:function(p){ return '<td data-label="顧客">'+(p.customerName?'<div style="font-size:12.5px;font-weight:600">'+esc(p.customerName)+'</div>':'<div style="font-size:12px;color:var(--ink-faint)">未設定</div>')+'<button class="btn sm" data-list-cust="'+esc(p.id)+'" style="margin-top:4px">'+(p.customerName?'顧客を編集':'顧客を設定')+'</button></td>'; }},
     status:{label:"進捗", sort:["status"], html:function(p){ return '<td data-label="進捗">'+(hiddenFor(p,"p_status")?"—":statusBadge(p))+(freeeBadge(p)?'<div style="margin-top:4px">'+freeeBadge(p)+'</div>':'')+'</td>'; }},
-    work:{label:"工程表・報告", html:function(p){ return '<td data-label="作業">'+workChips(p)+'</td>'; }},
+    work:{label:"工程表・報告・チャット", html:function(p){ return '<td data-label="作業">'+workChips(p)+'</td>'; }},
     division:{label:"事業部", html:function(p){ return '<td data-label="事業部">'+esc(p.division||"—")+'</td>'; }},
     assignees:{label:"担当者", html:function(p, names){ return '<td data-label="担当者">'+(names.length?esc(names.join("、")):"—")+'</td>'; }},
     start:{label:"施工開始日", sort:["start","startr"], html:function(p){ return '<td class="num" data-label="施工開始日">'+(hiddenFor(p,"p_period")?"—":fmtDate(p.startDate))+'</td>'; }},
@@ -12408,6 +12410,13 @@
     c.querySelectorAll("[data-pd-goto]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); state.tab = el.getAttribute("data-pd-goto"); render(); }); });
     c.querySelectorAll("[data-pd-gm]").forEach(function(el){ el.addEventListener("click", function(){ var ym = el.getAttribute("data-ym"); if(!ym) return; state.pdGM = state.pdGM || {}; state.pdGM[el.getAttribute("data-pd-gm")] = ym; render(); }); });
     c.querySelectorAll("iframe.pd-gantt").forEach(function(f){ f.addEventListener("load", function(){ try{ f.style.height = (f.contentDocument.documentElement.scrollHeight+6)+"px"; }catch(e){} }); });
+    c.querySelectorAll("[data-chat-open-proj]").forEach(function(el){ el.addEventListener("click", function(ev){
+      ev.preventDefault(); ev.stopPropagation();
+      var pr = state.projects.find(function(x){ return x.id===el.getAttribute("data-chat-open-proj"); }); if(!pr) return;
+      if(!seesAllProjects() && !isMyProject(pr)){ toast("この案件の担当者ではないため、チャットは表示されません"); return; }
+      if(PROJ_ARCHIVED.indexOf(pr.status)!==-1){ toast("清算済・失注の案件のチャットは非表示です。ステータスを戻すと表示されます"); return; }
+      ensureProjectChat(pr, function(chatId){ state.activeChat = chatId; setTab("chat"); });
+    }); });
     c.querySelectorAll("[data-sched-proj]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); ev.stopPropagation(); openSchedulePrint(el.getAttribute("data-sched-proj")); }); });
     c.querySelectorAll("[data-pd-print]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); openSchedulePrint(el.getAttribute("data-pd-print")); }); });
     c.querySelectorAll("[data-pd-add]").forEach(function(el){ el.addEventListener("click", function(){
