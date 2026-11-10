@@ -3781,7 +3781,7 @@
     var box = document.getElementById("ai-panel"), fab = document.getElementById("ai-fab");
     if(!aiVisible()){ if(box) box.style.display="none"; if(fab) fab.style.display="none"; return; }
     if(!fab){
-      fab = document.createElement("button"); fab.id = "ai-fab"; fab.type = "button"; fab.title = "AIアシスタント"; fab.innerHTML = aiKunSvg(58)+'<span class="ai-tag">AI君</span>';
+      fab = document.createElement("button"); fab.id = "ai-fab"; fab.type = "button"; fab.title = "AIアシスタント"; fab.innerHTML = aiKunSvg(58)+'<span class="ai-tag">AIロボ</span>';
       fab.addEventListener("click", function(){ state.ai.open = !state.ai.open; aiRender(); if(state.ai.open) aiProbe(); });
       document.body.appendChild(fab);
       var st = document.createElement("style");
@@ -3813,11 +3813,11 @@
     }).join("");
     if(state.ai.busy) body += '<div class="ai-b ai-a" style="color:var(--ink-faint)">考えています…</div>';
     if(state.ai.enabled===false) body = '<div class="ai-b ai-a">AIアシスタントはまだ有効になっていません。管理者が、Vercelの環境変数 <b>ANTHROPIC_API_KEY</b> を登録して再デプロイすると使えます。</div>';
-    else if(!state.ai.msgs.length) body = '<div class="ai-b ai-a">こんにちは、AI君です！案件・タスク・予定について聞いたり、文章の下書き、アプリの使い方の質問、操作（タスク追加・進捗変更・メモ追加）の依頼ができます。操作は、確認してから実行します。</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+chips.map(function(c){ return '<button class="btn sm outline" data-ai-chip="'+esc(c)+'">'+esc(c)+'</button>'; }).join("")+'</div>';
+    else if(!state.ai.msgs.length) body = '<div class="ai-b ai-a">こんにちは、AIロボです！案件・タスク・予定について聞いたり、文章の下書き、アプリの使い方の質問、操作（タスク追加・進捗変更・メモ追加）の依頼ができます。操作は、確認してから実行します。</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+chips.map(function(c){ return '<button class="btn sm outline" data-ai-chip="'+esc(c)+'">'+esc(c)+'</button>'; }).join("")+'</div>';
     var keep = document.getElementById("ai-in") ? document.getElementById("ai-in").value : "";
-    box.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border,#ddd)"><span style="display:inline-flex">'+aiKunSvg(30)+'</span><b style="flex:1;font-size:14px">AI君（アシスタント）</b><button class="btn sm" id="ai-clear">新しい会話</button><button class="btn sm" id="ai-close">閉じる</button></div>'+
+    box.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border,#ddd)"><span style="display:inline-flex">'+aiKunSvg(30)+'</span><b style="flex:1;font-size:14px">AIロボ（アシスタント）</b><button class="btn sm" id="ai-clear">新しい会話</button><button class="btn sm" id="ai-close">閉じる</button></div>'+
       '<div class="ai-msgs" id="ai-msgs">'+body+'</div>'+
-      '<div style="padding:8px 10px;border-top:1px solid var(--border,#ddd)"><div style="display:flex;gap:6px;align-items:flex-end"><textarea id="ai-in" rows="2" placeholder="AI君に質問や依頼を入力（Ctrl+Enterで送信）" style="flex:1;resize:none;font-size:16px"></textarea><button class="btn primary" id="ai-send">送信</button></div>'+
+      '<div style="padding:8px 10px;border-top:1px solid var(--border,#ddd)"><div style="display:flex;gap:6px;align-items:flex-end"><textarea id="ai-in" rows="2" placeholder="AIロボに質問や依頼を入力（Ctrl+Enterで送信）" style="flex:1;resize:none;font-size:16px"></textarea><button class="btn primary" id="ai-send">送信</button></div>'+
       '<div style="font-size:10.5px;color:var(--ink-faint);margin-top:4px;line-height:1.5">お客様の連絡先は送信しません。AIの回答は間違うことがあります。重要な内容は画面で確認してください。</div></div>';
     var inp = document.getElementById("ai-in"); inp.value = keep;
     var ms = document.getElementById("ai-msgs"); ms.scrollTop = ms.scrollHeight;
