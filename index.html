@@ -3565,7 +3565,7 @@
         '<label class="field">'+(isQ?'有効期限':'納期・支払期日')+'<input type="date" id="dl-due" value="'+esc(dDue)+'"></label></div>'+
         '<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px;min-width:560px"><thead><tr><th>品名・内容</th><th style="text-align:right">数量</th><th>単位</th><th style="text-align:right">単価（税抜）</th><th>税率</th><th style="text-align:right">金額</th><th></th></tr></thead><tbody id="dl-rows">'+rowsHtml()+'</tbody></table></div>'+
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><button class="btn outline" id="dl-add">'+iPlus()+' 明細を追加</button><div style="font-size:13px">小計（税抜）<b class="num" id="dl-sub" style="margin-left:6px">'+bgYen(sub())+'</b></div></div>'+
-        '<label class="field" style="margin-top:10px">備考（'+(isQ?'見積書':'発注書')+'に載ります）<textarea id="dl-note" style="min-height:50px">'+esc(dNote)+'</textarea></label>'+(isQ?'':'<label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:12.5px;line-height:1.6;cursor:pointer"><input type="checkbox" id="dl-tocost"'+(dToCost?' checked':'')+' style="margin-top:3px"><span>freeeに作成できたら、予算管理の<b>実績</b>に発注額（税抜）を追加する<br><span style="font-size:11.5px;color:var(--ink-faint)">案件の「実績合計」「残り予算」に反映されます。後でfreeeの経費を取り込むと二重になるので、実績の一覧で「発注書」の印の行を削除してください。</span></span></label>')+'<div id="dl-err" style="color:var(--danger);font-size:12.5px;line-height:1.6;margin-top:8px;white-space:pre-wrap"></div>'+
+        '<label class="field" style="margin-top:10px">備考（'+(isQ?'見積書':'発注書')+'に載ります）<textarea id="dl-note" style="min-height:50px">'+esc(dNote)+'</textarea></label>'+(isQ?'':'<label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:12.5px;line-height:1.6;cursor:pointer"><input type="checkbox" id="dl-tocost"'+(dToCost?' checked':'')+' style="margin-top:3px"><span>freeeに作成できたら、予算管理の<b>実績</b>と<b>予算の明細</b>に反映する<br><span style="font-size:11.5px;color:var(--ink-faint)">発注額（税抜）を実績に追加します。予算の明細にない項目は、予算の明細にも追加します（予算合計が増えます）。後でfreeeの経費を取り込むと二重になるので、実績の一覧で「発注書」の印の行を削除してください。</span></span></label>')+'<div id="dl-err" style="color:var(--danger);font-size:12.5px;line-height:1.6;margin-top:8px;white-space:pre-wrap"></div>'+
         (isQ?'<div class="cell-sub" style="margin-top:6px">契約金額を「一式」1行で入れています。金額は税抜として扱うので、内容と金額を確認してください。</div>':'<div class="cell-sub" style="margin-top:6px">予算の明細を入れています。不要な行は「×」で消し、単価を確認してください。</div>'),
         '<button class="btn" id="dl-back" style="margin-right:auto">予算管理に戻る</button><button class="btn" id="dl-draft">下書きを保存</button><button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="dl-go">freeeに'+label+'を作成</button>');
       var box = document.getElementById("modal-box");
@@ -3587,16 +3587,27 @@
         btn.disabled = true; btn.textContent = "作成中…";
         freeeCall("docs.create", {kind:kind, partnerId: regP ? regP.id : ((isQ && cu && cu.freeePartnerId && pn===cu.name) ? cu.freeePartnerId : ""), partnerName: pn, subject: document.getElementById("dl-subject").value, date: date, dueDate: document.getElementById("dl-due").value,
           note: document.getElementById("dl-note").value, memo: dMemo, lines: lines.map(function(l){ return {description:l.description, quantity:bgNum(l.quantity), unit:l.unit, unitPrice:bgNum(l.unitPrice), taxRate:l.taxRate}; })}).then(function(j){
-          var addedYen = 0;
+          var addedYen = 0, addedLines = 0;
           if(j && j.number && !isQ && dToCost){
             var d2 = bgDoc(pid) || {}, have = (d2.costs||[]).some(function(c){ return c.source==="po" && c.poNumber===j.number; });
-            var items = have ? [] : lines.map(function(l){ var amt = Math.round(bgNum(l.quantity)*bgNum(l.unitPrice)); return amt>0 ? {id:"c"+Date.now().toString(36)+Math.random().toString(36).slice(2,6), date:dDate, cat:l.cat||"外注費", lineId:l.lineId||"", vendor:pn, memo:"発注書 "+j.number+"："+l.description, amount:amt, source:"po", poNumber:j.number} : null; }).filter(Boolean);
-            addedYen = items.reduce(function(a,c){ return a + c.amount; }, 0);
-            if(items.length) bgSave(pid, {costs:(d2.costs||[]).concat(items)}, "", null, true);
+            if(!have){
+              var bl = bgLines(d2).slice(), items = [];
+              lines.forEach(function(l){
+                var amt = Math.round(bgNum(l.quantity)*bgNum(l.unitPrice)); if(amt<=0) return;
+                var cat = l.cat || "外注費", lid = l.lineId || "";
+                if(!lid || !bl.some(function(x){ return x.id===lid; })){   // 予算の明細にない項目は、予算の明細にも追加する
+                  lid = "l"+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+                  bl.push({id:lid, cat:cat, name:l.description, qty:bgNum(l.quantity), unit:l.unit||"", price:bgNum(l.unitPrice), amount:amt}); addedLines++;
+                }
+                items.push({id:"c"+Date.now().toString(36)+Math.random().toString(36).slice(2,6), date:dDate, cat:cat, lineId:lid, vendor:pn, memo:"発注書 "+j.number+"："+l.description, amount:amt, source:"po", poNumber:j.number});
+              });
+              addedYen = items.reduce(function(a,c){ return a + c.amount; }, 0);
+              if(items.length) bgSave(pid, {lines:bl, costs:(d2.costs||[]).concat(items)}, "", null, true);
+            }
           }
           if(j && j.number && draft){ bgSave(pid, {docDrafts:bgDraftsOf(pid).map(function(x){ return x.id===draft.id ? Object.assign({}, x, {freeeNumber:j.number}) : x; })}, "", null, true); }
           if(j && j.configured===false){ toast("freeeが連携されていません"); btn.disabled = false; btn.textContent = "freeeに"+label+"を作成"; return; }
-          openModal(label+"を作成しました", '<div style="line-height:1.8">freeeに'+label+'の下書きを作成しました。'+(j.number?'<br>番号：<b>'+esc(j.number)+'</b>':'')+(j.total!=null?'<br>合計（税込）：<b>'+bgYen(j.total)+'</b>':'')+(addedYen?'<br>予算管理の実績に、発注額（税抜）<b>'+bgYen(addedYen)+'</b>を追加しました。':'')+'<br>内容を確認して、発行・送付はfreeeの画面で行ってください。</div>',
+          openModal(label+"を作成しました", '<div style="line-height:1.8">freeeに'+label+'の下書きを作成しました。'+(j.number?'<br>番号：<b>'+esc(j.number)+'</b>':'')+(j.total!=null?'<br>合計（税込）：<b>'+bgYen(j.total)+'</b>':'')+(addedYen?'<br>予算管理の実績に、発注額（税抜）<b>'+bgYen(addedYen)+'</b>を追加しました。'+(addedLines?'<br>予算の明細にない'+addedLines+'項目は、予算の明細にも追加しました。':''):'')+'<br>内容を確認して、発行・送付はfreeeの画面で行ってください。</div>',
             '<button class="btn" data-close-modal>閉じる</button>'+(j.url?'<a class="btn primary" href="'+esc(j.url)+'" target="_blank" rel="noopener">freeeで開く</a>':''));
         }).catch(function(e){ var em = (e && e.message) || "作成できませんでした"; toast(em); var er = document.getElementById("dl-err"); if(er) er.textContent = "作成できませんでした：\n"+em; btn.disabled = false; btn.textContent = "freeeに"+label+"を作成"; });
       });
