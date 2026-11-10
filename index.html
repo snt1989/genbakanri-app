@@ -6604,9 +6604,19 @@
       var q = state.projects.find(function(x){ return x.id===pid; }); if(q) q.instructions = v;
     };
     patchLocal(arr);
-    var slow = setTimeout(function(){ if(!finished) toast("通信が不安定です。入力内容はこの端末に控えてあります。接続が戻ったら、もう一度「保存」を押してください", 6000); }, 10000);
-    db.collection("projects").doc(pid).update({instructions:arr}).then(function(){ clearTimeout(slow); done(); }).catch(function(){
+    // 10秒たっても確定しない（電波が弱い等）ときは、画面を閉じて続きを待つ。控えは確定するまで端末に残す
+    var soft = false;
+    var slow = setTimeout(function(){
+      if(finished) return; soft = true; closeModal(); render();
+      toast("通信待ちです。指示書は先に反映しました。接続が戻り次第、自動で保存されます（この端末にも控えてあります）", 7000);
+    }, 10000);
+    db.collection("projects").doc(pid).update({instructions:arr}).then(function(){
+      clearTimeout(slow);
+      if(soft){ finished = true; if(dkey) instrDraftClear(dkey); toast("通信が戻り、指示書を保存しました"); return; }
+      done();
+    }).catch(function(){
       clearTimeout(slow); if(finished) return; patchLocal(prev);
+      if(soft){ render(); toast("指示書を保存できませんでした。もう一度、指示書を開くと、控えから復元できます", 7000); return; }
       toast("保存に失敗しました。入力内容はこの端末に控えてあります（画面はそのままです）。通信を確認して、もう一度「保存」を押してください", 6000);
     });
   }
