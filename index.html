@@ -6825,7 +6825,11 @@
         '</div>';
       }).join("");
     }
-    html += '<div style="display:flex;gap:8px;margin-top:12px"><button class="btn sm outline" data-chat-project="'+p.id+'">チャットする</button><button class="btn sm primary" data-edit-section="members">'+iPlus()+' メンバー追加</button></div>';
+    var pch = state.chats.find(function(c){ return c.projectId===p.id; }), pchUnread = pch && (pch.reads||{})[state.myName] && String(pch.updatedAt||"")>String((pch.reads||{})[state.myName]);
+    html += '<div style="margin-top:12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px">'+(pch
+      ? '<span class="badge soft-success">チャット開設済み</span><span style="color:var(--ink-soft)">メンバー'+chatMembers(pch).length+'名'+(pch.updatedAt?' ／ 最終 '+esc(fmtDateTime(pch.updatedAt)):'')+'</span>'+(pchUnread?'<span class="chat-unread">未読あり</span>':'')
+      : '<span class="badge line-gray">チャット未開設</span><span style="color:var(--ink-faint)">「チャットを開始」で、この案件のチャットを作ります</span>')+'</div>';
+    html += '<div style="display:flex;gap:8px;margin-top:8px"><button class="btn sm outline" data-chat-project="'+p.id+'">'+(pch?'チャットを開く':'チャットを開始')+'</button><button class="btn sm primary" data-edit-section="members">'+iPlus()+' メンバー追加</button></div>';
     html += '</div>';
     // この案件のタスク（一覧＋追加）
     var ptasks = state.tasks.filter(function(t){ return t.projectId===p.id; }).sort(function(a,b){ return (a.done?1:0)-(b.done?1:0) || String(a.dueDate||"").localeCompare(String(b.dueDate||"")); });
