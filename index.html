@@ -1596,6 +1596,14 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-10-2", title:"11月10日の更新（その2）", items:[
+      {t:"アプリの更新が、開いたままでもすぐ分かります", d:"新しいバージョンが公開されると、画面の上に「新しいバージョンがあります」と出ます。「今すぐ更新」で最新になります。更新後は「アプリが新しくなりました」が出て、変更点をすぐ読めます。"},
+      {t:"指示書の写真に、書き込みや加工ができます", d:"指示書の編集で写真を選び、「加工・文字入れ」から、ペン・矢印・四角・丸・黒塗り・文字を書き込めます。明るさ・コントラスト・白黒も調整できます。元の写真は変わりません。"},
+      {t:"指示書を、案件のチャットに投稿できます", d:"指示書の表示画面の「チャットに投稿」で、案件のチャットに内容を送れます。メッセージの「指示書を開く」から、写真つきの指示書を開けます。"},
+      {t:"案件一覧で、チャットが開設済みか分かります", d:"案件一覧の「工程表・報告・チャット」の列に、「チャット 開設済」「チャット 未開設」が出ます。開設済みを押すとチャットが開きます。"},
+      {t:"アプリで見積書・発注書を削除すると、freeeの書類は取消になります", admin:true, d:"予算管理の「保存した見積書・発注書」から削除すると、freeeの書類を取消にします（freeeには削除機能がないため）。発注書は、予算に入れた実績・明細も取り除きます。"},
+      {t:"見積書・発注書の取引先は、freeeの登録済みから選びます", admin:true, d:"作成画面で、freeeに登録済みの取引先から選びます。近い名前の候補も出ます。"}
+    ]},
     {id:"2026-11-10-1", title:"11月10日の更新", items:[
       {t:"AIロボ（AIアシスタント）を追加しました", d:"画面右下のロボットのボタンから、案件・タスク・予定についての質問、文章の下書き、アプリの使い方の質問ができます。タスクの追加・進捗の変更・メモの追加は、提案を確認してから実行します。お客様の連絡先は送信しません。"},
       {t:"案件に「指示書」を作れるようになりました", d:"案件の詳細の「指示書」から、作業日・集合場所・担当者・作業手順（手順ごとに説明と写真）・確認項目・注意事項をまとめた作業指示書を作れます。A4で印刷・PDFにでき、文章のコピー、複製、状態（下書き・指示済・作業完了）の管理、案件のチャットへの投稿もできます。社外メンバーには表示されません。"},
@@ -1709,6 +1717,49 @@
       {t:"データベースの使用量（管理者）", admin:true, d:"設定の管理画面で、Firestoreの実際の使用量をほぼリアルタイムで確認できます（設定が必要です）。"}
     ]}
   ];
+  /* ---- アプリの更新を、開いたままでもすぐ知らせる ---- */
+  // sw.js のバージョン（CACHE名）を1分ごと・画面に戻ったときに確認し、変わっていたら画面の上に案内を出す。
+  // 更新後に開いたときは、変更点（RELEASES）の案内を出す。
+  (function(){
+    if(window.claude || !/^https?:$/.test(location.protocol)) return;
+    var base = null, shown = false, relShown = false;
+    var banner = function(msg, btns){
+      var old = document.getElementById("app-banner"); if(old) old.remove();
+      var b = document.createElement("div"); b.id = "app-banner";
+      b.style.cssText = "position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:2600;background:#1d3b34;color:#fff;border-radius:12px;box-shadow:0 6px 22px rgba(0,0,0,.35);padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;max-width:calc(100vw - 20px);font-size:13px;line-height:1.5";
+      b.innerHTML = '<span style="flex:1;min-width:180px">'+msg+'</span>'+btns.map(function(x,i){ return '<button type="button" class="btn sm'+(x.primary?' primary':'')+'" data-bn="'+i+'">'+x.label+'</button>'; }).join("");
+      document.body.appendChild(b);
+      b.querySelectorAll("[data-bn]").forEach(function(el){ el.addEventListener("click", function(){ var x = btns[+el.getAttribute("data-bn")]; b.remove(); if(x.fn) x.fn(); }); });
+    };
+    var ver = function(){
+      return fetch("sw.js?_="+Date.now(), {cache:"no-store"}).then(function(r){ return r.ok ? r.text() : ""; }).then(function(t){ var m = /var CACHE = "([^"]+)"/.exec(t); return m ? m[1] : ""; }).catch(function(){ return ""; });
+    };
+    var check = function(){
+      ver().then(function(v){
+        if(!v) return;
+        if(base===null){ base = v; return; }
+        if(v!==base && !shown){
+          shown = true;
+          try{ if(navigator.serviceWorker) navigator.serviceWorker.getRegistration().then(function(r){ if(r) r.update(); }); }catch(e){}
+          banner("新しいバージョンがあります。更新すると、新しい機能が使えます。<br><span style=\"font-size:11.5px;opacity:.8\">入力中の内容がある場合は、保存してから更新してください。</span>", [
+            {label:"今すぐ更新", primary:true, fn:function(){ location.reload(); }},
+            {label:"あとで", fn:function(){ setTimeout(function(){ shown = false; base = null; check(); }, 10*60*1000); }}]);
+        }
+      });
+    };
+    setTimeout(check, 2500); setInterval(check, 60*1000);
+    document.addEventListener("visibilitychange", function(){ if(!document.hidden) check(); });
+    window.addEventListener("online", check);
+    // 更新後に開いたとき（まだ見ていない変更点があるとき）に、すぐ案内する
+    setInterval(function(){
+      try{
+        if(relShown || !state.authed || !state.myName || isExternalViewer()) return;
+        if(document.getElementById("modal-box") && document.getElementById("modal-box").offsetParent) return;
+        var un = releaseUnseen(); relShown = true; if(!un.length) return;
+        banner("アプリが新しくなりました。変更点をご確認ください。", [{label:"内容を見る", primary:true, fn:function(){ openReleaseNotes(); }}, {label:"閉じる"}]);
+      }catch(e){}
+    }, 4000);
+  })();
   function releaseHasItems(r){ return r.items.some(function(x){ return !x.admin || state.isAdmin; }); }   // 管理者向けの項目しかない更新は一般には知らせない
   function releaseSeenId(){
     var me = state.myName || "";
