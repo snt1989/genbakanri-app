@@ -6584,7 +6584,27 @@
   function projInstr(p){ return Array.isArray(p.instructions) ? p.instructions : []; }
   function instrFile(fid){ return state.files.find(function(f){ return f.id===fid; }) || Object.keys(filesExtra).reduce(function(r,k){ return r || (filesExtra[k]||[]).find(function(f){ return f.id===fid; }); }, null); }
   function instrPhotoCount(x){ return (x.photos||[]).length + (x.steps||[]).reduce(function(n,st){ return n+(st.photos||[]).length; }, 0); }
+  // この端末に残っている、保存が確定していない指示書の下書き（通信失敗・誤って閉じた場合の救済）
+  function instrDraftsOf(pid){
+    var out = [];
+    try{
+      for(var i=0;i<localStorage.length;i++){
+        var k = localStorage.key(i); if(!k || k.indexOf("gc_instr_draft_"+pid+"_")!==0) continue;
+        var j = JSON.parse(localStorage.getItem(k)||"null"); if(!j || !j.rec) continue;
+        out.push({key:k, id:k.slice(("gc_instr_draft_"+pid+"_").length), at:j.at, rec:j.rec});
+      }
+    }catch(e){}
+    return out;
+  }
   function renderInstrSection(p){
+    var drafts = instrDraftsOf(p.id).filter(function(d){ return d.id==="new" ? true : projInstr(p).some(function(i){ return i.id===d.id; }); });
+    var dh = drafts.length ? '<div class="card" style="padding:12px 16px;margin-bottom:10px;border:1.5px solid #e0a43a;background:#fff8e8"><div style="font-size:13px;font-weight:700;margin-bottom:6px">保存が完了していない指示書が、この端末に残っています</div>'+drafts.map(function(d){
+      var t = d.at ? new Date(d.at) : null, ts = t ? (t.getMonth()+1)+"/"+t.getDate()+" "+String(t.getHours()).padStart(2,"0")+":"+String(t.getMinutes()).padStart(2,"0") : "";
+      return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:4px 0;font-size:12.5px"><span style="flex:1;min-width:160px">'+esc(d.rec.title||"（件名なし）")+' <span style="color:var(--ink-faint)">'+(d.id==="new"?"新規":"編集中")+(ts?" ／ "+ts:"")+'</span></span><button class="btn sm primary" data-instr-restore="'+esc(d.id)+'" data-instr-pid="'+esc(p.id)+'">開いて保存し直す</button><button class="btn sm" data-instr-dropdraft="'+esc(d.key)+'">破棄</button></div>';
+    }).join("")+'</div>' : '';
+    return dh + renderInstrSection0(p);
+  }
+  function renderInstrSection0(p){
     var list = projInstr(p).slice().sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")) || String(b.at||"").localeCompare(String(a.at||"")); });
     var h = '<div class="form-section-title"><span>指示書 <span class="badge line-gray">'+list.length+'</span></span><span>'+(state.canWrite?'<button class="btn sm primary" data-instr-add="'+esc(p.id)+'">'+iPlus()+' 指示書を作成</button>':'')+'</span></div>';
     h += '<div class="card" style="padding:6px 18px">'+(list.length ? list.map(function(x){
@@ -6621,7 +6641,7 @@
       done();
     }).catch(function(){
       clearTimeout(slow); if(finished) return; patchLocal(prev);
-      if(soft){ render(); toast("指示書を保存できませんでした。もう一度、指示書を開くと、控えから復元できます", 7000); return; }
+      if(soft){ render(); toast("指示書を保存できませんでした。案件の「指示書」に出る黄色い欄の「開いて保存し直す」から、もう一度保存してください", 9000); return; }
       toast("保存に失敗しました。入力内容はこの端末に控えてあります（画面はそのままです）。通信を確認して、もう一度「保存」を押してください", 6000);
     });
   }
@@ -9384,6 +9404,8 @@
     });
     var q = document.getElementById("rp-q");
     if(q) q.addEventListener("change", function(){ f.q = q.value; render(); });
+    c.querySelectorAll("[data-instr-restore]").forEach(function(el){ el.addEventListener("click", function(){ var id = el.getAttribute("data-instr-restore"); openInstrModal(el.getAttribute("data-instr-pid"), id==="new" ? null : id); }); });
+    c.querySelectorAll("[data-instr-dropdraft]").forEach(function(el){ el.addEventListener("click", function(){ confirmDelete("この下書きを破棄しますか？（元に戻せません）", function(){ instrDraftClear(el.getAttribute("data-instr-dropdraft")); render(); }); }); });
     c.querySelectorAll("[data-instr-add]").forEach(function(el){ el.addEventListener("click", function(){ openInstrModal(el.getAttribute("data-instr-add"), null); }); });
     c.querySelectorAll("[data-instr-edit]").forEach(function(el){ el.addEventListener("click", function(){ openInstrModal(el.getAttribute("data-instr-pid"), el.getAttribute("data-instr-edit")); }); });
     c.querySelectorAll("[data-instr-dup]").forEach(function(el){ el.addEventListener("click", function(){ dupInstr(el.getAttribute("data-instr-pid"), el.getAttribute("data-instr-dup")); }); });
