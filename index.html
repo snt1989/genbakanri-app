@@ -6506,12 +6506,12 @@
     var addr = ""; try{ addr = projAddrHidden(p) ? "" : propertyAddressOf(p).full; }catch(er){}
     var row = function(k, v, tall){ return v||tall ? '<tr><th>'+k+'</th><td'+(tall?' class="tall"':'')+'>'+(v||'&nbsp;')+'</td></tr>' : ''; };
     var figs = function(arr){
-      var fs = (arr||[]).map(function(ph){ var f = instrFile(ph.fileId); return f && !f.chunked ? '<figure><img src="'+esc(fileUrl(f))+'"><figcaption>'+e(ph.caption||"")+'</figcaption></figure>' : ""; }).join("");
+      var fs = (arr||[]).map(function(ph){ var f = instrFile(ph.fileId); return f && !f.chunked ? '<figure><div class="pw"><img src="'+esc(fileUrl(f))+'"'+(ph.fx?' style="filter:'+peFilter(ph.fx)+'"':'')+'>'+peOverlayHtml(ph)+'</div><figcaption>'+e(ph.caption||"")+'</figcaption></figure>' : ""; }).join("");
       return fs ? '<div class="ph">'+fs+'</div>' : "";
     };
     var steps = (x.steps||[]).map(function(st,i){ return '<div class="step"><div class="sh"><span class="no">'+(i+1)+'</span>'+e(st.title||"")+'</div>'+(st.detail?'<div class="sd">'+e(st.detail)+'</div>':'')+figs(st.photos)+'</div>'; }).join("");
     var checks = String(x.checklist||"").split("\n").map(function(t){ return t.trim(); }).filter(Boolean).map(function(t){ return '<li><span class="cb"></span>'+e(t)+'</li>'; }).join("");
-    return '<!doctype html><html><head><meta charset="utf-8"><title>'+esc(x.title||"作業指示書")+'</title><style>@page{size:A4;margin:12mm}*{box-sizing:border-box}body{font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;color:#111;margin:0;padding:16px;font-size:12.5px;line-height:1.7}h1{font-size:22px;text-align:center;letter-spacing:.4em;margin:0 0 12px;border-bottom:3px double #111;padding-bottom:8px}h2{font-size:13px;margin:14px 0 4px;padding-left:8px;border-left:4px solid #1f7a4d}table{width:100%;border-collapse:collapse;margin-bottom:8px}th,td{border:1px solid #444;padding:6px 10px;vertical-align:top;text-align:left}th{background:#eef2ef;width:20%;white-space:nowrap}td.tall{height:56px}.meta{display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:8px}.step{border:1px solid #444;margin-bottom:8px;break-inside:avoid}.sh{background:#eef2ef;padding:5px 10px;font-weight:700;border-bottom:1px solid #444}.no{display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;border-radius:50%;background:#1f7a4d;color:#fff;font-size:12px;margin-right:8px}.sd{padding:6px 10px}.ph{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 10px 8px}figure{margin:0;border:1px solid #bbb;padding:4px;break-inside:avoid}figure img{width:100%;max-height:220px;object-fit:contain;display:block;background:#fafafa}figcaption{font-size:11px;min-height:14px;margin-top:3px}ul.ck{list-style:none;padding:0;margin:0;border:1px solid #444;padding:6px 10px}ul.ck li{padding:2px 0}.cb{display:inline-block;width:13px;height:13px;border:1.5px solid #111;margin-right:8px;vertical-align:-2px}.sign{display:flex;gap:10px;margin-top:14px;break-inside:avoid}.sign div{flex:1;border:1px solid #444;height:62px;padding:3px 8px;font-size:11px}.badge{border:1px solid #111;padding:0 8px;font-size:11px;margin-left:8px}</style></head><body>'+
+    return '<!doctype html><html><head><meta charset="utf-8"><title>'+esc(x.title||"作業指示書")+'</title><style>@page{size:A4;margin:12mm}*{box-sizing:border-box}body{font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;color:#111;margin:0;padding:16px;font-size:12.5px;line-height:1.7}h1{font-size:22px;text-align:center;letter-spacing:.4em;margin:0 0 12px;border-bottom:3px double #111;padding-bottom:8px}h2{font-size:13px;margin:14px 0 4px;padding-left:8px;border-left:4px solid #1f7a4d}table{width:100%;border-collapse:collapse;margin-bottom:8px}th,td{border:1px solid #444;padding:6px 10px;vertical-align:top;text-align:left}th{background:#eef2ef;width:20%;white-space:nowrap}td.tall{height:56px}.meta{display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:8px}.step{border:1px solid #444;margin-bottom:8px;break-inside:avoid}.sh{background:#eef2ef;padding:5px 10px;font-weight:700;border-bottom:1px solid #444}.no{display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;border-radius:50%;background:#1f7a4d;color:#fff;font-size:12px;margin-right:8px}.sd{padding:6px 10px}.ph{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 10px 8px}figure{margin:0;border:1px solid #bbb;padding:4px;break-inside:avoid}figure{text-align:center}.pw{position:relative;display:inline-block;line-height:0;max-width:100%}figure img{max-width:100%;max-height:220px;display:block;background:#fafafa}figcaption{font-size:11px;min-height:14px;margin-top:3px}ul.ck{list-style:none;padding:0;margin:0;border:1px solid #444;padding:6px 10px}ul.ck li{padding:2px 0}.cb{display:inline-block;width:13px;height:13px;border:1.5px solid #111;margin-right:8px;vertical-align:-2px}.sign{display:flex;gap:10px;margin-top:14px;break-inside:avoid}.sign div{flex:1;border:1px solid #444;height:62px;padding:3px 8px;font-size:11px}.badge{border:1px solid #111;padding:0 8px;font-size:11px;margin-left:8px}</style></head><body>'+
       '<h1>作業指示書</h1><div class="meta"><span>作成日：'+esc(fmtDate(String(x.at||"").slice(0,10)))+'　／　作成者：'+esc(x.by||"")+'<span class="badge">'+esc(x.status||"指示済")+'</span></span><span>'+esc((state.orgSettings||{}).companyName||"")+'</span></div>'+
       '<table>'+row("件名", e(x.title||p.name))+row("現場名", e(p.name))+row("現場住所", e(x.address||addr))+row("作業日時", e(fmtDate(x.date)+(x.startTime?"　"+x.startTime+" 開始":"")+(x.endTime?" ～ "+x.endTime:"")))+row("集合場所", e(x.meetPlace))+row("担当者", e((x.workers||[]).join("、")))+row("緊急連絡先", e(x.contact))+'</table>'+
       '<h2>作業内容（概要）</h2><table>'+row("作業の概要", e(x.content), true)+row("仕上がり基準", e(x.quality))+row("資材・数量", e(x.materials))+row("持ち物・準備", e(x.items))+'</table>'+
@@ -6547,6 +6547,97 @@
     var dn = document.getElementById("in-done"); if(dn) dn.addEventListener("click", function(){ var fresh = state.projects.find(function(q){ return q.id===pid; }) || p; saveInstr(pid, projInstr(fresh).map(function(i){ return i.id===id ? Object.assign({}, i, {status:"作業完了", edited:new Date().toISOString()}) : i; }), "作業完了にしました"); });
   }
   // 写真の選択（案件の「写真・ファイル」から）。sel は [{fileId, caption}] で、直接書き換える
+  /* ---- 指示書の写真の加工（元の写真は変えず、書き込みと明るさなどを重ねて保存） ---- */
+  // 書き込みは、写真の幅を1とした座標（x:0〜1、y:0〜縦横比）で保存する。どの大きさで表示・印刷しても同じ位置に出る
+  var PE_COLORS = ["#e53935","#ffd600","#1e88e5","#43a047","#ffffff","#111111"];
+  function peFilter(fx){ fx = fx||{}; return "brightness("+(fx.b||100)+"%) contrast("+(fx.c||100)+"%)"+(fx.g?" grayscale(1)":""); }
+  function peMarkSvg(m){
+    var c = esc(m.c||"#e53935"), w = m.w||0.008, r = function(n){ return Math.round(n*10000)/10000; };
+    if(m.t==="pen") return '<polyline points="'+m.pts.map(function(q){ return r(q[0])+","+r(q[1]); }).join(" ")+'" fill="none" stroke="'+c+'" stroke-width="'+w+'" stroke-linecap="round" stroke-linejoin="round"/>';
+    if(m.t==="rect") return '<rect x="'+r(Math.min(m.x,m.x+m.dx))+'" y="'+r(Math.min(m.y,m.y+m.dy))+'" width="'+r(Math.abs(m.dx))+'" height="'+r(Math.abs(m.dy))+'" fill="none" stroke="'+c+'" stroke-width="'+w+'" stroke-linejoin="round"/>';
+    if(m.t==="fill") return '<rect x="'+r(Math.min(m.x,m.x+m.dx))+'" y="'+r(Math.min(m.y,m.y+m.dy))+'" width="'+r(Math.abs(m.dx))+'" height="'+r(Math.abs(m.dy))+'" fill="'+c+'"/>';
+    if(m.t==="ell") return '<ellipse cx="'+r(m.x+m.dx/2)+'" cy="'+r(m.y+m.dy/2)+'" rx="'+r(Math.abs(m.dx)/2)+'" ry="'+r(Math.abs(m.dy)/2)+'" fill="none" stroke="'+c+'" stroke-width="'+w+'"/>';
+    if(m.t==="arrow"){
+      var x2 = m.x+m.dx, y2 = m.y+m.dy, L = Math.sqrt(m.dx*m.dx+m.dy*m.dy)||0.0001, ux = m.dx/L, uy = m.dy/L, hs = Math.max(w*4, 0.02), hw = hs*0.55;
+      var bx = x2-ux*hs, by = y2-uy*hs;
+      return '<line x1="'+r(m.x)+'" y1="'+r(m.y)+'" x2="'+r(bx)+'" y2="'+r(by)+'" stroke="'+c+'" stroke-width="'+w+'" stroke-linecap="round"/><polygon points="'+r(x2)+','+r(y2)+' '+r(bx-uy*hw)+','+r(by+ux*hw)+' '+r(bx+uy*hw)+','+r(by-ux*hw)+'" fill="'+c+'"/>';
+    }
+    if(m.t==="text") return '<text x="'+r(m.x)+'" y="'+r(m.y)+'" font-size="'+(m.s||0.05)+'" font-weight="800" font-family="sans-serif" fill="'+c+'" stroke="'+(m.c==="#ffffff"?"#111":"#fff")+'" stroke-width="'+r((m.s||0.05)*0.1)+'" paint-order="stroke" stroke-linejoin="round">'+esc(m.text||"")+'</text>';
+    return "";
+  }
+  function peOverlayHtml(item){
+    var ms = (item && item.marks) || []; if(!ms.length) return "";
+    return '<svg viewBox="0 0 1 '+(item.ar||0.75)+'" preserveAspectRatio="none" style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none">'+ms.map(peMarkSvg).join("")+'</svg>';
+  }
+  function openPhotoEditor(file, item, onDone){
+    var marks = JSON.parse(JSON.stringify(item.marks||[])), fx = Object.assign({b:100, c:100, g:false}, item.fx||{}), ar = item.ar||0.75;
+    var tool = "arrow", color = PE_COLORS[0], wsel = 0.008, ov = document.createElement("div"); ov.id = "pe-ov";
+    ov.style.cssText = "position:fixed;inset:0;background:rgba(10,14,12,.94);z-index:3000;display:flex;flex-direction:column;color:#fff;font-size:13px";
+    var tools = [["pen","ペン"],["arrow","矢印"],["rect","四角"],["ell","丸"],["fill","黒塗り"],["text","文字"]];
+    ov.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;background:#1b2421">'+
+      tools.map(function(t){ return '<button type="button" class="btn sm" data-pe-tool="'+t[0]+'">'+t[1]+'</button>'; }).join("")+
+      '<span style="width:1px;height:22px;background:#456;margin:0 4px"></span>'+PE_COLORS.map(function(c){ return '<button type="button" data-pe-color="'+c+'" style="width:24px;height:24px;border-radius:50%;border:2px solid #fff;background:'+c+';cursor:pointer;padding:0"></button>'; }).join("")+
+      '<select id="pe-w" style="font-size:13px;width:auto;min-width:0;padding:2px 6px"><option value="0.004">細</option><option value="0.008" selected>中</option><option value="0.016">太</option></select>'+
+      '<span style="width:1px;height:22px;background:#456;margin:0 4px"></span><button type="button" class="btn sm" id="pe-undo">1つ戻す</button><button type="button" class="btn sm" id="pe-clear">書き込みを全部消す</button></div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding:6px 10px;background:#232d29;font-size:12px"><label>明るさ <input type="range" id="pe-b" min="50" max="150" value="'+fx.b+'" style="vertical-align:middle;width:120px"></label><label>コントラスト <input type="range" id="pe-c" min="50" max="150" value="'+fx.c+'" style="vertical-align:middle;width:120px"></label><label><input type="checkbox" id="pe-g"'+(fx.g?' checked':'')+'> 白黒</label><button type="button" class="btn sm" id="pe-fxreset">明るさ等を戻す</button></div>'+
+      '<div style="flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:10px"><div id="pe-stage" style="position:relative;display:inline-block;line-height:0;user-select:none"><img id="pe-img" src="'+esc(fileUrl(file))+'" style="display:block;max-width:92vw;max-height:calc(100vh - 190px)"><svg id="pe-svg" style="position:absolute;left:0;top:0;width:100%;height:100%;touch-action:none;cursor:crosshair"></svg></div></div>'+
+      '<div style="display:flex;gap:8px;justify-content:flex-end;padding:8px 10px;background:#1b2421"><span style="margin-right:auto;font-size:11.5px;color:#9db;line-height:30px">元の写真は変わりません。書き込みと明るさは、指示書に重ねて保存されます。</span><button type="button" class="btn" id="pe-cancel">キャンセル</button><button type="button" class="btn primary" id="pe-save">この内容で保存</button></div>';
+    document.body.appendChild(ov);
+    var img = ov.querySelector("#pe-img"), svg = ov.querySelector("#pe-svg"), cur = null;
+    var redraw = function(){
+      svg.setAttribute("viewBox","0 0 1 "+ar); svg.setAttribute("preserveAspectRatio","none");
+      svg.innerHTML = marks.concat(cur?[cur]:[]).map(peMarkSvg).join("");
+      img.style.filter = peFilter(fx);
+      ov.querySelectorAll("[data-pe-tool]").forEach(function(b){ b.style.outline = b.getAttribute("data-pe-tool")===tool ? "2px solid #7df2c7" : "none"; });
+      ov.querySelectorAll("[data-pe-color]").forEach(function(b){ b.style.outline = b.getAttribute("data-pe-color")===color ? "3px solid #7df2c7" : "none"; });
+    };
+    img.addEventListener("load", function(){ if(img.naturalWidth){ ar = img.naturalHeight/img.naturalWidth; } redraw(); });
+    if(img.complete && img.naturalWidth){ ar = img.naturalHeight/img.naturalWidth; }
+    redraw();
+    ov.querySelectorAll("[data-pe-tool]").forEach(function(b){ b.addEventListener("click", function(){ tool = b.getAttribute("data-pe-tool"); redraw(); }); });
+    ov.querySelectorAll("[data-pe-color]").forEach(function(b){ b.addEventListener("click", function(){ color = b.getAttribute("data-pe-color"); redraw(); }); });
+    ov.querySelector("#pe-w").addEventListener("change", function(){ wsel = Number(this.value); });
+    ov.querySelector("#pe-undo").addEventListener("click", function(){ marks.pop(); redraw(); });
+    ov.querySelector("#pe-clear").addEventListener("click", function(){ if(!marks.length || confirm("書き込みを全部消します。よろしいですか？")){ marks = []; redraw(); } });
+    var bI = ov.querySelector("#pe-b"), cI = ov.querySelector("#pe-c"), gI = ov.querySelector("#pe-g");
+    var fxUpd = function(){ fx.b = Number(bI.value); fx.c = Number(cI.value); fx.g = gI.checked; redraw(); };
+    bI.addEventListener("input", fxUpd); cI.addEventListener("input", fxUpd); gI.addEventListener("change", fxUpd);
+    ov.querySelector("#pe-fxreset").addEventListener("click", function(){ bI.value = 100; cI.value = 100; gI.checked = false; fxUpd(); });
+    var pos = function(ev){ var r = svg.getBoundingClientRect(); return [Math.min(1,Math.max(0,(ev.clientX-r.left)/r.width)), Math.min(ar,Math.max(0,(ev.clientY-r.top)/r.width))]; };
+    var start = null;
+    svg.addEventListener("pointerdown", function(ev){
+      ev.preventDefault(); var q = pos(ev);
+      if(marks.length>=200){ toast("書き込みは1枚につき200個までです"); return; }
+      if(tool==="text"){
+        var t = window.prompt("入れる文字（例：ここを施工、NG、1）", ""); if(t && t.trim()){ marks.push({t:"text", x:q[0], y:q[1], s:Math.round(wsel*6.5*1000)/1000, c:color, text:t.trim().slice(0,60)}); redraw(); }
+        return;
+      }
+      try{ svg.setPointerCapture(ev.pointerId); }catch(e){}
+      start = q;
+      cur = tool==="pen" ? {t:"pen", c:color, w:wsel, pts:[q]} : {t:tool, c:color, w:wsel, x:q[0], y:q[1], dx:0, dy:0};
+      redraw();
+    });
+    svg.addEventListener("pointermove", function(ev){
+      if(!cur) return; var q = pos(ev);
+      if(cur.t==="pen"){ var l = cur.pts[cur.pts.length-1]; if(Math.hypot(q[0]-l[0], q[1]-l[1])>0.002) cur.pts.push(q); }
+      else { cur.dx = q[0]-start[0]; cur.dy = q[1]-start[1]; }
+      redraw();
+    });
+    var end = function(){
+      if(!cur) return; var m = cur; cur = null;
+      var ok = m.t==="pen" ? m.pts.length>1 : (Math.abs(m.dx)>0.005 || Math.abs(m.dy)>0.005);
+      if(ok){ if(m.t==="pen") m.pts = m.pts.map(function(q){ return [Math.round(q[0]*10000)/10000, Math.round(q[1]*10000)/10000]; }); marks.push(m); }
+      redraw();
+    };
+    svg.addEventListener("pointerup", end); svg.addEventListener("pointercancel", end);
+    var close = function(){ ov.remove(); };
+    ov.querySelector("#pe-cancel").addEventListener("click", close);
+    ov.querySelector("#pe-save").addEventListener("click", function(){
+      item.marks = marks; item.ar = Math.round(ar*10000)/10000;
+      item.fx = (fx.b!==100 || fx.c!==100 || fx.g) ? {b:fx.b, c:fx.c, g:!!fx.g} : null;
+      close(); if(onDone) onDone();
+    });
+  }
   function instrPicker(el, pid, sel){
     var imgs = filesForProject(pid).filter(function(f){ return isImageFile(f) && !f.chunked; });
     if(!imgs.length){ el.innerHTML = '<div style="font-size:12px;color:var(--ink-faint)">この案件に写真がありません。案件の「写真・ファイル」に追加してから選べます（表示されないときは、案件の画面で「写真・ファイルを読み込む」を押してください）。</div>'; return; }
@@ -6554,8 +6645,12 @@
     var draw = function(){
       el.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px">'+imgs.map(function(f){
         var it = sel.find(function(z){ return z.fileId===f.id; });
-        return '<div style="border:1px solid var(--border);border-radius:8px;padding:5px;'+(it?'outline:2px solid var(--accent,#1f7a4d)':'')+'"><div data-ip-tog="'+esc(f.id)+'" style="cursor:pointer"><img src="'+esc(fileUrl(f))+'" style="display:block;width:100%;height:70px;object-fit:cover;border-radius:4px"><div style="font-size:11px;margin-top:3px">'+(it?'✔ 選択中（'+(sel.indexOf(it)+1)+'）':'タップで選択')+'</div></div>'+(it?'<input type="text" data-ip-cap="'+esc(f.id)+'" placeholder="説明（例：ここを施工）" value="'+esc(it.caption||"")+'" style="margin-top:3px;font-size:11px;padding:3px 5px;width:100%">':'')+'</div>';
+        return '<div style="border:1px solid var(--border);border-radius:8px;padding:5px;'+(it?'outline:2px solid var(--accent,#1f7a4d)':'')+'"><div data-ip-tog="'+esc(f.id)+'" style="cursor:pointer"><img src="'+esc(fileUrl(f))+'" style="display:block;width:100%;height:70px;object-fit:cover;border-radius:4px"><div style="font-size:11px;margin-top:3px">'+(it?'✔ 選択中（'+(sel.indexOf(it)+1)+'）':'タップで選択')+'</div></div>'+(it?'<button type="button" class="btn sm" data-ip-edit="'+esc(f.id)+'" style="margin-top:3px;width:100%;justify-content:center">'+((it.marks&&it.marks.length)||it.fx?'✎ 加工済（編集）':'✎ 加工・文字入れ')+'</button><input type="text" data-ip-cap="'+esc(f.id)+'" placeholder="説明（例：ここを施工）" value="'+esc(it.caption||"")+'" style="margin-top:3px;font-size:11px;padding:3px 5px;width:100%">':'')+'</div>';
       }).join("")+'</div>';
+      el.querySelectorAll("[data-ip-edit]").forEach(function(b){ b.addEventListener("click", function(){
+        keep(); var id = b.getAttribute("data-ip-edit"), it = sel.find(function(z){ return z.fileId===id; }), f = imgs.find(function(z){ return z.id===id; });
+        if(it && f) openPhotoEditor(f, it, function(){ draw(); });
+      }); });
       el.querySelectorAll("[data-ip-tog]").forEach(function(d){ d.addEventListener("click", function(){
         keep(); var id = d.getAttribute("data-ip-tog"), k = sel.findIndex(function(z){ return z.fileId===id; });
         if(k>-1) sel.splice(k,1); else sel.push({fileId:id, caption:""}); draw();
@@ -6568,8 +6663,8 @@
     var cur = id ? projInstr(p).find(function(i){ return i.id===id; }) : null;
     if(id && !cur) return;
     var v = cur || {title:"", date:localToday(), startTime:"08:00", endTime:"", meetPlace:"", address:"", workers:normalizeAssignees(p.assignees).map(function(a){ return a.name; }), content:"", quality:"", materials:"", items:"", cautions:"", checklist:"", notes:"", contact:state.myName||"", status:"下書き", steps:[], photos:[]};
-    var steps = (v.steps||[]).map(function(st){ return {id:st.id||uid(), title:st.title||"", detail:st.detail||"", photos:(st.photos||[]).map(function(z){ return {fileId:z.fileId, caption:z.caption||""}; })}; });
-    var gphotos = (v.photos||[]).map(function(z){ return {fileId:z.fileId, caption:z.caption||""}; });
+    var steps = (v.steps||[]).map(function(st){ return {id:st.id||uid(), title:st.title||"", detail:st.detail||"", photos:(st.photos||[]).map(function(z){ return {fileId:z.fileId, caption:z.caption||"", marks:z.marks||[], ar:z.ar, fx:z.fx||null}; })}; });
+    var gphotos = (v.photos||[]).map(function(z){ return {fileId:z.fileId, caption:z.caption||"", marks:z.marks||[], ar:z.ar, fx:z.fx||null}; });
     var addr = ""; try{ addr = projAddrHidden(p) ? "" : propertyAddressOf(p).full; }catch(er){}
     var names = state.members.map(function(m){ return m.name; });
     (v.workers||[]).forEach(function(n){ if(names.indexOf(n)===-1) names.push(n); });
@@ -6621,8 +6716,8 @@
       var rec = {id:cur?cur.id:uid(), title:val("in-title")||(p.name+" 作業指示書"), status:document.getElementById("in-status").value, date:val("in-date"), startTime:val("in-st"), endTime:val("in-et"), meetPlace:val("in-meet"), address:val("in-addr"),
         workers:Array.prototype.map.call(document.querySelectorAll("#in-workers input:checked"), function(c){ return c.value; }), contact:val("in-contact"),
         content:val("in-content"), quality:val("in-quality"), materials:val("in-materials"), items:val("in-items"), cautions:val("in-cautions"), checklist:val("in-checklist"), notes:val("in-notes"),
-        steps:steps.filter(function(st){ return st.title.trim()||st.detail.trim()||st.photos.length; }).map(function(st){ return {id:st.id, title:st.title.trim(), detail:st.detail.trim(), photos:st.photos.map(function(z){ return {fileId:z.fileId, caption:(z.caption||"").trim()}; })}; }),
-        photos:gphotos.map(function(z){ return {fileId:z.fileId, caption:(z.caption||"").trim()}; }), by:cur?cur.by:(state.myName||""), at:cur?cur.at:now};
+        steps:steps.filter(function(st){ return st.title.trim()||st.detail.trim()||st.photos.length; }).map(function(st){ return {id:st.id, title:st.title.trim(), detail:st.detail.trim(), photos:st.photos.map(function(z){ return {fileId:z.fileId, caption:(z.caption||"").trim(), marks:z.marks||[], ar:z.ar||null, fx:z.fx||null}; })}; }),
+        photos:gphotos.map(function(z){ return {fileId:z.fileId, caption:(z.caption||"").trim(), marks:z.marks||[], ar:z.ar||null, fx:z.fx||null}; }), by:cur?cur.by:(state.myName||""), at:cur?cur.at:now};
       if(cur) rec.edited = now;
       var fresh = state.projects.find(function(q){ return q.id===pid; }) || p, arr = projInstr(fresh).slice();
       if(cur) arr = arr.map(function(i){ return i.id===cur.id ? rec : i; }); else { if(arr.length>=100){ toast("指示書は1案件につき100件までです"); return; } arr.push(rec); }
