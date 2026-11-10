@@ -1602,6 +1602,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-10-8", title:"11月10日の更新（その8）", items:[
+      {t:"指示書を、社外メンバーも使えるようにしました", d:"管理者・一般に加えて、社外メンバーも、自分が担当の案件で指示書を作成・編集・表示・印刷できます。チャットに載せた指示書も開けます。"}
+    ]},
     {id:"2026-11-10-7", title:"11月10日の更新（その7）", items:[
       {t:"指示書の編集画面に「プレビュー」を追加しました", d:"保存する前に、印刷されるのと同じ見た目で確認できます。閉じても入力内容は残ります。"},
       {t:"写真に入れた文字や図形を、あとから動かせるようになりました", d:"写真の加工画面で「移動」を選び、動かしたい文字や図形をドラッグします。文字をタップすると書き換え、「選んだ書き込みを削除」で個別に消せます。"}
@@ -6544,7 +6547,7 @@
   }
 
   /* ============ PROJECT DETAIL (full page) ============ */
-  /* ---- 案件のメモ（案件データの中に保存。社外メンバーには表示しない） ---- */
+  /* ---- 案件のメモ（案件データの中に保存。管理者・一般・社外のだれでも使える） ---- */
   function projMemos(p){ return Array.isArray(p.memos) ? p.memos : []; }
   function renderMemoSection(p){
     if(isExternalViewer()) return "";
@@ -6579,14 +6582,13 @@
   function instrFile(fid){ return state.files.find(function(f){ return f.id===fid; }) || Object.keys(filesExtra).reduce(function(r,k){ return r || (filesExtra[k]||[]).find(function(f){ return f.id===fid; }); }, null); }
   function instrPhotoCount(x){ return (x.photos||[]).length + (x.steps||[]).reduce(function(n,st){ return n+(st.photos||[]).length; }, 0); }
   function renderInstrSection(p){
-    if(isExternalViewer()) return "";
     var list = projInstr(p).slice().sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")) || String(b.at||"").localeCompare(String(a.at||"")); });
     var h = '<div class="form-section-title"><span>指示書 <span class="badge line-gray">'+list.length+'</span></span><span>'+(state.canWrite?'<button class="btn sm primary" data-instr-add="'+esc(p.id)+'">'+iPlus()+' 指示書を作成</button>':'')+'</span></div>';
     h += '<div class="card" style="padding:6px 18px">'+(list.length ? list.map(function(x){
       var st = x.status||"指示済", pc = instrPhotoCount(x), sc = (x.steps||[]).length;
       return '<div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:180px"><div style="font-size:13.5px;font-weight:700"><span class="badge '+(st==="作業完了"?"soft-success":st==="下書き"?"line-gray":"soft-warning")+'" style="margin-right:6px">'+esc(st)+'</span>'+esc(x.title||"作業指示書")+'</div><div style="font-size:11.5px;color:var(--ink-faint);margin-top:2px"><span class="num">'+esc(fmtDate(x.date))+(x.startTime?' '+esc(x.startTime)+'～':'')+'</span>'+((x.workers&&x.workers.length)?' ／ 担当：'+esc(x.workers.join("、")):'')+(sc?' ／ 手順'+sc+'件':'')+(pc?' ／ 写真'+pc+'枚':'')+' ／ 作成：'+esc(x.by||"不明")+'</div></div>'+
         '<button class="btn sm" data-instr-view="'+esc(x.id)+'" data-instr-pid="'+esc(p.id)+'">表示・印刷</button>'+(state.canWrite?'<button class="btn sm" data-instr-edit="'+esc(x.id)+'" data-instr-pid="'+esc(p.id)+'">'+iEdit()+' 編集</button><button class="btn sm" data-instr-dup="'+esc(x.id)+'" data-instr-pid="'+esc(p.id)+'" title="内容をそのまま複製して、日付を変えて使えます">複製</button>':'')+'</div>';
-    }).join("") : '<div style="font-size:12px;color:var(--ink-faint);padding:12px 0">指示書はまだありません。作業手順ごとに写真と説明を付けて、確認項目や注意事項とあわせて印刷・共有できます（社外メンバーには表示されません）。</div>')+'</div>';
+    }).join("") : '<div style="font-size:12px;color:var(--ink-faint);padding:12px 0">指示書はまだありません。作業手順ごとに写真と説明を付けて、確認項目や注意事項とあわせて印刷・共有できます。</div>')+'</div>';
     return h;
   }
   // 指示書の入力内容を端末にも自動で控える（通信失敗・誤って閉じた場合でも失わない）
@@ -9073,7 +9075,7 @@
     ["案件の画面", null],
     ["案件の登録・編集","◎","○","○","一般・社外は自分が担当の案件のみ。社外秘に設定された項目は社外メンバーに見えません"],
     ["メモ・タスク・工程表・報告書","◎","○","○","社外秘にしたものは社外メンバーに見えません。メモの編集は書いた本人か管理者"],
-    ["指示書（写真つき）","◎","○","×","社外メンバーには表示されません。チャット送付時は文章のみ確認できます"],
+    ["指示書（写真つき）","◎","○","○","だれでも作成・編集・表示できます（自分が担当の案件のみ）"],
     ["案件のチャット","◎","○","×","担当案件のチャットのみ。社外メンバーには表示されません"],
     ["見積書・発注書（freee）・予算","◎","×","×","管理者のみ（予算管理の中で作成）"],
     ["社外秘フォルダ・ファイル","◎","◎","×","社外メンバーには非表示"],
@@ -13125,7 +13127,6 @@
     }
     c.querySelectorAll("[data-chat-instr]").forEach(function(el){ el.addEventListener("click", function(){
       var k = el.getAttribute("data-chat-instr").split(":"), pr = state.projects.find(function(q){ return q.id===k[0]; });
-      if(isExternalViewer()){ toast("指示書は社外メンバーには表示されません。メッセージの文章をご確認ください"); return; }
       if(!pr || !projInstr(pr).some(function(i){ return i.id===k[1]; })){ toast("指示書が見つかりません（削除された可能性があります）"); return; }
       openInstrView(k[0], k[1]);
     }); });
