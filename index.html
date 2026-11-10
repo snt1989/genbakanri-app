@@ -1602,6 +1602,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-10-10", title:"11月10日の更新（その10）", items:[
+      {t:"削除した指示書や、編集前の指示書を復元できるようにしました", d:"指示書を削除したり、内容を書き換えたりしても、案件の「指示書」欄の下にある「削除・編集前の指示書」から、内容を確認して復元できます（編集前の版は最新20件まで）。完全に消したいときは「完全に削除」を使います。"}
+    ]},
     {id:"2026-11-10-9", title:"11月10日の更新（その9）", items:[
       {t:"工程表の「表示する担当者」を、だれでも切り替えられるようにしました", d:"これまでは管理者だけでした。一般・社外メンバーも、「自分／全員／担当者を選ぶ」を選べます（最初は自分の担当だけ表示）。自分が担当の案件の範囲で表示され、社外秘の工程は引き続き社外メンバーには見えません。"}
     ]},
@@ -6582,6 +6585,19 @@
   /* ---- 案件の指示書（案件データの中に保存。社外メンバーには表示しない） ---- */
   var INSTR_STATUS = ["下書き","指示済","作業完了"];
   function projInstr(p){ return Array.isArray(p.instructions) ? p.instructions : []; }
+  // 削除した指示書・編集前の版は、案件データの instrTrash に残し、だれでも復元できる
+  function projInstrTrash(p){ return Array.isArray(p.instrTrash) ? p.instrTrash : []; }
+  function instrTrashAdd(p, rec, reason, arr){
+    var list = projInstrTrash(p).slice();
+    list.push({t:JSON.parse(JSON.stringify(rec)), reason:reason, at:new Date().toISOString(), by:state.myName||"", tid:uid()});
+    // 容量の上限（案件データは約1MBまで）：編集前の古い版 → 削除済みの古いもの、の順に整理する
+    var size = function(){ try{ return new Blob([JSON.stringify(arr)+JSON.stringify(list)]).size; }catch(e){ return 0; } };
+    var drop = function(pred){ var i = list.findIndex(pred); if(i>-1){ list.splice(i,1); return true; } return false; };
+    var edits = list.filter(function(x){ return x.reason==="編集前"; }).length;
+    while(edits>20 && drop(function(x){ return x.reason==="編集前"; })) edits--;
+    while(size()>850000 && list.length>1){ if(!drop(function(x){ return x.reason==="編集前"; }) && !drop(function(x){ return x.tid!==list[list.length-1].tid; })) break; }
+    return list;
+  }
   function instrFile(fid){ return state.files.find(function(f){ return f.id===fid; }) || Object.keys(filesExtra).reduce(function(r,k){ return r || (filesExtra[k]||[]).find(function(f){ return f.id===fid; }); }, null); }
   function instrPhotoCount(x){ return (x.photos||[]).length + (x.steps||[]).reduce(function(n,st){ return n+(st.photos||[]).length; }, 0); }
   // この端末に残っている、保存が確定していない指示書の下書き（通信失敗・誤って閉じた場合の救済）
@@ -6602,7 +6618,13 @@
       var t = d.at ? new Date(d.at) : null, ts = t ? (t.getMonth()+1)+"/"+t.getDate()+" "+String(t.getHours()).padStart(2,"0")+":"+String(t.getMinutes()).padStart(2,"0") : "";
       return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:4px 0;font-size:12.5px"><span style="flex:1;min-width:160px">'+esc(d.rec.title||"（件名なし）")+' <span style="color:var(--ink-faint)">'+(d.id==="new"?"新規":"編集中")+(ts?" ／ "+ts:"")+'</span></span><button class="btn sm primary" data-instr-restore="'+esc(d.id)+'" data-instr-pid="'+esc(p.id)+'">開いて保存し直す</button><button class="btn sm" data-instr-dropdraft="'+esc(d.key)+'">破棄</button></div>';
     }).join("")+'</div>' : '';
-    return dh + renderInstrSection0(p);
+    var tl = projInstrTrash(p).slice().sort(function(a,b){ return String(b.at||"").localeCompare(String(a.at||"")); });
+    var th = tl.length ? '<details style="margin:8px 0 14px"><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--ink-soft)">削除・編集前の指示書（'+tl.length+'件）— 復元できます</summary><div class="card" style="padding:6px 18px;margin-top:6px">'+tl.map(function(x){
+      var d = x.at ? fmtDate(String(x.at).slice(0,10))+" "+String(x.at).slice(11,16) : "";
+      return '<div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:180px;font-size:13px"><b>'+esc((x.t&&x.t.title)||"作業指示書")+'</b> <span class="badge line-gray">'+esc(x.reason||"削除")+'</span><div style="font-size:11.5px;color:var(--ink-faint)">'+esc(d)+(x.by?" ／ "+esc(x.by):"")+'</div></div>'+
+        '<button class="btn sm" data-instr-tview="'+esc(x.tid)+'" data-instr-pid="'+esc(p.id)+'">内容を見る</button>'+(state.canWrite?'<button class="btn sm primary" data-instr-trestore="'+esc(x.tid)+'" data-instr-pid="'+esc(p.id)+'">復元</button><button class="btn sm" data-instr-tpurge="'+esc(x.tid)+'" data-instr-pid="'+esc(p.id)+'" style="color:var(--danger)">完全に削除</button>':'')+'</div>';
+    }).join("")+'</div></details>' : '';
+    return dh + renderInstrSection0(p) + th;
   }
   function renderInstrSection0(p){
     var list = projInstr(p).slice().sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")) || String(b.at||"").localeCompare(String(a.at||"")); });
@@ -6619,28 +6641,28 @@
   function instrDraftSave(k, rec){ try{ localStorage.setItem(k, JSON.stringify({at:Date.now(), rec:rec})); }catch(e){} }
   function instrDraftLoad(k){ try{ var j = JSON.parse(localStorage.getItem(k)||"null"); return j && j.rec ? j : null; }catch(e){ return null; } }
   function instrDraftClear(k){ try{ localStorage.removeItem(k); }catch(e){} }
-  function saveInstr(pid, arr, msg, dkey){
+  function saveInstr(pid, arr, msg, dkey, newTrash){
     var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
     var finished = false, done = function(){ if(finished) return; finished = true; if(dkey) instrDraftClear(dkey); closeModal(); toast(msg); render(); };
-    if(!db){ p.instructions = arr; done(); return; }
-    var prev = p.instructions;
-    var patchLocal = function(v){
-      [projSets.X, projSets.A, projSets.B].forEach(function(set){ if(set && set[pid]) set[pid].instructions = v; });
-      var q = state.projects.find(function(x){ return x.id===pid; }); if(q) q.instructions = v;
+    if(!db){ p.instructions = arr; if(newTrash) p.instrTrash = newTrash; done(); return; }
+    var prev = p.instructions, prevTrash = p.instrTrash;
+    var patchLocal = function(v, tv){
+      [projSets.X, projSets.A, projSets.B].forEach(function(set){ if(set && set[pid]){ set[pid].instructions = v; if(newTrash) set[pid].instrTrash = tv; } });
+      var q = state.projects.find(function(x){ return x.id===pid; }); if(q){ q.instructions = v; if(newTrash) q.instrTrash = tv; }
     };
-    patchLocal(arr);
+    patchLocal(arr, newTrash);
     // 10秒たっても確定しない（電波が弱い等）ときは、画面を閉じて続きを待つ。控えは確定するまで端末に残す
     var soft = false;
     var slow = setTimeout(function(){
       if(finished) return; soft = true; closeModal(); render();
       toast("通信待ちです。指示書は先に反映しました。接続が戻り次第、自動で保存されます（この端末にも控えてあります）", 7000);
     }, 10000);
-    db.collection("projects").doc(pid).update({instructions:arr}).then(function(){
+    db.collection("projects").doc(pid).update(newTrash ? {instructions:arr, instrTrash:newTrash} : {instructions:arr}).then(function(){
       clearTimeout(slow);
       if(soft){ finished = true; if(dkey) instrDraftClear(dkey); toast("通信が戻り、指示書を保存しました"); return; }
       done();
     }).catch(function(){
-      clearTimeout(slow); if(finished) return; patchLocal(prev);
+      clearTimeout(slow); if(finished) return; patchLocal(prev, prevTrash);
       if(soft){ render(); toast("指示書を保存できませんでした。案件の「指示書」に出る黄色い欄の「開いて保存し直す」から、もう一度保存してください", 9000); return; }
       toast("保存に失敗しました。入力内容はこの端末に控えてあります（画面はそのままです）。通信を確認して、もう一度「保存」を押してください", 6000);
     });
@@ -6910,7 +6932,9 @@
       if(cur) arr = arr.map(function(i){ return i.id===cur.id ? rec : i; }); else { arr.push(rec); }
       try{ if(new Blob([JSON.stringify(arr)]).size > 900000){ toast("この案件の指示書の合計が大きすぎて保存できません。古い指示書を削除するか、写真の書き込みを減らしてください"); return; } }catch(e){}
       instrDraftSave(dkey, rec);
-      saveInstr(pid, arr, cur?"指示書を更新しました":"指示書を作成しました", dkey);
+      var tr = null;
+      if(cur){ var strip = function(o){ var c = JSON.parse(JSON.stringify(o)); delete c.edited; return JSON.stringify(c); }; if(strip(cur)!==strip(rec)) tr = instrTrashAdd(fresh, cur, "編集前", arr); }
+      saveInstr(pid, arr, cur?"指示書を更新しました（編集前の版は、下の「削除・編集前の指示書」から戻せます）":"指示書を作成しました", dkey, tr);
     });
     var dTimer = null, dBox = document.querySelector(".modal, #modal, [data-modal]") || document.body;
     var dSched = function(){ clearTimeout(dTimer); dTimer = setTimeout(function(){ try{ instrDraftSave(dkey, collectRec(new Date().toISOString())); }catch(e){} }, 1200); };
@@ -6919,7 +6943,8 @@
     if(d) d.addEventListener("click", function(){
       if(!confirm("この指示書を削除します。よろしいですか？")) return;
       var fresh = state.projects.find(function(q){ return q.id===pid; }) || p;
-      saveInstr(pid, projInstr(fresh).filter(function(i){ return i.id!==cur.id; }), "指示書を削除しました");
+      var arr2 = projInstr(fresh).filter(function(i){ return i.id!==cur.id; });
+      saveInstr(pid, arr2, "指示書を削除しました（案件の「指示書」欄の下から復元できます）", null, instrTrashAdd(fresh, cur, "削除", arr2));
     });
   }
   // 指示書を、その案件のチャットに投稿する（チャットのメンバー全員に見える）
@@ -9404,6 +9429,23 @@
     });
     var q = document.getElementById("rp-q");
     if(q) q.addEventListener("change", function(){ f.q = q.value; render(); });
+    c.querySelectorAll("[data-instr-tview]").forEach(function(el){ el.addEventListener("click", function(){
+      var p = state.projects.find(function(q){ return q.id===el.getAttribute("data-instr-pid"); }); if(!p) return;
+      var x = projInstrTrash(p).find(function(z){ return z.tid===el.getAttribute("data-instr-tview"); }); if(!x) return;
+      openModal((x.t.title||"作業指示書")+"（"+(x.reason||"削除")+"）", '<iframe id="in-tframe" style="width:100%;height:64vh;border:1px solid var(--border);border-radius:8px;background:#fff"></iframe>', '<button class="btn" data-close-modal>閉じる</button>');
+      document.getElementById("modal-box").style.maxWidth = "900px"; document.getElementById("in-tframe").srcdoc = instrHtml(p, x.t);
+    }); });
+    c.querySelectorAll("[data-instr-trestore]").forEach(function(el){ el.addEventListener("click", function(){
+      var pid = el.getAttribute("data-instr-pid"), p = state.projects.find(function(q){ return q.id===pid; }); if(!p) return;
+      var x = projInstrTrash(p).find(function(z){ return z.tid===el.getAttribute("data-instr-trestore"); }); if(!x) return;
+      var arr = projInstr(p).slice(), i = arr.findIndex(function(z){ return z.id===x.t.id; }), rest = projInstrTrash(p).filter(function(z){ return z.tid!==x.tid; });
+      if(i>-1){ var tmp = instrTrashAdd({instrTrash:rest}, arr[i], "編集前", arr); arr[i] = x.t; rest = tmp; } else arr.push(x.t);
+      saveInstr(pid, arr, "指示書を復元しました", null, rest);
+    }); });
+    c.querySelectorAll("[data-instr-tpurge]").forEach(function(el){ el.addEventListener("click", function(){
+      var pid = el.getAttribute("data-instr-pid"), p = state.projects.find(function(q){ return q.id===pid; }); if(!p) return;
+      confirmDelete("この指示書を完全に削除しますか？（元に戻せません）", function(){ saveInstr(pid, projInstr(p).slice(), "完全に削除しました", null, projInstrTrash(p).filter(function(z){ return z.tid!==el.getAttribute("data-instr-tpurge"); })); });
+    }); });
     c.querySelectorAll("[data-instr-restore]").forEach(function(el){ el.addEventListener("click", function(){ var id = el.getAttribute("data-instr-restore"); openInstrModal(el.getAttribute("data-instr-pid"), id==="new" ? null : id); }); });
     c.querySelectorAll("[data-instr-dropdraft]").forEach(function(el){ el.addEventListener("click", function(){ confirmDelete("この下書きを破棄しますか？（元に戻せません）", function(){ instrDraftClear(el.getAttribute("data-instr-dropdraft")); render(); }); }); });
     c.querySelectorAll("[data-instr-add]").forEach(function(el){ el.addEventListener("click", function(){ openInstrModal(el.getAttribute("data-instr-add"), null); }); });
