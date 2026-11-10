@@ -6290,6 +6290,92 @@
     patchLocal(arr);
     db.collection("projects").doc(pid).update({memos:arr}).then(function(){ closeModal(); toast(msg); render(); }).catch(function(){ patchLocal(prev); toast("保存に失敗しました"); render(); });
   }
+  /* ---- 案件の指示書（案件データの中に保存。社外メンバーには表示しない） ---- */
+  function projInstr(p){ return Array.isArray(p.instructions) ? p.instructions : []; }
+  function renderInstrSection(p){
+    if(isExternalViewer()) return "";
+    var list = projInstr(p).slice().sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")) || String(b.at||"").localeCompare(String(a.at||"")); });
+    var h = '<div class="form-section-title"><span>指示書 <span class="badge line-gray">'+list.length+'</span></span><span>'+(state.canWrite?'<button class="btn sm primary" data-instr-add="'+esc(p.id)+'">'+iPlus()+' 指示書を作成</button>':'')+'</span></div>';
+    h += '<div class="card" style="padding:6px 18px">'+(list.length ? list.map(function(x){
+      return '<div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:180px"><div style="font-size:13.5px;font-weight:700">'+esc(x.title||"作業指示書")+'</div><div style="font-size:11.5px;color:var(--ink-faint);margin-top:2px"><span class="num">'+esc(fmtDate(x.date))+(x.startTime?' '+esc(x.startTime)+'～':'')+'</span>'+((x.workers&&x.workers.length)?' ／ 担当：'+esc(x.workers.join("、")):'')+' ／ 作成：'+esc(x.by||"不明")+'</div></div>'+
+        '<button class="btn sm" data-instr-view="'+esc(x.id)+'" data-instr-pid="'+esc(p.id)+'">表示・印刷</button>'+(state.canWrite?'<button class="btn sm" data-instr-edit="'+esc(x.id)+'" data-instr-pid="'+esc(p.id)+'">'+iEdit()+' 編集</button>':'')+'</div>';
+    }).join("") : '<div style="font-size:12px;color:var(--ink-faint);padding:12px 0">指示書はまだありません。作業日・集合場所・作業内容・注意事項をまとめて、印刷や共有ができます（社外メンバーには表示されません）。</div>')+'</div>';
+    return h;
+  }
+  function saveInstr(pid, arr, msg, keepModal){
+    var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
+    var done = function(){ if(!keepModal) closeModal(); toast(msg); render(); };
+    if(!db){ p.instructions = arr; done(); return; }
+    var prev = p.instructions;
+    var patchLocal = function(v){
+      [projSets.X, projSets.A, projSets.B].forEach(function(set){ if(set && set[pid]) set[pid].instructions = v; });
+      var q = state.projects.find(function(x){ return x.id===pid; }); if(q) q.instructions = v;
+    };
+    patchLocal(arr);
+    db.collection("projects").doc(pid).update({instructions:arr}).then(done).catch(function(){ patchLocal(prev); toast("保存に失敗しました"); render(); });
+  }
+  function instrHtml(p, x){
+    var e = function(t){ return esc(t==null?"":t).replace(/\n/g,"<br>"); };
+    var addr = ""; try{ addr = projAddrHidden(p) ? "" : propertyAddressOf(p).full; }catch(er){}
+    var row = function(k, v, tall){ return '<tr><th>'+k+'</th><td'+(tall?' class="tall"':'')+'>'+(v||'&nbsp;')+'</td></tr>'; };
+    return '<!doctype html><html><head><meta charset="utf-8"><title>'+esc(x.title||"作業指示書")+'</title><style>@page{size:A4;margin:14mm}body{font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;color:#111;margin:0;padding:18px;font-size:13px;line-height:1.7}h1{font-size:22px;text-align:center;letter-spacing:.4em;margin:0 0 14px;border-bottom:3px double #111;padding-bottom:8px}table{width:100%;border-collapse:collapse;margin-bottom:10px}th,td{border:1px solid #444;padding:7px 10px;vertical-align:top;text-align:left}th{background:#eef2ef;width:22%;white-space:nowrap}td.tall{min-height:90px;height:90px}.meta{display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px}</style></head><body>'+
+      '<h1>作業指示書</h1><div class="meta"><span>作成日：'+esc(fmtDate(String(x.at||"").slice(0,10)))+'</span><span>作成者：'+esc(x.by||"")+'</span></div>'+
+      '<table>'+row("件名", e(x.title||p.name))+row("現場名", e(p.name))+row("現場住所", e(x.address||addr))+row("作業日時", e(fmtDate(x.date)+(x.startTime?"　"+x.startTime+" 開始":"")+(x.endTime?" ～ "+x.endTime:"")))+row("集合場所", e(x.meetPlace))+row("担当者", e((x.workers||[]).join("、")))+row("緊急連絡先", e(x.contact))+'</table>'+
+      '<table>'+row("作業内容", e(x.content), true)+row("持ち物・準備", e(x.items), true)+row("注意事項", e(x.cautions), true)+row("連絡事項", e(x.notes))+'</table></body></html>';
+  }
+  function openInstrView(pid, id){
+    var p = state.projects.find(function(q){ return q.id===pid; }); if(!p) return;
+    var x = projInstr(p).find(function(i){ return i.id===id; }); if(!x) return;
+    openModal(x.title||"作業指示書", '<iframe id="in-frame" style="width:100%;height:62vh;border:1px solid var(--border);border-radius:8px;background:#fff"></iframe>',
+      (state.canWrite?'<button class="btn" id="in-edit" style="margin-right:auto">'+iEdit()+' 編集</button>':'')+'<button class="btn" id="in-copy">文章をコピー</button><button class="btn primary" id="in-print">印刷・PDF保存</button>');
+    document.getElementById("modal-box").style.maxWidth = "880px";
+    var fr = document.getElementById("in-frame"); fr.srcdoc = instrHtml(p, x);
+    document.getElementById("in-print").addEventListener("click", function(){ try{ fr.contentWindow.focus(); fr.contentWindow.print(); }catch(e){ toast("印刷できませんでした"); } });
+    document.getElementById("in-copy").addEventListener("click", function(){
+      var t = ["【作業指示書】"+(x.title||p.name),"現場："+p.name,"日時："+fmtDate(x.date)+(x.startTime?" "+x.startTime+"～":"")+(x.endTime?x.endTime:""),"集合場所："+(x.meetPlace||""),"担当："+(x.workers||[]).join("、"),"","■作業内容\n"+(x.content||""),"","■持ち物・準備\n"+(x.items||""),"","■注意事項\n"+(x.cautions||""),"","■連絡事項\n"+(x.notes||""),"緊急連絡先："+(x.contact||"")].join("\n");
+      if(navigator.clipboard) navigator.clipboard.writeText(t).then(function(){ toast("コピーしました"); }, function(){ toast("コピーできませんでした"); }); else toast("コピーできませんでした");
+    });
+    var ed = document.getElementById("in-edit"); if(ed) ed.addEventListener("click", function(){ openInstrModal(pid, id); });
+  }
+  function openInstrModal(pid, id){
+    var p = state.projects.find(function(q){ return q.id===pid; }); if(!p) return;
+    var cur = id ? projInstr(p).find(function(i){ return i.id===id; }) : null;
+    if(id && !cur) return;
+    var v = cur || {title:"", date:localToday(), startTime:"08:00", endTime:"", meetPlace:"", address:"", workers:normalizeAssignees(p.assignees).map(function(a){ return a.name; }), content:"", items:"", cautions:"", notes:"", contact:state.myName||""};
+    var addr = ""; try{ addr = projAddrHidden(p) ? "" : propertyAddressOf(p).full; }catch(er){}
+    var names = state.members.map(function(m){ return m.name; });
+    (v.workers||[]).forEach(function(n){ if(names.indexOf(n)===-1) names.push(n); });
+    var inp = function(i, label, val, ph, type){ return '<label class="field">'+label+'<input id="'+i+'" type="'+(type||"text")+'" value="'+esc(val||"")+'" placeholder="'+esc(ph||"")+'" style="width:100%"></label>'; };
+    var ta = function(i, label, val, ph, r){ return '<label class="field">'+label+'<textarea id="'+i+'" rows="'+(r||4)+'" maxlength="2000" placeholder="'+esc(ph||"")+'" style="width:100%">'+esc(val||"")+'</textarea></label>'; };
+    openModal(cur?"指示書の編集":"指示書を作成",
+      inp("in-title","件名",v.title||"",p.name+" 作業指示書")+
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">'+inp("in-date","作業日",v.date,"","date")+inp("in-st","開始時間",v.startTime,"","time")+inp("in-et","終了予定",v.endTime,"","time")+'</div>'+
+      inp("in-meet","集合場所",v.meetPlace,"例）現場前／会社駐車場")+
+      inp("in-addr","現場住所（空欄なら案件の住所）",v.address,addr)+
+      '<div class="field">担当者<div id="in-workers" style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:4px">'+names.map(function(n){ return '<label style="font-size:13px;display:flex;gap:4px;align-items:center"><input type="checkbox" value="'+esc(n)+'"'+((v.workers||[]).indexOf(n)>-1?' checked':'')+'>'+esc(n)+'</label>'; }).join("")+'</div></div>'+
+      ta("in-content","作業内容",v.content,"作業の手順・範囲・仕上がりの目安など",5)+ta("in-items","持ち物・準備",v.items,"工具・資材・保護具・車両など",3)+ta("in-cautions","注意事項",v.cautions,"安全面・近隣への配慮・立入制限など",3)+ta("in-notes","連絡事項",v.notes,"",2)+inp("in-contact","緊急連絡先（担当・電話）",v.contact,""),
+      (cur?'<button class="btn" id="in-del" style="color:var(--danger);margin-right:auto">'+iTrash()+' 削除</button>':'')+'<button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="in-save">保存する</button>');
+    var val = function(i){ return document.getElementById(i).value.trim(); };
+    document.getElementById("in-save").addEventListener("click", function(){
+      if(!val("in-date")){ toast("作業日を入力してください"); return; }
+      if(!val("in-content")){ toast("作業内容を入力してください"); return; }
+      var now = new Date().toISOString();
+      var rec = {id:cur?cur.id:uid(), title:val("in-title")||(p.name+" 作業指示書"), date:val("in-date"), startTime:val("in-st"), endTime:val("in-et"), meetPlace:val("in-meet"), address:val("in-addr"),
+        workers:Array.prototype.map.call(document.querySelectorAll("#in-workers input:checked"), function(c){ return c.value; }), content:val("in-content"), items:val("in-items"), cautions:val("in-cautions"), notes:val("in-notes"), contact:val("in-contact"),
+        by:cur?cur.by:(state.myName||""), at:cur?cur.at:now};
+      if(cur) rec.edited = now;
+      var fresh = state.projects.find(function(q){ return q.id===pid; }) || p, arr = projInstr(fresh).slice();
+      if(cur) arr = arr.map(function(i){ return i.id===cur.id ? rec : i; }); else { if(arr.length>=100){ toast("指示書は1案件につき100件までです"); return; } arr.push(rec); }
+      try{ if(new Blob([JSON.stringify(arr)]).size > 300000){ toast("指示書の合計が大きすぎます。古いものを整理してください"); return; } }catch(e){}
+      saveInstr(pid, arr, cur?"指示書を更新しました":"指示書を作成しました");
+    });
+    var d = document.getElementById("in-del");
+    if(d) d.addEventListener("click", function(){
+      if(!confirm("この指示書を削除します。よろしいですか？")) return;
+      var fresh = state.projects.find(function(q){ return q.id===pid; }) || p;
+      saveInstr(pid, projInstr(fresh).filter(function(i){ return i.id!==cur.id; }), "指示書を削除しました");
+    });
+  }
   function openMemoModal(pid, memoId){
     var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
     var cur = memoId ? projMemos(p).find(function(m){ return m.id===memoId; }) : null;
@@ -6383,6 +6469,7 @@
     html += projectBudgetSection(p);
 
     html += renderMemoSection(p);
+    html += renderInstrSection(p);
 
     // 報告写真アプリで作って、この案件に保存した報告書PDF
     var rpdfs = pfiles.filter(function(f){ return f.source==="報告写真アプリ"; }).slice().sort(function(x,y){ return String(y.uploadedAt||"").localeCompare(String(x.uploadedAt||"")); });
@@ -8696,6 +8783,9 @@
     });
     var q = document.getElementById("rp-q");
     if(q) q.addEventListener("change", function(){ f.q = q.value; render(); });
+    c.querySelectorAll("[data-instr-add]").forEach(function(el){ el.addEventListener("click", function(){ openInstrModal(el.getAttribute("data-instr-add"), null); }); });
+    c.querySelectorAll("[data-instr-edit]").forEach(function(el){ el.addEventListener("click", function(){ openInstrModal(el.getAttribute("data-instr-pid"), el.getAttribute("data-instr-edit")); }); });
+    c.querySelectorAll("[data-instr-view]").forEach(function(el){ el.addEventListener("click", function(){ openInstrView(el.getAttribute("data-instr-pid"), el.getAttribute("data-instr-view")); }); });
     c.querySelectorAll("[data-memo-add]").forEach(function(el){ el.addEventListener("click", function(){ openMemoModal(el.getAttribute("data-memo-add"), null); }); });
     c.querySelectorAll("[data-memo-edit]").forEach(function(el){ el.addEventListener("click", function(){ openMemoModal(el.getAttribute("data-memo-pid"), el.getAttribute("data-memo-edit")); }); });
     c.querySelectorAll("[data-report-add]").forEach(function(el){ el.addEventListener("click", function(){ openReportModal(null, el.getAttribute("data-report-add")||""); }); });
