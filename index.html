@@ -1895,6 +1895,7 @@
       state.salesFilter.assignees = myPrefAssignees("sales"); state.constFilter.assignees = myPrefAssignees("construction");
       applyListDefaults();
       state.salesFilter.page = 1; state.constFilter.page = 1;
+      chkApplyState();
     }
     try{
       localStorage.removeItem("gc_login_name"); localStorage.removeItem("gc_login_phone");
@@ -3794,6 +3795,45 @@
     if(rs) rs.addEventListener("click", function(){ save({sales:STATUS_LIST.slice(), construction:LIST_DEFAULTS_BUILTIN.construction.slice()}, "初期設定に戻しました"); });
   }
 
+
+  /* ============ チェックボックスの選択を、次回以降も引き継ぐ ============ */
+  // 「表示の絞り込み」「作成時の選択肢」など、設定にあたるチェックボックスだけを、ログイン中の人ごとにこの端末へ記憶する。
+  // 記憶しないもの：一覧の行の選択・一括選択・パスワードを含める等の、そのつど決めるもの。
+  var CHK_STATE = {"ppl-only":"pplOnly","gt-hide":"ganttHideDone","pf-unlight":"pfUnlight","pf-mine":"pfMine"};   // 画面の状態に連動するもの
+  var CHK_DOM = ["fr-onlyq","ext-useasg","ext-addtypes","bf-addacct","bgc-lines","bgc-costs","sns-area","login-remember"];   // 画面を開いたときに選択を戻すもの
+  var CHK_CLS = {"sns-use":1, "sp-inc":1};   // クラスで探すもの（data-k ごとに記憶）
+  function chkKeyOf(el){
+    if(!el || el.type!=="checkbox") return "";
+    if(el.id && (CHK_STATE[el.id] || el.id==="flt-nosched" || CHK_DOM.indexOf(el.id)!==-1)) return el.id;
+    for(var c in CHK_CLS){ if(el.classList && el.classList.contains(c) && el.getAttribute("data-k")) return c+":"+el.getAttribute("data-k"); }
+    return "";
+  }
+  function chkStore(key){ return "gc_chk_"+(key==="login-remember" ? "" : (state.myName||"")); }
+  function chkRead(key){ try{ var o = JSON.parse(localStorage.getItem(chkStore(key))||"{}"); return o && typeof o==="object" ? o : {}; }catch(e){ return {}; } }
+  function chkApplyState(){
+    var o = chkRead("x");
+    Object.keys(CHK_STATE).forEach(function(id){ if(typeof o[id]==="boolean") state[CHK_STATE[id]] = o[id]; });
+    if(typeof o["flt-nosched"]==="boolean"){ if(state.salesFilter) state.salesFilter.noSched = o["flt-nosched"]; if(state.constFilter) state.constFilter.noSched = o["flt-nosched"]; }
+  }
+  document.addEventListener("change", function(ev){
+    var key = chkKeyOf(ev.target); if(!key) return;
+    var o = chkRead(key); o[key] = !!ev.target.checked;
+    try{ localStorage.setItem(chkStore(key), JSON.stringify(o)); }catch(e){}
+  }, true);
+  (function(){
+    var apply = function(root){
+      if(!root || !root.querySelectorAll) return;
+      var list = root.matches && root.matches('input[type="checkbox"]') ? [root] : Array.prototype.slice.call(root.querySelectorAll('input[type="checkbox"]'));
+      if(!list.length) return;
+      var o = null;
+      list.forEach(function(el){
+        var key = chkKeyOf(el); if(!key || CHK_STATE[key] || key==="flt-nosched") return;   // 画面の状態に連動するものは、状態のほうで戻す
+        o = o || chkRead(key); if(typeof o[key]==="boolean" && el.checked!==o[key]) el.checked = o[key];
+      });
+    };
+    var start = function(){ apply(document.body); try{ new MutationObserver(function(ms){ ms.forEach(function(m){ m.addedNodes.forEach(function(n){ if(n.nodeType===1) apply(n); }); }); }).observe(document.body, {childList:true, subtree:true}); }catch(e){} };
+    if(document.body) start(); else document.addEventListener("DOMContentLoaded", start);
+  })();
 
   /* ============ AIアシスタント（画面右下のチャット） ============ */
   // 案件・タスク・予定のデータ（自分が見られる範囲）と「使い方」をもとに、質問への回答・文章の下書き・操作の提案を行う。
