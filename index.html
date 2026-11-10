@@ -1596,6 +1596,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-10-4", title:"11月10日の更新（その4）", items:[
+      {t:"指示書を、どんな状況でも保存できるようにしました", d:"作業日や概要が空でも保存できます（作業日は今日になります）。入力内容は端末にも自動で控えるため、通信が切れたり画面を閉じてしまっても、次に開いたとき復元できます。保存に失敗しても画面は閉じず、そのまま再保存できます。"}
+    ]},
     {id:"2026-11-10-3", title:"11月10日の更新（その3）", items:[
       {t:"「使い方・Q&A」に、機能ごとの利用権限一覧を追加しました", d:"管理者・一般・社外のそれぞれが、どの機能を使えるかを表で確認できます。自分の権限も表の上に表示されます。"}
     ]},
@@ -2559,9 +2562,9 @@
   function fmtDateTime(iso){ if(!iso) return "—"; var d=new Date(iso); if(isNaN(d)) return "—"; return d.getFullYear()+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+String(d.getDate()).padStart(2,"0")+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
   function fmtYen(n){ return (n||0).toLocaleString("ja-JP")+" 円"; }
   function daysUntil(iso){ return Math.round((new Date(iso+"T00:00:00")-new Date(todayISO()+"T00:00:00"))/86400000); }
-  function toast(msg){
+  function toast(msg, ms){
     var t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show");
-    clearTimeout(toast._t); toast._t=setTimeout(function(){t.classList.remove("show");},2400);
+    clearTimeout(toast._t); toast._t=setTimeout(function(){t.classList.remove("show");},ms||2400);
   }
   function initials(name){ return (name||"?").trim().slice(0,1); }
   function avaColor(name){ var h=0; for(var i=0;i<(name||"").length;i++) h=(h*31+name.charCodeAt(i))%AVA_COLORS.length; return AVA_COLORS[h]; }
@@ -6543,9 +6546,14 @@
     }).join("") : '<div style="font-size:12px;color:var(--ink-faint);padding:12px 0">指示書はまだありません。作業手順ごとに写真と説明を付けて、確認項目や注意事項とあわせて印刷・共有できます（社外メンバーには表示されません）。</div>')+'</div>';
     return h;
   }
-  function saveInstr(pid, arr, msg){
+  // 指示書の入力内容を端末にも自動で控える（通信失敗・誤って閉じた場合でも失わない）
+  function instrDraftKey(pid, id){ return "gc_instr_draft_"+pid+"_"+(id||"new"); }
+  function instrDraftSave(k, rec){ try{ localStorage.setItem(k, JSON.stringify({at:Date.now(), rec:rec})); }catch(e){} }
+  function instrDraftLoad(k){ try{ var j = JSON.parse(localStorage.getItem(k)||"null"); return j && j.rec ? j : null; }catch(e){ return null; } }
+  function instrDraftClear(k){ try{ localStorage.removeItem(k); }catch(e){} }
+  function saveInstr(pid, arr, msg, dkey){
     var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
-    var done = function(){ closeModal(); toast(msg); render(); };
+    var finished = false, done = function(){ if(finished) return; finished = true; if(dkey) instrDraftClear(dkey); closeModal(); toast(msg); render(); };
     if(!db){ p.instructions = arr; done(); return; }
     var prev = p.instructions;
     var patchLocal = function(v){
@@ -6553,7 +6561,11 @@
       var q = state.projects.find(function(x){ return x.id===pid; }); if(q) q.instructions = v;
     };
     patchLocal(arr);
-    db.collection("projects").doc(pid).update({instructions:arr}).then(done).catch(function(){ patchLocal(prev); toast("保存に失敗しました"); render(); });
+    var slow = setTimeout(function(){ if(!finished) toast("通信が不安定です。入力内容はこの端末に控えてあります。接続が戻ったら、もう一度「保存」を押してください", 6000); }, 10000);
+    db.collection("projects").doc(pid).update({instructions:arr}).then(function(){ clearTimeout(slow); done(); }).catch(function(){
+      clearTimeout(slow); if(finished) return; patchLocal(prev);
+      toast("保存に失敗しました。入力内容はこの端末に控えてあります（画面はそのままです）。通信を確認して、もう一度「保存」を押してください", 6000);
+    });
   }
   function instrHtml(p, x){
     var e = function(t){ return esc(t==null?"":t).replace(/\n/g,"<br>"); };
@@ -6716,7 +6728,9 @@
     var p = state.projects.find(function(q){ return q.id===pid; }); if(!p) return;
     var cur = id ? projInstr(p).find(function(i){ return i.id===id; }) : null;
     if(id && !cur) return;
+    var dkey = instrDraftKey(pid, id);
     var v = cur || {title:"", date:localToday(), startTime:"08:00", endTime:"", meetPlace:"", address:"", workers:normalizeAssignees(p.assignees).map(function(a){ return a.name; }), content:"", quality:"", materials:"", items:"", cautions:"", checklist:"", notes:"", contact:state.myName||"", status:"下書き", steps:[], photos:[]};
+    var dr0 = instrDraftLoad(dkey); if(dr0 && (!cur || !cur.edited || String(dr0.rec.edited||"")>=String(cur.edited||"")) && JSON.stringify(dr0.rec)!==JSON.stringify(cur||null) && confirm("前回、保存されないままになった入力内容が端末に残っています。続きから復元しますか？（キャンセルで破棄）")) v = dr0.rec; else if(dr0) instrDraftClear(dkey);
     var steps = (v.steps||[]).map(function(st){ return {id:st.id||uid(), title:st.title||"", detail:st.detail||"", photos:(st.photos||[]).map(function(z){ return {fileId:z.fileId, caption:z.caption||"", marks:z.marks||[], ar:z.ar, fx:z.fx||null}; })}; });
     var gphotos = (v.photos||[]).map(function(z){ return {fileId:z.fileId, caption:z.caption||"", marks:z.marks||[], ar:z.ar, fx:z.fx||null}; });
     var addr = ""; try{ addr = projAddrHidden(p) ? "" : propertyAddressOf(p).full; }catch(er){}
@@ -6761,23 +6775,31 @@
       drawSteps(); toast("工程から手順を追加しました。内容を書き足してください");
     });
     instrPicker(document.getElementById("in-gph"), pid, gphotos);
-    document.getElementById("in-save").addEventListener("click", function(){
+    var collectRec = function(now){
       keepSteps();
-      var gp = document.getElementById("in-gph"); gp.querySelectorAll("[data-ip-cap]").forEach(function(c){ var it = gphotos.find(function(z){ return z.fileId===c.getAttribute("data-ip-cap"); }); if(it) it.caption = c.value; });
-      if(!val("in-date")){ toast("作業日を入力してください"); return; }
-      if(!val("in-content")){ toast("作業の概要を入力してください"); return; }
-      var now = new Date().toISOString();
-      var rec = {id:cur?cur.id:uid(), title:val("in-title")||(p.name+" 作業指示書"), status:document.getElementById("in-status").value, date:val("in-date"), startTime:val("in-st"), endTime:val("in-et"), meetPlace:val("in-meet"), address:val("in-addr"),
+      var gp0 = document.getElementById("in-gph"); gp0.querySelectorAll("[data-ip-cap]").forEach(function(c){ var it = gphotos.find(function(z){ return z.fileId===c.getAttribute("data-ip-cap"); }); if(it) it.caption = c.value; });
+      var rec = {id:cur?cur.id:uid(), title:val("in-title")||(p.name+" 作業指示書"), status:document.getElementById("in-status").value, date:val("in-date")||localToday(), startTime:val("in-st"), endTime:val("in-et"), meetPlace:val("in-meet"), address:val("in-addr"),
         workers:Array.prototype.map.call(document.querySelectorAll("#in-workers input:checked"), function(c){ return c.value; }), contact:val("in-contact"),
         content:val("in-content"), quality:val("in-quality"), materials:val("in-materials"), items:val("in-items"), cautions:val("in-cautions"), checklist:val("in-checklist"), notes:val("in-notes"),
         steps:steps.filter(function(st){ return st.title.trim()||st.detail.trim()||st.photos.length; }).map(function(st){ return {id:st.id, title:st.title.trim(), detail:st.detail.trim(), photos:st.photos.map(function(z){ return {fileId:z.fileId, caption:(z.caption||"").trim(), marks:z.marks||[], ar:z.ar||null, fx:z.fx||null}; })}; }),
         photos:gphotos.map(function(z){ return {fileId:z.fileId, caption:(z.caption||"").trim(), marks:z.marks||[], ar:z.ar||null, fx:z.fx||null}; }), by:cur?cur.by:(state.myName||""), at:cur?cur.at:now};
+      return rec;
+    };
+    document.getElementById("in-save").addEventListener("click", function(){
+      keepSteps();
+      var gp = document.getElementById("in-gph"); gp.querySelectorAll("[data-ip-cap]").forEach(function(c){ var it = gphotos.find(function(z){ return z.fileId===c.getAttribute("data-ip-cap"); }); if(it) it.caption = c.value; });
+      var now = new Date().toISOString();
+      var rec = collectRec(now);
       if(cur) rec.edited = now;
       var fresh = state.projects.find(function(q){ return q.id===pid; }) || p, arr = projInstr(fresh).slice();
-      if(cur) arr = arr.map(function(i){ return i.id===cur.id ? rec : i; }); else { if(arr.length>=100){ toast("指示書は1案件につき100件までです"); return; } arr.push(rec); }
-      try{ if(new Blob([JSON.stringify(arr)]).size > 500000){ toast("指示書の合計が大きすぎます。古いものを整理してください"); return; } }catch(e){}
-      saveInstr(pid, arr, cur?"指示書を更新しました":"指示書を作成しました");
+      if(cur) arr = arr.map(function(i){ return i.id===cur.id ? rec : i; }); else { arr.push(rec); }
+      try{ if(new Blob([JSON.stringify(arr)]).size > 900000){ toast("この案件の指示書の合計が大きすぎて保存できません。古い指示書を削除するか、写真の書き込みを減らしてください"); return; } }catch(e){}
+      instrDraftSave(dkey, rec);
+      saveInstr(pid, arr, cur?"指示書を更新しました":"指示書を作成しました", dkey);
     });
+    var dTimer = null, dBox = document.querySelector(".modal, #modal, [data-modal]") || document.body;
+    var dSched = function(){ clearTimeout(dTimer); dTimer = setTimeout(function(){ try{ instrDraftSave(dkey, collectRec(new Date().toISOString())); }catch(e){} }, 1200); };
+    document.querySelectorAll("#in-save").forEach(function(sv){ var m = sv.closest(".modal-body, .modal, [role=dialog]") || sv.parentNode.parentNode; if(m){ m.addEventListener("input", dSched); m.addEventListener("change", dSched); } });
     var d = document.getElementById("in-del");
     if(d) d.addEventListener("click", function(){
       if(!confirm("この指示書を削除します。よろしいですか？")) return;
