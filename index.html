@@ -1602,6 +1602,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-10-9", title:"11月10日の更新（その9）", items:[
+      {t:"工程表の「表示する担当者」を、だれでも切り替えられるようにしました", d:"これまでは管理者だけでした。一般・社外メンバーも、「自分／全員／担当者を選ぶ」を選べます（最初は自分の担当だけ表示）。自分が担当の案件の範囲で表示され、社外秘の工程は引き続き社外メンバーには見えません。"}
+    ]},
     {id:"2026-11-10-8", title:"11月10日の更新（その8）", items:[
       {t:"指示書を、社外メンバーも使えるようにしました", d:"管理者・一般に加えて、社外メンバーも、自分が担当の案件で指示書を作成・編集・表示・印刷できます。チャットに載せた指示書も開けます。"}
     ]},
@@ -3831,9 +3834,11 @@
     if(r) openBudgetModal(r.getAttribute("data-bg-open"));
   });
   document.addEventListener("change", function(e){
-    var t = e.target; if(!t || !state.isAdmin) return;
+    var t = e.target; if(!t) return;
+    // 工程表の「表示する担当者」は、だれでも切り替えられる
     if(t.id==="sc-scope"){ state.stepScope = t.value; state.bgDd = ""; render(); return; }
     if(t.hasAttribute && t.hasAttribute("data-spk")){ var pk = state.stepPick = state.stepPick||[], pi = pk.indexOf(t.value); if(t.checked && pi===-1) pk.push(t.value); else if(!t.checked && pi>-1) pk.splice(pi,1); render(); return; }
+    if(!state.isAdmin) return;
     if(t.hasAttribute && t.hasAttribute("data-bgc")){ var fk = t.getAttribute("data-bgc"), fl = bgFilter(), cur = fl[fk], ix = cur.indexOf(t.value); if(t.checked && ix===-1) cur.push(t.value); else if(!t.checked && ix>-1) cur.splice(ix,1); render(); return; }
     if(t.hasAttribute && t.hasAttribute("data-bgf")){ bgFilter()[t.getAttribute("data-bgf")] = t.value; render(); return; }
     if(t.hasAttribute && t.hasAttribute("data-bgsort-key")){ bgSort().key = t.value; render(); return; }
@@ -4931,10 +4936,9 @@
   }
   function localToday(){ return isoOf(new Date()); }
 
-  /* 工程表の表示範囲：管理者以外は自分の担当のみ。管理者は切り替え可能 */
+  /* 工程表の表示範囲：だれでも切り替え可能。最初の表示は、管理者は全員・一般/社外は自分の担当 */
   function stepScopeNames(){
-    if(!state.isAdmin) return state.myName ? [state.myName] : ["\u0000"];
-    var sc = state.stepScope || "all";
+    var sc = state.stepScope || (state.isAdmin ? "all" : "mine");
     if(sc==="mine") return state.myName ? [state.myName] : ["\u0000"];
     if(sc==="pick") return (state.stepPick||[]).length ? state.stepPick : null;
     return null;   // all
@@ -4942,8 +4946,7 @@
   function scopeOkWho(list){ var n = stepScopeNames(); if(!n) return true; return (list||[]).some(function(w){ return n.indexOf(w)!==-1; }); }
   function scopeOkStep(x){ return scopeOkWho(stepWho(x)); }
   function stepScopeBar(){
-    if(!state.isAdmin) return '<div class="summary-line" style="margin:-4px 0 12px"><span>自分が担当の工程・タスクのみ表示しています</span></div>';
-    var sc = state.stepScope || "all", pick = state.stepPick || [], open = state.bgDd==="stepPick";
+    var sc = state.stepScope || (state.isAdmin ? "all" : "mine"), pick = state.stepPick || [], open = state.bgDd==="stepPick";
     var opt = function(v,l){ return '<option value="'+v+'"'+(sc===v?' selected':'')+'>'+l+'</option>'; };
     var h = '<div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin:-4px 0 12px"><div class="fitem" style="min-width:170px"><span style="font-size:11.5px;font-weight:700;color:var(--ink-faint)">表示する担当者</span><select id="sc-scope" data-no-combo="1">'+opt("all","すべての担当者")+opt("mine","自分のみ")+opt("pick","担当者を選ぶ…")+'</select></div>';
     if(sc==="pick"){
@@ -9074,7 +9077,7 @@
     ["名刺管理","◎","△","×","管理者と、管理者が「許可」したメンバーのみ"],
     ["案件の画面", null],
     ["案件の登録・編集","◎","○","○","一般・社外は自分が担当の案件のみ。社外秘に設定された項目は社外メンバーに見えません"],
-    ["メモ・タスク・工程表・報告書","◎","○","○","社外秘にしたものは社外メンバーに見えません。メモの編集は書いた本人か管理者"],
+    ["メモ・タスク・工程表・報告書","◎","○","○","社外秘にしたものは社外メンバーに見えません。工程表は、だれでも「表示する担当者」を切り替えられます（自分が担当の案件の範囲）"],
     ["指示書（写真つき）","◎","○","○","だれでも作成・編集・表示できます（自分が担当の案件のみ）"],
     ["案件のチャット","◎","○","×","担当案件のチャットのみ。社外メンバーには表示されません"],
     ["見積書・発注書（freee）・予算","◎","×","×","管理者のみ（予算管理の中で作成）"],
