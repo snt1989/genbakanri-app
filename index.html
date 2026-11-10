@@ -75,6 +75,12 @@
   .navbtn svg{flex:none;width:17px;height:17px;}
   .navbtn .admin-tag{margin-left:auto;display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;line-height:1;padding:3px 6px;border-radius:999px;background:rgba(255,200,87,.18);color:#ffd27a;white-space:nowrap;}
   .navbtn .admin-tag svg{width:11px;height:11px;}
+  .navbtn .role-tag{margin-left:auto;display:inline-flex;align-items:center;font-size:10px;font-weight:700;line-height:1;padding:3px 6px;border-radius:999px;white-space:nowrap;}
+  .navbtn .role-tag.all{background:rgba(120,220,160,.2);color:#9be8bb}
+  .navbtn .role-tag.mine{background:rgba(130,170,255,.22);color:#b9ccff}
+  .navbtn .role-tag.view{background:rgba(255,200,87,.18);color:#ffd27a}
+  .rolestrip{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:11.5px;color:var(--ink-soft);margin:0 0 12px}
+  .rolestrip .rc{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-weight:700}
   #bottomnav .bn{position:relative;}
   #bottomnav .bn .admin-dot{position:absolute;top:3px;right:calc(50% - 20px);width:14px;height:14px;border-radius:50%;background:#f5a524;color:#fff;display:flex;align-items:center;justify-content:center;}
   #bottomnav .bn .admin-dot svg{width:9px;height:9px;}
@@ -1596,6 +1602,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-10-5", title:"11月10日の更新（その5）", items:[
+      {t:"すべてのメニューに、誰が使えるかのマークをつけました", d:"左のメニューの各項目に「全員」「担当分」「閲覧のみ」「限定」「管理者」の印が出ます。各画面の上にも、管理者・一般・社外がそれぞれ使えるかが一目で分かる表示を追加しました。印の上にカーソルを置くと説明が出ます。"}
+    ]},
     {id:"2026-11-10-4", title:"11月10日の更新（その4）", items:[
       {t:"指示書を、どんな状況でも保存できるようにしました", d:"作業日や概要が空でも保存できます（作業日は今日になります）。入力内容は端末にも自動で控えるため、通信が切れたり画面を閉じてしまっても、次に開いたとき復元できます。保存に失敗しても画面は閉じず、そのまま再保存できます。"}
     ]},
@@ -4139,13 +4148,33 @@
           '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px;word-break:break-all">'+esc(a.url.replace(/^https:\/\//,""))+'</div></a>';
       }).join("")+'</div></div>';
   }
+  // 各メニューを使える人（◎すべて ○担当案件のみ △一部のみ ×使えない）
+  var TAB_ROLE = {
+    home:["mine","担当分","自分が担当の案件に関する内容が表示されます"], tasks:["mine","担当分","自分が担当のタスクが中心です"],
+    sales:["mine","担当分","自分が担当の案件だけ表示されます（管理者は全案件）"], construction:["mine","担当分","自分が担当の案件だけ表示されます（管理者は全案件）"],
+    schedule:["mine","担当分","自分が担当の案件の工程だけ表示されます"], reports:["mine","担当分","自分が担当の案件の報告書です"],
+    chat:["mine","担当分","担当案件のチャットだけ使えます（社外メンバーには案件チャットは表示されません）"], files:["mine","担当分","自分が担当の案件の写真・ファイルです。社外秘は社外メンバーに非表示"],
+    help:["all","全員","全員が使えます"], apps:["all","全員","全員が使えます"], customers:["all","全員","全員が使えます"], settings:["all","全員","個人情報は全員。会社情報・管理画面などは管理者のみ"],
+    members:["view","閲覧のみ","一覧は全員が見られます。登録・編集は管理者のみ"],
+    budget:["admin","管理者","管理者専用"], sns:["admin","管理者","管理者専用"], cards:["card","限定","管理者と、管理者が許可したメンバーのみ"]
+  };
+  var ROLE_TRIPLET = {all:["◎","◎","◎"], mine:["◎","○","○"], view:["◎","△","△"], admin:["◎","×","×"], card:["◎","△","×"]};
+  function roleChipHtml(icon, label, v){
+    var d = {"◎":["#1f7a4d","#e6f4ec","すべて"],"○":["#2f5bea","#e8eefd","担当のみ"],"△":["#b7791f","#fdf3de","一部のみ"],"×":["#b4443a","#fbe9e7","使えない"]}[v];
+    return '<span class="rc" style="background:'+d[1]+';color:'+d[0]+'">'+icon+' '+label+' '+v+' '+d[2]+'</span>';
+  }
+  function roleStripHtml(tab){
+    var r = TAB_ROLE[tab]; if(!r) return "";
+    var t = ROLE_TRIPLET[r[0]];
+    return '<div class="rolestrip"><b>この画面を使える人</b>'+roleChipHtml("🛡️","管理者",t[0])+roleChipHtml("👷","一般",t[1])+roleChipHtml("🤝","社外",t[2])+'<span>'+esc(r[2])+'</span></div>';
+  }
   function renderShell(){
     var nav = document.getElementById("mainnav");
     var highlight = SUBPAGES[state.tab] ? state.returnTab : state.tab; if(highlight==="calendar") highlight = "schedule";   // カレンダーは工程表に統一
     // 設定 is now open to everyone (it holds each person's own 個人情報);
     // only the 会社情報 editing and the 管理画面 section inside it are admin-only.
     nav.innerHTML = TABS.filter(tabVisible).map(function(t){
-      return "" +'<button class="navbtn'+(highlight===t.id?" active":"")+'" data-tab="'+t.id+'">'+t.icon()+'<span>'+t.label+'</span>'+(t.adminOnly?'<span class="admin-tag" title="'+esc(t.adminNote||"管理者専用のメニューです")+'">'+svgIcon('<path d="M12 3 5 6v5.5c0 4.3 2.9 7.6 7 9.5 4.1-1.9 7-5.2 7-9.5V6z"/>',11)+esc(t.adminLabel||"管理者")+'</span>':'')+'</button>';
+      return "" +'<button class="navbtn'+(highlight===t.id?" active":"")+'" data-tab="'+t.id+'">'+t.icon()+'<span>'+t.label+'</span>'+(t.adminOnly?'<span class="admin-tag" title="'+esc(t.adminNote||"管理者専用のメニューです")+'">'+svgIcon('<path d="M12 3 5 6v5.5c0 4.3 2.9 7.6 7 9.5 4.1-1.9 7-5.2 7-9.5V6z"/>',11)+esc(t.adminLabel||"管理者")+'</span>':(TAB_ROLE[t.id]?'<span class="role-tag '+TAB_ROLE[t.id][0]+'" title="'+esc(TAB_ROLE[t.id][2])+'">'+esc(TAB_ROLE[t.id][1])+'</span>':''))+'</button>';
     }).join("");
     var bn = document.getElementById("bottomnav");
     if(bn){
@@ -4261,6 +4290,7 @@
         '<span style="font-size:12.5px;color:var(--ink-soft)">データの同期に時間がかかっています。空の状態で表示している可能性があります。</span>'+
         '<button class="btn sm" id="retry-sync-btn">再読み込み</button></div>';
     }
+    if(TAB_ROLE[state.tab] && state.tab!=="chat") banner = roleStripHtml(state.tab) + banner;
     if(state.tab==="home") banner += snsHomeBanner();
     if(state.tab==="home" || state.tab==="sales" || state.tab==="construction") banner += a2hsBanner() + (a2hsShow() ? "" : pushOffBanner());
     if(state.tab==="home") c.innerHTML = banner+renderHome();
