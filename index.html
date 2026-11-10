@@ -8972,7 +8972,11 @@
     ["設定：LINE WORKS","◎","◎","◎","連携が有効なときのみ表示"]
   ];
   function permMatrixHtml(){
-    var cell = function(v){ var c = v==="◎"?"#1f7a4d":v==="○"?"#2f5bea":v==="△"?"#b7791f":"#b4443a"; return '<td style="text-align:center;font-size:17px;font-weight:700;color:'+c+';white-space:nowrap">'+v+'</td>'; };
+    var cell = function(v){
+      var d = {"◎":["#1f7a4d","#e6f4ec","すべて"],"○":["#2f5bea","#e8eefd","担当のみ"],"△":["#b7791f","#fdf3de","一部のみ"],"×":["#b4443a","#fbe9e7","使えない"]}[v];
+      return '<td style="text-align:center;white-space:nowrap"><span style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;min-width:62px;padding:4px 6px;border-radius:10px;background:'+d[1]+';color:'+d[0]+';line-height:1.2"><span style="font-size:18px;font-weight:800">'+v+'</span><span style="font-size:10.5px;font-weight:700">'+d[2]+'</span></span></td>';
+    };
+    var hd = function(icon, label, sub, col){ return '<th style="text-align:center;white-space:nowrap;min-width:72px"><div style="font-size:16px;line-height:1.2">'+icon+'</div><div style="color:'+col+'">'+label+'</div><div style="font-size:10px;font-weight:400;color:var(--ink-soft)">'+sub+'</div></th>'; };
     var rows = PERM_ROWS.map(function(r){
       if(r[1]===null) return '<tr><td colspan="5" style="background:var(--surface-2,#f3f5f8);font-weight:700;font-size:12.5px">'+esc(r[0])+'</td></tr>';
       return '<tr><td style="font-weight:600;font-size:13px">'+esc(r[0])+'</td>'+cell(r[1])+cell(r[2])+cell(r[3])+'<td style="font-size:12px;color:var(--ink-soft);line-height:1.6">'+esc(r[4])+'</td></tr>';
@@ -8981,7 +8985,7 @@
     return '<div class="card" style="padding:16px 20px;margin-bottom:16px">'+
       '<h2 style="font-size:16px;margin:0 0 4px">機能ごとの利用権限一覧</h2>'+
       '<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.7;margin-bottom:10px">あなたの権限：<b>'+mine+'</b>　／　<span style="color:#1f7a4d;font-weight:700">◎</span>すべて使える　<span style="color:#2f5bea;font-weight:700">○</span>自分の担当案件の範囲で使える　<span style="color:#b7791f;font-weight:700">△</span>一部のみ　<span style="color:#b4443a;font-weight:700">×</span>使えない</div>'+
-      '<div style="overflow-x:auto"><table class="tbl" style="font-size:13px;min-width:640px"><thead><tr><th>機能</th><th style="text-align:center;white-space:nowrap;min-width:52px">管理者</th><th style="text-align:center;white-space:nowrap;min-width:52px">一般</th><th style="text-align:center;white-space:nowrap;min-width:52px">社外</th><th>補足</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+      '<div style="overflow-x:auto"><table class="tbl" style="font-size:13px;min-width:640px"><thead><tr><th>機能</th>'+hd('🛡️','管理者','全権限','#1f7a4d')+hd('👷','一般','自社メンバー','#2f5bea')+hd('🤝','社外','協力会社など','#b7791f')+'<th>補足</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
   }
   function renderHelpPage(){
     var q = (state.helpQ||"").trim().toLowerCase();
