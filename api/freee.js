@@ -174,7 +174,7 @@ async function run(b, req){
       if(kind === "quotations"){
         body.quotation_date = date; if(isoDate(b.dueDate)) body.expiration_date = b.dueDate; if(b.note) body.quotation_note = String(b.note).slice(0, 1000);
       }else{
-        body.purchase_order_date = date; if(isoDate(b.dueDate)) body.collects_on = b.dueDate; if(b.note) body.note = String(b.note).slice(0, 1000);
+        body.purchase_order_date = date; if(isoDate(b.dueDate)) body.collects_on = b.dueDate; if(b.note) body.purchase_order_note = String(b.note).slice(0, 1000);
       }
       var cr;
       try{ cr = await F.freee("POST", "/iv/" + kind, {body: body}); }

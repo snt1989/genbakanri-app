@@ -3491,6 +3491,15 @@
     // freeeに登録済みの取引先から選ぶ（候補を読み込み、入力した名前が登録済みか確認する）
     var nzp = function(x){ return String(x||"").normalize("NFKC").replace(/[\s\u3000]/g,"").toLowerCase(); };
     var findPartner = function(name){ var n = nzp(name); return n && freeePartnerCache.list ? (freeePartnerCache.list.find(function(x){ return nzp(x.name)===n; }) || null) : null; };
+    var similarPartners = function(name){
+      var n = nzp(name); if(!n || !freeePartnerCache.list) return [];
+      return freeePartnerCache.list.filter(function(x){ var m = nzp(x.name); return m.indexOf(n)>-1 || n.indexOf(m)>-1; }).slice(0,6);
+    };
+    var autoPicked = false;
+    var autoPick = function(){
+      if(autoPicked || !freeePartnerCache.list) return; autoPicked = true;
+      if(partnerName && !findPartner(partnerName)){ var sim = similarPartners(partnerName); if(sim.length===1) partnerName = sim[0].name; }
+    };
     var partnerChoices = function(){
       var seen = {}, out = [];
       var add = function(n){ n = String(n||"").trim(); if(n && !seen[n]){ seen[n] = 1; out.push(n); } };
@@ -3506,7 +3515,11 @@
       if(!pn){ el.style.color = "var(--ink-faint)"; el.textContent = "freeeに登録済みの取引先 "+freeePartnerCache.list.length+"件から、名前を入力して選べます"; return; }
       var m = findPartner(pn);
       if(m){ el.style.color = "var(--success,#1f7a4d)"; el.textContent = "✔ freeeに登録済み"+(m.phone?"（"+m.phone+"）":""); }
-      else{ el.style.color = "var(--danger)"; el.textContent = "freeeに登録されていない名前です。候補から選んでください"; }
+      else{
+        var sim = similarPartners(pn); el.style.color = "var(--danger)";
+        el.innerHTML = 'freeeに登録されていない名前です。'+(sim.length?'近い登録済みの取引先：'+sim.map(function(x,i){ return '<button type="button" class="btn sm" data-dl-pick="'+i+'" style="margin:2px 4px 0 0">'+esc(x.name)+'</button>'; }).join(""):'登録済みの名前を入力して選んでください');
+        el.querySelectorAll("[data-dl-pick]").forEach(function(b){ b.addEventListener("click", function(){ inpEl.value = sim[+b.getAttribute("data-dl-pick")].name; partnerName = inpEl.value; updPstat(); }); });
+      }
     };
     var inp = function(i,f,v,w,al,type){ return '<input type="'+(type||"text")+'" data-dl="'+f+'" data-i="'+i+'" value="'+esc(v==null?"":v)+'" style="width:'+w+';'+(al?'text-align:right;':'')+'padding:6px 8px;font-size:12.5px">'; };
     var sub = function(){ return L.reduce(function(a,l){ return a + Math.round(bgNum(l.quantity)*bgNum(l.unitPrice)); }, 0); };
@@ -3516,6 +3529,7 @@
         '<td class="num" style="text-align:right;white-space:nowrap" data-dl-amt="'+i+'">'+bgYen(Math.round(bgNum(l.quantity)*bgNum(l.unitPrice)))+'</td><td><button class="btn sm" data-dl-del="'+i+'">×</button></td></tr>';
     }).join(""); };
     var draw = function(){
+      autoPick();
       openModal(label+"を作成（freee）",
         '<div style="font-size:12px;color:var(--ink-soft);line-height:1.7;margin-bottom:10px">freee請求書に'+label+'の<b>下書き</b>を作成します（相手には送られません）。作成後、freeeの画面で内容を確認して発行・送付してください。</div>'+
         '<div class="field-row"><label class="field">'+(isQ?'宛先（お客様）':'発注先（協力会社・取引先）')+'<input type="text" id="dl-partner" list="dl-vendors" value="'+esc(partnerName)+'" placeholder="登録済みの取引先名を入力して選択" autocomplete="off"><datalist id="dl-vendors">'+partnerChoices().map(function(v){ return '<option value="'+esc(v)+'">'; }).join("")+'</datalist><span id="dl-pstat" style="font-size:11.5px;margin-top:3px;display:block"></span></label>'+
@@ -3524,7 +3538,7 @@
         '<label class="field">'+(isQ?'有効期限':'納期・支払期日')+'<input type="date" id="dl-due" value="'+esc(isQ?addDays(today,30):"")+'"></label></div>'+
         '<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px;min-width:560px"><thead><tr><th>品名・内容</th><th style="text-align:right">数量</th><th>単位</th><th style="text-align:right">単価（税抜）</th><th>税率</th><th style="text-align:right">金額</th><th></th></tr></thead><tbody id="dl-rows">'+rowsHtml()+'</tbody></table></div>'+
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><button class="btn outline" id="dl-add">'+iPlus()+' 明細を追加</button><div style="font-size:13px">小計（税抜）<b class="num" id="dl-sub" style="margin-left:6px">'+bgYen(sub())+'</b></div></div>'+
-        '<label class="field" style="margin-top:10px">備考（'+(isQ?'見積書':'発注書')+'に載ります）<textarea id="dl-note" style="min-height:50px"></textarea></label>'+
+        '<label class="field" style="margin-top:10px">備考（'+(isQ?'見積書':'発注書')+'に載ります）<textarea id="dl-note" style="min-height:50px"></textarea></label>'+'<div id="dl-err" style="color:var(--danger);font-size:12.5px;line-height:1.6;margin-top:8px;white-space:pre-wrap"></div>'+
         (isQ?'<div class="cell-sub" style="margin-top:6px">契約金額を「一式」1行で入れています。金額は税抜として扱うので、内容と金額を確認してください。</div>':'<div class="cell-sub" style="margin-top:6px">予算の明細を入れています。不要な行は「×」で消し、単価を確認してください。</div>'),
         '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="dl-go">freeeに'+label+'を作成</button>');
       var box = document.getElementById("modal-box");
@@ -3538,7 +3552,7 @@
         var btn = this, pn = partnerName.trim(), lines = L.filter(function(l){ return String(l.description||"").trim(); });
         if(!pn){ toast("取引先を入力してください"); return; }
         var regP = findPartner(pn);
-        if(freeePartnerCache.list && !regP){ toast("freeeに登録済みの取引先から選んでください（新しい取引先は、先にfreeeか顧客管理で登録します）"); return; }
+        if(freeePartnerCache.list && !regP){ toast("freeeに登録済みの取引先から選んでください"); updPstat(); return; }
         if(!lines.length){ toast("明細を1行以上入力してください"); return; }
         var date = document.getElementById("dl-date").value; if(!date){ toast("日付を入力してください"); return; }
         if(!window.confirm("freeeに"+label+"の下書きを作成します。\\n取引先：" + pn + "\\n小計（税抜）：" + bgYen(sub()) + "\\nよろしいですか？")) return;
@@ -3548,7 +3562,7 @@
           if(j && j.configured===false){ toast("freeeが連携されていません"); btn.disabled = false; btn.textContent = "freeeに"+label+"を作成"; return; }
           openModal(label+"を作成しました", '<div style="line-height:1.8">freeeに'+label+'の下書きを作成しました。'+(j.number?'<br>番号：<b>'+esc(j.number)+'</b>':'')+(j.total!=null?'<br>合計（税込）：<b>'+bgYen(j.total)+'</b>':'')+'<br>内容を確認して、発行・送付はfreeeの画面で行ってください。</div>',
             '<button class="btn" data-close-modal>閉じる</button>'+(j.url?'<a class="btn primary" href="'+esc(j.url)+'" target="_blank" rel="noopener">freeeで開く</a>':''));
-        }).catch(function(e){ toast(e.message||"作成できませんでした"); btn.disabled = false; btn.textContent = "freeeに"+label+"を作成"; });
+        }).catch(function(e){ var em = (e && e.message) || "作成できませんでした"; toast(em); var er = document.getElementById("dl-err"); if(er) er.textContent = "作成できませんでした：\n"+em; btn.disabled = false; btn.textContent = "freeeに"+label+"を作成"; });
       });
       function keep(){ var pe = document.getElementById("dl-partner"); if(pe) partnerName = pe.value; var sj = document.getElementById("dl-subject"); if(sj) p = Object.assign({}, p, {name: sj.value}); }
     };
