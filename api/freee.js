@@ -145,6 +145,22 @@ async function run(b, req){
       })};
     }
 
+    // freeeの見積書・発注書を「取消」にする（freeeのAPIには削除がないため。freeeの画面で取消の解除もできる）
+    // { kind:"quotation"|"purchase_order", id }
+    case "docs.cancel": {
+      t = await need(); cid = t.companyId;
+      var ck = b.kind === "purchase_order" ? "purchase_orders" : (b.kind === "quotation" ? "quotations" : "");
+      var did = Number(b.id) || 0;
+      if(!ck || !did) throw F.httpErr(400, "取り消す書類を指定してください");
+      try{ await F.freee("PUT", "/iv/" + ck + "/" + did + "/cancel", {body: {company_id: cid}}); }
+      catch(e){
+        if(/すでに|既に|already|取消|cancel/i.test(String(e.message || ""))) return {ok: true, already: true};
+        if(e.status === 401 || /アクセス権限/.test(String(e.message || ""))) throw F.httpErr(e.status === 401 ? 401 : 403, "freeeアプリに「請求書」の更新権限がありません（" + e.message + "）");
+        throw e;
+      }
+      return {ok: true};
+    }
+
     // 見積書・発注書を、freee請求書API（/iv）に「下書き」として作成する（送付はfreee側で行う）
     // { kind:"quotation"|"purchase_order", partnerId?, partnerName?, subject, date, dueDate?, memo?, note?, lines:[{description, quantity, unit, unitPrice, taxRate}] }
     case "docs.create": {

@@ -3396,8 +3396,22 @@
       var box = $("bg-drafts"); if(!box) return;
       box.querySelectorAll("[data-dd-open]").forEach(function(b){ b.addEventListener("click", function(){ var x = bgDraftsOf(pid).find(function(z){ return z.id===b.getAttribute("data-dd-open"); }); if(x) openBudgetDoc(pid, x.kind, x.id); }); });
       box.querySelectorAll("[data-dd-del]").forEach(function(b){ b.addEventListener("click", function(){
-        if(!confirm("この下書きを削除します。よろしいですか？（freeeに作成済みの書類は消えません）")) return;
-        bgSave(pid, {docDrafts:bgDraftsOf(pid).filter(function(z){ return z.id!==b.getAttribute("data-dd-del"); })}, "下書きを削除しました", function(){ box.innerHTML = bgDraftsHtml(pid); bindDrafts(); });
+        var id = b.getAttribute("data-dd-del"), x = bgDraftsOf(pid).find(function(z){ return z.id===id; }); if(!x) return;
+        var finish = function(){
+          var d3 = bgDoc(pid) || {}, patch = {docDrafts:bgDraftsOf(pid).filter(function(z){ return z.id!==id; })};
+          if(x.kind==="purchase_order" && x.freeeNumber){   // この発注書で予算に入れた実績・明細も戻す
+            patch.costs = (d3.costs||[]).filter(function(c){ return !(c.source==="po" && c.poNumber===x.freeeNumber); });
+            patch.lines = bgLines(d3).filter(function(l){ return l.fromPo!==x.freeeNumber; });
+          }
+          bgSave(pid, patch, x.freeeNumber ? "削除しました（freeeの書類は取消にしました）" : "下書きを削除しました", function(){ box.innerHTML = bgDraftsHtml(pid); bindDrafts(); if($("bg-head")){ reopen(); } });
+        };
+        var label = x.kind==="quotation" ? "見積書" : "発注書";
+        if(!x.freeeNumber){ if(confirm("この下書きを削除します。よろしいですか？")) finish(); return; }
+        if(!x.freeeId){ if(confirm("この"+label+"（freee番号 "+x.freeeNumber+"）はアプリの一覧から削除します。\nfreee側の書類は、取消にできませんでした（作成時の情報がないため）。freeeの画面で取り消してください。\n\nよろしいですか？")) finish(); return; }
+        if(!confirm("この"+label+"を削除します。\n\n・freeeの"+label+"（"+x.freeeNumber+"）は「取消」になります（freeeには削除機能がないため。freeeの画面で取消の解除もできます）\n"+(x.kind==="purchase_order"?"・この発注書で予算に入れた実績・明細も取り除きます\n":"")+"\nよろしいですか？")) return;
+        b.disabled = true; b.textContent = "取消中…";
+        freeeCall("docs.cancel", {kind:x.kind, id:x.freeeId}).then(function(){ finish(); })
+          .catch(function(e){ toast((e&&e.message)||"freeeの書類を取り消せませんでした。アプリ側の書類は残しています"); b.disabled = false; b.textContent = "削除"; });
       }); });
     };
     bindDrafts();
@@ -3597,7 +3611,7 @@
                 var cat = l.cat || "外注費", lid = l.lineId || "";
                 if(!lid || !bl.some(function(x){ return x.id===lid; })){   // 予算の明細にない項目は、予算の明細にも追加する
                   lid = "l"+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
-                  bl.push({id:lid, cat:cat, name:l.description, qty:bgNum(l.quantity), unit:l.unit||"", price:bgNum(l.unitPrice), amount:amt}); addedLines++;
+                  bl.push({id:lid, cat:cat, name:l.description, qty:bgNum(l.quantity), unit:l.unit||"", price:bgNum(l.unitPrice), amount:amt, fromPo:j.number}); addedLines++;
                 }
                 items.push({id:"c"+Date.now().toString(36)+Math.random().toString(36).slice(2,6), date:dDate, cat:cat, lineId:lid, vendor:pn, memo:"発注書 "+j.number+"："+l.description, amount:amt, source:"po", poNumber:j.number});
               });
@@ -3605,7 +3619,13 @@
               if(items.length) bgSave(pid, {lines:bl, costs:(d2.costs||[]).concat(items)}, "", null, true);
             }
           }
-          if(j && j.number && draft){ bgSave(pid, {docDrafts:bgDraftsOf(pid).map(function(x){ return x.id===draft.id ? Object.assign({}, x, {freeeNumber:j.number}) : x; })}, "", null, true); }
+          if(j && j.number){
+            var recNow = new Date().toISOString(), cur2 = bgDraftsOf(pid).slice(), fx = {freeeNumber:j.number, freeeId:j.id||"", freeeUrl:j.url||""};
+            var k2 = draft ? cur2.findIndex(function(x){ return x.id===draft.id; }) : -1;
+            if(k2>-1) cur2[k2] = Object.assign({}, cur2[k2], fx);
+            else cur2.push(Object.assign({id:uid(), kind:kind, partnerName:pn, subject:dSubject, date:dDate, dueDate:dDue, note:dNote, lines:lines.map(function(l){ return {description:String(l.description||""), quantity:bgNum(l.quantity), unit:l.unit||"", unitPrice:bgNum(l.unitPrice), taxRate:Number(l.taxRate), lineId:l.lineId||"", cat:l.cat||""}; }), by:state.myName||"", at:recNow}, fx));
+            bgSave(pid, {docDrafts:cur2}, "", null, true);
+          }
           if(j && j.configured===false){ toast("freeeが連携されていません"); btn.disabled = false; btn.textContent = "freeeに"+label+"を作成"; return; }
           openModal(label+"を作成しました", '<div style="line-height:1.8">freeeに'+label+'の下書きを作成しました。'+(j.number?'<br>番号：<b>'+esc(j.number)+'</b>':'')+(j.total!=null?'<br>合計（税込）：<b>'+bgYen(j.total)+'</b>':'')+(addedYen?'<br>予算管理の実績に、発注額（税抜）<b>'+bgYen(addedYen)+'</b>を追加しました。'+(addedLines?'<br>予算の明細にない'+addedLines+'項目は、予算の明細にも追加しました。':''):'')+'<br>内容を確認して、発行・送付はfreeeの画面で行ってください。</div>',
             '<button class="btn" data-close-modal>閉じる</button>'+(j.url?'<a class="btn primary" href="'+esc(j.url)+'" target="_blank" rel="noopener">freeeで開く</a>':''));
