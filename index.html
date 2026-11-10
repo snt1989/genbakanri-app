@@ -1602,6 +1602,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-10-11", title:"11月10日の更新（その11）", items:[
+      {t:"写真に入れる文字の大きさを変えられるようにしました", d:"写真の加工画面の「文字の大きさ」スライダーで、これから入れる文字の大きさを決められます。「移動」で文字を選んでスライダーを動かすと、入れ済みの文字の大きさも変えられます。"}
+    ]},
     {id:"2026-11-10-10", title:"11月10日の更新（その10）", items:[
       {t:"削除した指示書や、編集前の指示書を復元できるようにしました", d:"指示書を削除したり、内容を書き換えたりしても、案件の「指示書」欄の下にある「削除・編集前の指示書」から、内容を確認して復元できます（編集前の版は最新20件まで）。完全に消したいときは「完全に削除」を使います。"}
     ]},
@@ -6747,7 +6750,7 @@
   }
   function openPhotoEditor(file, item, onDone){
     var marks = JSON.parse(JSON.stringify(item.marks||[])), fx = Object.assign({b:100, c:100, g:false}, item.fx||{}), ar = item.ar||0.75;
-    var sel = -1, drag = null;
+    var sel = -1, drag = null, tsz = 0.05;
     var tool = "arrow", color = PE_COLORS[0], wsel = 0.008, ov = document.createElement("div"); ov.id = "pe-ov";
     ov.style.cssText = "position:fixed;inset:0;background:rgba(10,14,12,.94);z-index:3000;display:flex;flex-direction:column;color:#fff;font-size:13px";
     var tools = [["move","移動"],["pen","ペン"],["arrow","矢印"],["rect","四角"],["ell","丸"],["fill","黒塗り"],["text","文字"]];
@@ -6755,6 +6758,7 @@
       tools.map(function(t){ return '<button type="button" class="btn sm" data-pe-tool="'+t[0]+'">'+t[1]+'</button>'; }).join("")+
       '<span style="width:1px;height:22px;background:#456;margin:0 4px"></span>'+PE_COLORS.map(function(c){ return '<button type="button" data-pe-color="'+c+'" style="width:24px;height:24px;border-radius:50%;border:2px solid #fff;background:'+c+';cursor:pointer;padding:0"></button>'; }).join("")+
       '<select id="pe-w" style="font-size:13px;width:auto;min-width:0;padding:2px 6px"><option value="0.004">細</option><option value="0.008" selected>中</option><option value="0.016">太</option></select>'+
+      '<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px">文字の大きさ <input type="range" id="pe-ts" min="2" max="16" step="0.5" value="5" style="width:110px"><b id="pe-tsv" style="min-width:28px">5</b></label>'+
       '<span style="width:1px;height:22px;background:#456;margin:0 4px"></span><button type="button" class="btn sm" id="pe-delsel">選んだ書き込みを削除</button><button type="button" class="btn sm" id="pe-undo">1つ戻す</button><button type="button" class="btn sm" id="pe-clear">書き込みを全部消す</button></div>'+
       '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding:6px 10px;background:#232d29;font-size:12px"><label>明るさ <input type="range" id="pe-b" min="50" max="150" value="'+fx.b+'" style="vertical-align:middle;width:120px"></label><label>コントラスト <input type="range" id="pe-c" min="50" max="150" value="'+fx.c+'" style="vertical-align:middle;width:120px"></label><label><input type="checkbox" id="pe-g"'+(fx.g?' checked':'')+'> 白黒</label><button type="button" class="btn sm" id="pe-fxreset">明るさ等を戻す</button></div>'+
       '<div style="flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:10px"><div id="pe-stage" style="position:relative;display:inline-block;line-height:0;user-select:none"><img id="pe-img" src="'+esc(fileUrl(file))+'" style="display:block;max-width:92vw;max-height:calc(100vh - 190px)"><svg id="pe-svg" style="position:absolute;left:0;top:0;width:100%;height:100%;touch-action:none;cursor:crosshair"></svg></div></div>'+
@@ -6776,6 +6780,12 @@
     ov.querySelectorAll("[data-pe-tool]").forEach(function(b){ b.addEventListener("click", function(){ tool = b.getAttribute("data-pe-tool"); redraw(); }); });
     ov.querySelectorAll("[data-pe-color]").forEach(function(b){ b.addEventListener("click", function(){ color = b.getAttribute("data-pe-color"); redraw(); }); });
     ov.querySelector("#pe-w").addEventListener("change", function(){ wsel = Number(this.value); });
+    var tsI = ov.querySelector("#pe-ts"), tsV = ov.querySelector("#pe-tsv");
+    var tsShow = function(){ tsV.textContent = String(Math.round(tsz*1000)/10); tsI.value = Math.round(tsz*1000)/10; };
+    tsI.addEventListener("input", function(){
+      tsz = Number(tsI.value)/100; tsV.textContent = tsI.value;
+      if(sel>=0 && marks[sel] && marks[sel].t==="text"){ marks[sel].s = Math.round(tsz*1000)/1000; redraw(); }   // 選んだ文字があれば、その大きさも変える
+    });
     ov.querySelector("#pe-undo").addEventListener("click", function(){ marks.pop(); sel = -1; redraw(); });
     ov.querySelector("#pe-delsel").addEventListener("click", function(){ if(sel>=0 && marks[sel]){ marks.splice(sel,1); sel = -1; redraw(); } else toast("先に「移動」で、消したい書き込みを選んでください"); });
     ov.querySelector("#pe-clear").addEventListener("click", function(){ if(!marks.length || confirm("書き込みを全部消します。よろしいですか？")){ marks = []; sel = -1; redraw(); } });
@@ -6790,12 +6800,12 @@
       if(tool==="move"){
         sel = -1;
         for(var k = marks.length-1; k>=0; k--){ var bb = peBBox(marks[k]); if(q[0]>=bb[0] && q[0]<=bb[2] && q[1]>=bb[1] && q[1]<=bb[3]){ sel = k; break; } }
-        if(sel>=0){ try{ svg.setPointerCapture(ev.pointerId); }catch(e){} drag = {last:q, moved:false}; }
+        if(sel>=0){ try{ svg.setPointerCapture(ev.pointerId); }catch(e){} drag = {last:q, moved:false}; if(marks[sel].t==="text"){ tsz = marks[sel].s||0.05; tsShow(); } }
         redraw(); return;
       }
       if(marks.length>=200){ toast("書き込みは1枚につき200個までです"); return; }
       if(tool==="text"){
-        var t = window.prompt("入れる文字（例：ここを施工、NG、1）", ""); if(t && t.trim()){ marks.push({t:"text", x:q[0], y:q[1], s:Math.round(wsel*6.5*1000)/1000, c:color, text:t.trim().slice(0,60)}); redraw(); }
+        var t = window.prompt("入れる文字（例：ここを施工、NG、1）", ""); if(t && t.trim()){ marks.push({t:"text", x:q[0], y:q[1], s:Math.round(tsz*1000)/1000, c:color, text:t.trim().slice(0,60)}); redraw(); }
         return;
       }
       try{ svg.setPointerCapture(ev.pointerId); }catch(e){}
