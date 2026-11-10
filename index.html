@@ -3332,7 +3332,7 @@
   function bgSave(pid, patch, msg, after, quiet, fail){
     if(!state.isAdmin){ toast("管理者のみ行えます"); return; }
     var p = state.projects.find(function(x){ return x.id===pid; }) || {}, d = bgDoc(pid) || {};
-    var next = Object.assign({projectId:pid, budget:d.budget||{}, lines:bgLines(d), costs:d.costs||[]}, patch, {projectName:p.name||d.projectName||"", updatedAt:new Date().toISOString(), updatedBy:state.myName||""});
+    var next = Object.assign({projectId:pid, budget:d.budget||{}, lines:bgLines(d), costs:d.costs||[], docDrafts:Array.isArray(d.docDrafts)?d.docDrafts:[]}, patch, {projectName:p.name||d.projectName||"", updatedAt:new Date().toISOString(), updatedBy:state.myName||""});
     var arr = state.budgets, i = arr.findIndex(function(x){ return x.projectId===pid; });
     if(i>-1) arr[i] = Object.assign({}, arr[i], next); else arr.push(Object.assign({id:pid}, next));
     if(!db){ if(!quiet) toast(msg+"（プレビューのみ）"); if(after) after(); return; }
@@ -3372,7 +3372,8 @@
     var body = '<div id="bg-head" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">'+headHtml()+'</div>'+
       '<h3 style="font-size:13px;margin:0 0 4px">予算の明細</h3><div style="font-size:11.5px;color:var(--ink-faint);margin-bottom:6px">項目ごとに、勘定科目・数量・単価を入力します（金額は数量×単価で自動計算。金額だけを直接入力してもかまいません）。</div>'+
       '<div style="overflow-x:auto;flex:none"><table class="tbl" style="font-size:12.5px;min-width:700px"><thead><tr><th>勘定科目</th><th>項目名</th><th style="text-align:right">数量</th><th>単位</th><th style="text-align:right">単価</th><th style="text-align:right">金額</th><th style="text-align:right">実績</th><th style="text-align:right">残り</th><th></th></tr></thead><tbody id="bg-lines">'+linesHtml()+'</tbody></table></div>'+
-      '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn outline" id="bg-l-add">'+iPlus()+' 明細を追加</button>'+(freeeAvailable()?'<button class="btn outline" id="bg-doc-q" style="margin-left:auto">freeeで見積書を作成</button><button class="btn outline" id="bg-doc-po">freeeで発注書を作成</button>':'')+'</div>'+
+      '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn outline" id="bg-l-add">'+iPlus()+' 明細を追加</button><button class="btn outline" id="bg-doc-q" style="margin-left:auto">見積書を作成</button><button class="btn outline" id="bg-doc-po">発注書を作成</button></div>'+
+      '<div id="bg-drafts">'+bgDraftsHtml(pid)+'</div>'+
       '<h3 style="font-size:13px;margin:18px 0 6px">勘定科目ごとの集計</h3><div style="overflow-x:auto;flex:none"><table class="tbl" style="font-size:12.5px"><thead><tr><th>勘定科目</th><th style="text-align:right">予算</th><th style="text-align:right">実績</th><th style="text-align:right">残り</th></tr></thead><tbody id="bg-cats">'+catHtml()+'</tbody></table></div>'+
       '<h3 style="font-size:13px;margin:18px 0 6px" id="bg-c-title">実績（実際にかかった費用）を追加</h3>'+
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;align-items:end">'+
@@ -3390,6 +3391,15 @@
     $("bg-detail").addEventListener("click", function(){ closeModal(); goProjectDetail(pid); });
     var bgQ = $("bg-doc-q"); if(bgQ) bgQ.addEventListener("click", function(){ openBudgetDoc(pid, "quotation"); });
     var bgP = $("bg-doc-po"); if(bgP) bgP.addEventListener("click", function(){ openBudgetDoc(pid, "purchase_order"); });
+    var bindDrafts = function(){
+      var box = $("bg-drafts"); if(!box) return;
+      box.querySelectorAll("[data-dd-open]").forEach(function(b){ b.addEventListener("click", function(){ var x = bgDraftsOf(pid).find(function(z){ return z.id===b.getAttribute("data-dd-open"); }); if(x) openBudgetDoc(pid, x.kind, x.id); }); });
+      box.querySelectorAll("[data-dd-del]").forEach(function(b){ b.addEventListener("click", function(){
+        if(!confirm("この下書きを削除します。よろしいですか？（freeeに作成済みの書類は消えません）")) return;
+        bgSave(pid, {docDrafts:bgDraftsOf(pid).filter(function(z){ return z.id!==b.getAttribute("data-dd-del"); })}, "下書きを削除しました", function(){ box.innerHTML = bgDraftsHtml(pid); bindDrafts(); });
+      }); });
+    };
+    bindDrafts();
     var bgF = $("bg-freee"); if(bgF) bgF.addEventListener("click", function(){ openBudgetFreee(pid); });
     var refresh = function(full){
       $("bg-head").innerHTML = headHtml(); $("bg-cats").innerHTML = catHtml();
@@ -3477,17 +3487,31 @@
   function bgNormName(v){ return String(v||"").normalize("NFKC").toLowerCase().replace(/[\s\u3000・\-ー_]/g,""); }
   // 予算管理から、freee請求書API で見積書（お客様向け）・発注書（協力会社向け）を下書き作成する
   var freeePartnerCache = {list:null, at:0, err:false};
-  function openBudgetDoc(pid, kind){
+  // 見積書・発注書の下書き（予算のデータの中に保存。管理者のみ）
+  function bgDraftsOf(pid){ var d = bgDoc(pid); return d && Array.isArray(d.docDrafts) ? d.docDrafts : []; }
+  function bgDraftsHtml(pid){
+    var list = bgDraftsOf(pid).slice().sort(function(a,b){ return String(b.at||"").localeCompare(String(a.at||"")); });
+    if(!list.length) return "";
+    var sum = function(x){ return (x.lines||[]).reduce(function(a,l){ return a + Math.round(bgNum(l.quantity)*bgNum(l.unitPrice)); }, 0); };
+    return '<h3 style="font-size:13px;margin:18px 0 6px">保存した見積書・発注書（下書き）'+list.length+'件</h3><div style="flex:none">'+list.map(function(x){
+      return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--border)"><div style="flex:1;min-width:200px"><div style="font-size:13px;font-weight:700"><span class="badge '+(x.kind==="quotation"?"soft-success":"soft-warning")+'" style="margin-right:6px">'+(x.kind==="quotation"?"見積書":"発注書")+'</span>'+esc(x.partnerName||"（取引先未入力）")+'</div><div style="font-size:11.5px;color:var(--ink-faint)">'+esc(x.subject||"")+' ／ 税抜 '+bgYen(sum(x))+' ／ '+esc(fmtDateTime(x.edited||x.at))+(x.freeeNumber?' ／ <b style="color:var(--success,#1f7a4d)">freee作成済 '+esc(x.freeeNumber)+'</b>':'')+'</div></div>'+
+        '<button class="btn sm" data-dd-open="'+esc(x.id)+'">開く</button><button class="btn sm" data-dd-del="'+esc(x.id)+'" style="color:var(--danger)">削除</button></div>';
+    }).join("")+'</div>';
+  }
+  function openBudgetDoc(pid, kind, draftId){
     if(!state.isAdmin) return;
     var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
     var isQ = kind==="quotation", label = isQ ? "見積書" : "発注書";
     var cu = state.customers.find(function(c){ return c.id===p.customerId; }) || null;
     var d = bgDoc(pid) || {}, today = localToday();
+    var draft = draftId ? (bgDraftsOf(pid).find(function(x){ return x.id===draftId; }) || null) : null;
     var vendors = []; (Array.isArray(d.costs)?d.costs:[]).forEach(function(x){ if(x.vendor && vendors.indexOf(x.vendor)===-1) vendors.push(x.vendor); });
     var L = isQ ? [{description: p.name||"工事一式", quantity:1, unit:"式", unitPrice: bgNum(p.amount), taxRate:10}]
       : bgLines(d).filter(function(l){ return l.name || bgNum(l.amount); }).map(function(l){ return {description:l.name||l.cat||"", quantity: bgNum(l.qty)||1, unit:l.unit||"", unitPrice: bgNum(l.price)||bgNum(l.amount), taxRate:10}; });
     if(!L.length) L.push({description:"", quantity:1, unit:"式", unitPrice:0, taxRate:10});
     var partnerName = isQ ? (cu?cu.name:(p.customerName||"")) : (vendors[0]||"");
+    var dDate = today, dDue = isQ ? addDays(today,30) : "", dNote = "", dSubject = p.name||"", dMemo = p.name||"";
+    if(draft){ L = (draft.lines||[]).map(function(l){ return {description:l.description||"", quantity:l.quantity, unit:l.unit||"", unitPrice:l.unitPrice, taxRate:Number(l.taxRate)}; }); if(!L.length) L.push({description:"", quantity:1, unit:"式", unitPrice:0, taxRate:10}); partnerName = draft.partnerName||""; dDate = draft.date||today; dDue = draft.dueDate||""; dNote = draft.note||""; dSubject = draft.subject||""; }
     // freeeに登録済みの取引先から選ぶ（候補を読み込み、入力した名前が登録済みか確認する）
     var nzp = function(x){ return String(x||"").normalize("NFKC").replace(/[\s\u3000]/g,"").toLowerCase(); };
     var findPartner = function(name){ var n = nzp(name); return n && freeePartnerCache.list ? (freeePartnerCache.list.find(function(x){ return nzp(x.name)===n; }) || null) : null; };
@@ -3533,14 +3557,14 @@
       openModal(label+"を作成（freee）",
         '<div style="font-size:12px;color:var(--ink-soft);line-height:1.7;margin-bottom:10px">freee請求書に'+label+'の<b>下書き</b>を作成します（相手には送られません）。作成後、freeeの画面で内容を確認して発行・送付してください。</div>'+
         '<div class="field-row"><label class="field">'+(isQ?'宛先（お客様）':'発注先（協力会社・取引先）')+'<input type="text" id="dl-partner" list="dl-vendors" value="'+esc(partnerName)+'" placeholder="登録済みの取引先名を入力して選択" autocomplete="off"><datalist id="dl-vendors">'+partnerChoices().map(function(v){ return '<option value="'+esc(v)+'">'; }).join("")+'</datalist><span id="dl-pstat" style="font-size:11.5px;margin-top:3px;display:block"></span></label>'+
-        '<label class="field">件名<input type="text" id="dl-subject" maxlength="100" value="'+esc(p.name||"")+'"></label></div>'+
-        '<div class="field-row"><label class="field">'+(isQ?'見積日':'発注日')+'<input type="date" id="dl-date" value="'+esc(today)+'"></label>'+
-        '<label class="field">'+(isQ?'有効期限':'納期・支払期日')+'<input type="date" id="dl-due" value="'+esc(isQ?addDays(today,30):"")+'"></label></div>'+
+        '<label class="field">件名<input type="text" id="dl-subject" maxlength="100" value="'+esc(dSubject)+'"></label></div>'+
+        '<div class="field-row"><label class="field">'+(isQ?'見積日':'発注日')+'<input type="date" id="dl-date" value="'+esc(dDate)+'"></label>'+
+        '<label class="field">'+(isQ?'有効期限':'納期・支払期日')+'<input type="date" id="dl-due" value="'+esc(dDue)+'"></label></div>'+
         '<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px;min-width:560px"><thead><tr><th>品名・内容</th><th style="text-align:right">数量</th><th>単位</th><th style="text-align:right">単価（税抜）</th><th>税率</th><th style="text-align:right">金額</th><th></th></tr></thead><tbody id="dl-rows">'+rowsHtml()+'</tbody></table></div>'+
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><button class="btn outline" id="dl-add">'+iPlus()+' 明細を追加</button><div style="font-size:13px">小計（税抜）<b class="num" id="dl-sub" style="margin-left:6px">'+bgYen(sub())+'</b></div></div>'+
-        '<label class="field" style="margin-top:10px">備考（'+(isQ?'見積書':'発注書')+'に載ります）<textarea id="dl-note" style="min-height:50px"></textarea></label>'+'<div id="dl-err" style="color:var(--danger);font-size:12.5px;line-height:1.6;margin-top:8px;white-space:pre-wrap"></div>'+
+        '<label class="field" style="margin-top:10px">備考（'+(isQ?'見積書':'発注書')+'に載ります）<textarea id="dl-note" style="min-height:50px">'+esc(dNote)+'</textarea></label>'+'<div id="dl-err" style="color:var(--danger);font-size:12.5px;line-height:1.6;margin-top:8px;white-space:pre-wrap"></div>'+
         (isQ?'<div class="cell-sub" style="margin-top:6px">契約金額を「一式」1行で入れています。金額は税抜として扱うので、内容と金額を確認してください。</div>':'<div class="cell-sub" style="margin-top:6px">予算の明細を入れています。不要な行は「×」で消し、単価を確認してください。</div>'),
-        '<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="dl-go">freeeに'+label+'を作成</button>');
+        '<button class="btn" id="dl-back" style="margin-right:auto">予算管理に戻る</button><button class="btn" id="dl-draft">下書きを保存</button><button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="dl-go">freeeに'+label+'を作成</button>');
       var box = document.getElementById("modal-box");
       var pin = document.getElementById("dl-partner"); pin.addEventListener("input", function(){ partnerName = pin.value; updPstat(); }); updPstat();
       var refresh = function(){ L.forEach(function(l,i){ var el = box.querySelector('[data-dl-amt="'+i+'"]'); if(el) el.textContent = bgYen(Math.round(bgNum(l.quantity)*bgNum(l.unitPrice))); }); document.getElementById("dl-sub").textContent = bgYen(sub()); };
@@ -3558,13 +3582,26 @@
         if(!window.confirm("freeeに"+label+"の下書きを作成します。\\n取引先：" + pn + "\\n小計（税抜）：" + bgYen(sub()) + "\\nよろしいですか？")) return;
         btn.disabled = true; btn.textContent = "作成中…";
         freeeCall("docs.create", {kind:kind, partnerId: regP ? regP.id : ((isQ && cu && cu.freeePartnerId && pn===cu.name) ? cu.freeePartnerId : ""), partnerName: pn, subject: document.getElementById("dl-subject").value, date: date, dueDate: document.getElementById("dl-due").value,
-          note: document.getElementById("dl-note").value, memo: p.name||"", lines: lines.map(function(l){ return {description:l.description, quantity:bgNum(l.quantity), unit:l.unit, unitPrice:bgNum(l.unitPrice), taxRate:l.taxRate}; })}).then(function(j){
+          note: document.getElementById("dl-note").value, memo: dMemo, lines: lines.map(function(l){ return {description:l.description, quantity:bgNum(l.quantity), unit:l.unit, unitPrice:bgNum(l.unitPrice), taxRate:l.taxRate}; })}).then(function(j){
+          if(j && j.number && draft){ bgSave(pid, {docDrafts:bgDraftsOf(pid).map(function(x){ return x.id===draft.id ? Object.assign({}, x, {freeeNumber:j.number}) : x; })}, "", null, true); }
           if(j && j.configured===false){ toast("freeeが連携されていません"); btn.disabled = false; btn.textContent = "freeeに"+label+"を作成"; return; }
           openModal(label+"を作成しました", '<div style="line-height:1.8">freeeに'+label+'の下書きを作成しました。'+(j.number?'<br>番号：<b>'+esc(j.number)+'</b>':'')+(j.total!=null?'<br>合計（税込）：<b>'+bgYen(j.total)+'</b>':'')+'<br>内容を確認して、発行・送付はfreeeの画面で行ってください。</div>',
             '<button class="btn" data-close-modal>閉じる</button>'+(j.url?'<a class="btn primary" href="'+esc(j.url)+'" target="_blank" rel="noopener">freeeで開く</a>':''));
         }).catch(function(e){ var em = (e && e.message) || "作成できませんでした"; toast(em); var er = document.getElementById("dl-err"); if(er) er.textContent = "作成できませんでした：\n"+em; btn.disabled = false; btn.textContent = "freeeに"+label+"を作成"; });
       });
-      function keep(){ var pe = document.getElementById("dl-partner"); if(pe) partnerName = pe.value; var sj = document.getElementById("dl-subject"); if(sj) p = Object.assign({}, p, {name: sj.value}); }
+      document.getElementById("dl-back").addEventListener("click", function(){ keep(); openBudgetModal(pid); });
+      document.getElementById("dl-draft").addEventListener("click", function(){
+        keep();
+        var now = new Date().toISOString(), id = draft ? draft.id : uid();
+        var rec = {id:id, kind:kind, partnerName:partnerName.trim(), subject:dSubject, date:dDate, dueDate:dDue, note:dNote, lines:L.map(function(l){ return {description:String(l.description||""), quantity:bgNum(l.quantity), unit:l.unit||"", unitPrice:bgNum(l.unitPrice), taxRate:Number(l.taxRate)}; }),
+          by:draft?draft.by:(state.myName||""), at:draft?draft.at:now};
+        if(draft){ rec.edited = now; if(draft.freeeNumber) rec.freeeNumber = draft.freeeNumber; }
+        if(!rec.partnerName && !rec.lines.some(function(l){ return l.description.trim(); })){ toast("取引先か明細を入力してから保存してください"); return; }
+        var arr = bgDraftsOf(pid).slice(), k = arr.findIndex(function(x){ return x.id===id; });
+        if(k>-1) arr[k] = rec; else { if(arr.length>=100){ toast("下書きは1案件につき100件までです"); return; } arr.push(rec); }
+        bgSave(pid, {docDrafts:arr}, label+"の下書きを保存しました", function(){ draft = rec; draftId = id; });
+      });
+      function keep(){ var pe = document.getElementById("dl-partner"); if(pe) partnerName = pe.value; var sj = document.getElementById("dl-subject"); if(sj) dSubject = sj.value; var g = function(i){ var e = document.getElementById(i); return e ? e.value : null; }; var v1 = g("dl-date"); if(v1!==null) dDate = v1; v1 = g("dl-due"); if(v1!==null) dDue = v1; v1 = g("dl-note"); if(v1!==null) dNote = v1; }
     };
     draw();
     if(!freeePartnerCache.list || Date.now()-freeePartnerCache.at>30*60000){
@@ -3572,7 +3609,7 @@
         .catch(function(){ freeePartnerCache.err = true; })
         .then(function(){ var pe = document.getElementById("dl-partner"); if(pe){ keepP(); draw(); } });
     }
-    function keepP(){ var pe = document.getElementById("dl-partner"); if(pe) partnerName = pe.value; var sj = document.getElementById("dl-subject"); if(sj) p = Object.assign({}, p, {name: sj.value}); }
+    function keepP(){ var pe = document.getElementById("dl-partner"); if(pe) partnerName = pe.value; var sj = document.getElementById("dl-subject"); if(sj) dSubject = sj.value; var g = function(i){ var e = document.getElementById(i); return e ? e.value : null; }; var v1 = g("dl-date"); if(v1!==null) dDate = v1; v1 = g("dl-due"); if(v1!==null) dDue = v1; v1 = g("dl-note"); if(v1!==null) dNote = v1; }
   }
   function openBudgetFreee(pid){
     if(!state.isAdmin) return;
