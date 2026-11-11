@@ -1638,6 +1638,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-11-1", title:"11月11日の更新", items:[
+      {t:"顧客登録で、freeeの取引先から情報を読み込めます（管理者）", d:"顧客の登録画面の「freeeの取引先から読み込む」で取引先を検索して選ぶと、名前・ふりがな・メール・電話・住所が入力され、登録するとfreeeの取引先と紐づきます。すでに登録済みの取引先は二重登録を防ぐため読み込めません。", admin:true},
       {t:"設定に「操作ログ」を追加しました（管理者）", d:"誰が・いつ・何を登録／変更／削除したかを、管理者が設定 → 操作ログで全件確認できます（メンバー・対象・期間で絞り込み、CSV出力も可能）。", admin:true},
       {t:"シフト調整の勤務区分をマスタ管理で編集できます", d:"設定 → マスタ管理 → 「シフト調整画面」で、出勤・休み・午前休などの区分を追加・変更・並べ替えできます（略称・色・人数の数え方も指定できます）。", admin:true},
       {t:"設定に「機能制限」を追加しました（管理者）", d:"一般・社外メンバーごとに、データの登録・編集、削除、見られる案件の範囲、メニューごとの利用を決められます。管理者は制限されません。", admin:true},
@@ -11387,7 +11388,8 @@
     var sec = function(title, inner){ return '<div class="cf-section"><h3>'+esc(title)+'</h3><div class="cf-grid">'+inner+'</div></div>'; };
     return '<div>'+
       sec("基本情報",
-        cf("名前", '<input type="text" id="f-cname" placeholder="例：山田花子 / 株式会社〇〇" value="'+v("name")+'">', true, 2, "c_name")+
+        freeeLoadPanelHtml()+
+        cf("名前", '<input type="text" id="f-cname" data-cust-id="'+v("id")+'" placeholder="例：山田花子 / 株式会社〇〇" value="'+v("name")+'">', true, 2, "c_name")+
         cf("名前（ふりがな）", '<input type="text" id="f-ckana" placeholder="例：やまだはなこ" value="'+v("kana")+'">', false, 2)+
         cf("適格請求書発行事業者", sel("f-cinvoice", ["未選択","該当する","該当しない"], src.invoiceIssuer||"未選択"), false, 1, "c_invoice")+
         cf("登録番号（13桁）", '<input type="text" id="f-cinvno" placeholder="例：T1234567890123" maxlength="14" value="'+v("invoiceNumber")+'">', false, 2)+
@@ -11459,7 +11461,54 @@
         .catch(function(){ btn.disabled = false; say("通信に失敗しました", true); });
     });
   }
+  /* ---- 顧客登録で、freeeの取引先から情報を読み込む（管理者・freee連携済みのとき） ---- */
+  function freeeLoadPanelHtml(){
+    if(!state.isAdmin || !freeeAvailable()) return "";
+    return '<div id="cf-freee" style="grid-column:1/-1;border:1px dashed var(--border);border-radius:10px;padding:8px 12px;background:var(--surface-2)">'+
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><button type="button" class="btn sm" id="cf-freee-btn">freeeの取引先から読み込む</button><span id="cf-freee-note" style="font-size:11.5px;color:var(--ink-faint)">名前・ふりがな・メール・電話・住所を、freeeの取引先から入力します</span></div>'+
+      '<div id="cf-freee-box" style="display:none;margin-top:8px"><input type="text" id="cf-freee-q" placeholder="取引先名で検索（例：山田、株式会社）" style="width:100%"><div id="cf-freee-list" style="margin-top:6px;max-height:240px;overflow:auto"></div></div></div>';
+  }
+  function bindFreeeLoad(){
+    var btn = document.getElementById("cf-freee-btn"); if(!btn) return;
+    var box = document.getElementById("cf-freee-box"), q = document.getElementById("cf-freee-q"), listEl = document.getElementById("cf-freee-list"), note = document.getElementById("cf-freee-note");
+    var nz = function(x){ return String(x||"").normalize("NFKC").replace(/[\s\u3000]/g,"").toLowerCase(); };
+    var linkedBy = function(id){ return state.customers.find(function(c){ return String(c.freeePartnerId||"")===String(id); }); };
+    var draw = function(){
+      var all = freeePartnerCache.list || [];
+      if(!all.length){ listEl.innerHTML = '<div style="font-size:12px;color:var(--ink-faint);padding:6px 2px">'+(freeePartnerCache.err ? 'freeeから取得できませんでした。freee連携の設定（設定 → 連携）を確認してください。' : '読み込み中…')+'</div>'; return; }
+      var kw = nz(q.value), hit = all.filter(function(p){ return !kw || nz(p.name).indexOf(kw)!==-1 || nz(p.kana).indexOf(kw)!==-1; }).slice(0,30);
+      listEl.innerHTML = hit.length ? hit.map(function(p){
+        var lk = linkedBy(p.id), pr = (p.prefectureCode!=="" && PREFS[Number(p.prefectureCode)]) || "";
+        return '<button type="button" data-cf-pick="'+esc(String(p.id))+'" class="btn" style="display:block;width:100%;text-align:left;margin-bottom:4px;padding:6px 10px"><b style="font-size:12.5px">'+esc(p.name)+'</b>'+(lk?' <span class="tag muted">登録済み：'+esc(lk.name)+'</span>':'')+'<div style="font-size:11px;color:var(--ink-faint);font-weight:400">'+esc([pr+(p.street1||""), p.phone, p.email].filter(Boolean).join("　"))+'</div></button>';
+      }).join("") + (all.filter(function(p){ return !kw || nz(p.name).indexOf(kw)!==-1 || nz(p.kana).indexOf(kw)!==-1; }).length>30 ? '<div style="font-size:11px;color:var(--ink-faint);padding:2px">先頭30件を表示しています。検索で絞り込んでください</div>' : '') : '<div style="font-size:12px;color:var(--ink-faint);padding:6px 2px">該当する取引先がありません</div>';
+    };
+    btn.addEventListener("click", function(){
+      box.style.display = box.style.display==="none" ? "" : "none";
+      if(box.style.display==="none") return;
+      draw(); q.focus();
+      if(!freeePartnerCache.list || Date.now()-freeePartnerCache.at>30*60000){
+        freeeCall("partners.list", {}).then(function(j){ freeePartnerCache.list = j.partners||[]; freeePartnerCache.at = Date.now(); freeePartnerCache.err = false; })
+          .catch(function(){ freeePartnerCache.err = true; }).then(draw);
+      }
+    });
+    q.addEventListener("input", draw);
+    listEl.addEventListener("click", function(ev){
+      var b = ev.target.closest("[data-cf-pick]"); if(!b) return;
+      var p = (freeePartnerCache.list||[]).find(function(x){ return String(x.id)===b.getAttribute("data-cf-pick"); }); if(!p) return;
+      var lk = linkedBy(p.id), cur = (document.getElementById("f-cname")||{getAttribute:function(){return "";}}).getAttribute("data-cust-id") || "";
+      if(lk && lk.id!==cur){ toast("この取引先は、すでに顧客「"+lk.name+"」として登録されています（二重登録を防ぐため読み込めません）"); return; }
+      var pr = (p.prefectureCode!=="" && PREFS[Number(p.prefectureCode)]) || "";
+      var set = function(id, v){ var el = document.getElementById(id); if(el && v!=null && v!==""){ el.value = v; } };
+      set("f-cname", p.name); set("f-ckana", p.kana); set("f-cemail", p.email); set("f-cphone", p.phone);
+      set("f-cpostal", p.zipcode); set("f-cpref", pr); set("f-caddress", p.street1); set("f-cbuilding", p.street2);
+      var nm = document.getElementById("f-cname"); if(nm){ nm.setAttribute("data-freee-id", String(p.id)); nm.setAttribute("data-freee-name", p.name); nm.setAttribute("data-freee-upd", p.updateDate||""); }
+      var addr = document.getElementById("f-caddress"); if(addr) addr.removeAttribute("data-auto");
+      var sb = document.getElementById("f-submit"); if(sb && sb.disabled && nm && nm.value.trim()) sb.disabled = false;   // 名前が入ったので、登録ボタンを押せるように
+      box.style.display = "none"; note.textContent = "freeeの「"+p.name+"」を読み込みました。内容を確認して登録してください（freeeの取引先と紐づきます）";
+    });
+  }
   function bindCustomerFormEvents(){
+    bindFreeeLoad();
     bindHoujinLookup();
     bindPostalLookup("f-cpostal", null, "f-cpref", "f-caddress");
     var invEl = document.getElementById("f-cinvno"), corpEl = document.getElementById("f-ccorpno"), typeEl = document.getElementById("f-cetype");
@@ -11483,6 +11532,10 @@
     if(corp && !/^\d{13}$/.test(corp)){ toast("法人番号は13桁の数字で入力してください"); return null; }
     var d = {};
     CUSTOMER_FORM_FIELDS.forEach(function(f){ d[f[0]] = f[2]==="sel" ? pick(f[1]) : val(f[1]); });
+    var nmEl = document.getElementById("f-cname");
+    if(nmEl && nmEl.getAttribute("data-freee-id") && nmEl.value.trim()===nmEl.getAttribute("data-freee-name")){   // freeeから読み込んだ名前のままなら、freeeの取引先と紐づける
+      d.freeePartnerId = Number(nmEl.getAttribute("data-freee-id")) || nmEl.getAttribute("data-freee-id"); d.freeeUpdated = nmEl.getAttribute("data-freee-upd") || "";
+    }
     return d;
   }
   // Fills the form from a customer record (used by 顧客一覧から選ぶ).
