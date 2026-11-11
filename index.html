@@ -1638,6 +1638,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-11-1", title:"11月11日の更新", items:[
+      {t:"シフト調整の勤務区分をマスタ管理で編集できます", d:"設定 → マスタ管理 → 「シフト調整画面」で、出勤・休み・午前休などの区分を追加・変更・並べ替えできます（略称・色・人数の数え方も指定できます）。", admin:true},
       {t:"設定に「機能制限」を追加しました（管理者）", d:"一般・社外メンバーごとに、データの登録・編集、削除、見られる案件の範囲、メニューごとの利用を決められます。管理者は制限されません。", admin:true},
       {t:"タスク管理で、完了したタスクが混ざって表示されることがある問題を直しました", d:"「自分が依頼」を見たあと「すべて」「自分の担当」に戻すと、完了済みのタスクも並んだままになっていました。戻したときは未完了のみの表示に戻ります。"},
       {t:"メニューの「工程表」を「カレンダー」に変更しました", d:"中身（横断工程表・担当別・工程一覧・月カレンダー・予定一覧）は今までどおりです。"},
@@ -5524,8 +5525,22 @@
     return html;
   }
   /* ============ シフト調整（メンバーごとの日ごとの勤務状況と、工程の割り当てを1つの表で見て調整する） ============ */
-  var SHIFT_ST = [["work","出","出勤","#2f8f5b"],["off","休","休み","#c0463d"],["am","午前休","午前休（午後出勤）","#c9922a"],["pm","午後休","午後休（午前出勤）","#c9922a"],["trip","直行","出張・直行直帰","#2f6fb3"],["tbd","未定","未定","#8a8f94"]];
-  function shiftSt(code){ for(var i=0;i<SHIFT_ST.length;i++) if(SHIFT_ST[i][0]===code) return SHIFT_ST[i]; return null; }
+  // 勤務区分はマスタ管理で編集できます。1行＝「名称｜略称｜種別｜色（省略可）」。種別：出勤（1人）・半日（0.5人）・休み（工程が入ると警告）・その他（人数に数えない）
+  var SHIFT_TYPES = ["出勤｜出｜出勤","休み｜休｜休み","午前休｜午前休｜半日","午後休｜午後休｜半日","直行｜直行｜出勤｜#2f6fb3","未定｜未定｜その他"];
+  var SHIFT_KIND_COLOR = {"出勤":"#2f8f5b","休み":"#c0463d","半日":"#c9922a","その他":"#8a8f94"};
+  var SHIFT_LEGACY = {work:"出勤", off:"休み", am:"午前休", pm:"午後休", trip:"直行", tbd:"未定"};   // 以前の保存形式
+  function shiftParse(line){
+    var a = String(line||"").split(/[｜|]/).map(function(x){ return x.trim(); }), name = a[0]; if(!name) return null;
+    var kind = ["出勤","休み","半日","その他"].indexOf(a[2])!==-1 ? a[2] : (/休/.test(name) ? "休み" : (/出勤|直行|出張|現場/.test(name) ? "出勤" : "その他"));
+    var color = /^#[0-9a-fA-F]{6}$/.test(a[3]||"") ? a[3] : SHIFT_KIND_COLOR[kind];
+    return [name, a[1]||name.slice(0,3), name, color, kind];   // [名称, 略称, 名称, 色, 種別]
+  }
+  function shiftTypes(){ return SHIFT_TYPES.map(shiftParse).filter(Boolean); }
+  function shiftSt(code){
+    if(!code) return null; var nm = SHIFT_LEGACY[code] || code, all = shiftTypes();
+    for(var i=0;i<all.length;i++) if(all[i][0]===nm) return all[i];
+    return [nm, nm.slice(0,3), nm, "#8a8f94", "その他"];   // マスタから消された区分は、灰色で残る
+  }
   function shiftCanEdit(name){ return !!state.canWrite && (state.isAdmin || name===state.myName); }
   function shiftIndex(){
     var ix = {}; (state.shifts||[]).forEach(function(d){ if(d && d.ym && d.name) ix[d.ym+"|"+d.name] = d; }); return ix;
@@ -5554,7 +5569,7 @@
     if(!state.loaded.projects || !state.loaded.steps || !state.loaded.members) return skeleton();
     var today = localToday(); if(!state.shiftMonth) state.shiftMonth = today.slice(0,7);
     var y = +state.shiftMonth.slice(0,4), mo = +state.shiftMonth.slice(5,7), nd = new Date(y, mo, 0).getDate();
-    var brush = state.shiftBrush || "work", ix = shiftIndex();
+    var types = shiftTypes(), brush = state.shiftBrush || (types[0] ? types[0][0] : "clear"), ix = shiftIndex();
     var names = state.members.filter(function(m){ return m.name; }).map(function(m){ return m.name; });
     // 自分を先頭に
     names.sort(function(a,b){ return (a===state.myName?0:1)-(b===state.myName?0:1); });
@@ -5572,7 +5587,7 @@
       '<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer"><input type="checkbox" id="shift-onlyme"'+(state.shiftOnlyMe?" checked":"")+'> 自分だけ表示</label></div>';
     if(state.shiftErr) html += '<div class="card" style="padding:10px 14px;margin-bottom:10px;border-left:4px solid var(--danger);font-size:12.5px">シフトのデータを読み込めませんでした（'+esc(state.shiftErr)+'）。データベースの権限設定で「shifts」を読み書きできるようにしてください。</div>';
     html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px;font-size:12px"><span style="color:var(--ink-soft)">入力する勤務：</span>'+
-      SHIFT_ST.map(function(t){ return '<button type="button" class="btn sm" data-shift-brush="'+t[0]+'" style="'+(brush===t[0]?'background:'+t[3]+';color:#fff;border-color:'+t[3]:'color:'+t[3]+';border-color:'+t[3])+'">'+esc(t[2])+'</button>'; }).join("")+
+      types.map(function(t){ return '<button type="button" class="btn sm" data-shift-brush="'+esc(t[0])+'" style="'+(brush===t[0]?'background:'+t[3]+';color:#fff;border-color:'+t[3]:'color:'+t[3]+';border-color:'+t[3])+'">'+esc(t[2])+'</button>'; }).join("")+
       '<button type="button" class="btn sm" data-shift-brush="clear" style="'+(brush==="clear"?'background:#555;color:#fff':'')+'">消す</button></div>'+
       '<div style="font-size:11.5px;color:var(--ink-faint);margin-bottom:8px;line-height:1.6">上で勤務を選んでから、表のマスを押すと入力できます（同じ勤務をもう一度押すと消えます）。自分の行は誰でも、全員分は管理者が入力できます。日付を押すと、その日の全員の状況と工程を確認できます。<b style="color:#c0463d">赤い枠</b>は「休みなのに工程が入っている」日です。</div>';
     var shown = state.shiftOnlyMe ? names.filter(function(n){ return n===state.myName; }) : names;
@@ -5584,8 +5599,8 @@
       var can = shiftCanEdit(n), tr = '<tr><td class="nm" style="min-width:120px;max-width:120px;font-size:12px;padding:6px 8px"><div style="display:flex;align-items:center;gap:6px"><span class="mini-avatar" style="background:'+avaColor(n)+';width:22px;height:22px;font-size:11px">'+esc(initials(n))+'</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(n)+'</span></div>'+(can?'<a href="#" data-shift-fill="'+esc(n)+'" style="font-size:10.5px;color:var(--accent)">平日を出勤に</a>':'')+'</td>';
       for(var k=1;k<=nd;k++){
         var iso = y+"-"+String(mo).padStart(2,"0")+"-"+String(k).padStart(2,"0"), dow = parseISO(iso).getDay(), code = shiftCode(ix, n, iso), st = shiftSt(code), a = asg[n+"|"+iso]||[];
-        var conflict = (code==="off" && a.length), bg = st ? st[3] : "";
-        if(code && code!=="off" && code!=="tbd") cnt[iso] = (cnt[iso]||0) + (code==="am"||code==="pm" ? 0.5 : 1);
+        var conflict = (st && st[4]==="休み" && a.length), bg = st ? st[3] : "";
+        if(st && (st[4]==="出勤" || st[4]==="半日")) cnt[iso] = (cnt[iso]||0) + (st[4]==="半日" ? 0.5 : 1);
         stp[iso] = (stp[iso]||0) + a.length;
         tr += '<td data-shift-cell="'+esc(n)+'|'+iso+'" title="'+esc(n+" "+iso+(st?"："+st[2]:"")+(a.length?"\n工程："+a.join("／"):""))+'" style="text-align:center;padding:2px;height:44px;cursor:'+(can?'pointer':'default')+';'+(dow===0||dow===6?'background:#F4F6F5;':'')+(iso===today?'box-shadow:inset 0 0 0 1px #e5b400;':'')+(conflict?'outline:2px solid #e0443c;outline-offset:-2px;':'')+'">'+
           (st ? '<div style="background:'+bg+';color:#fff;border-radius:5px;font-size:10.5px;font-weight:700;line-height:20px;margin:0 1px">'+st[1]+'</div>' : '<div style="height:20px"></div>')+
@@ -5597,7 +5612,7 @@
     for(var k2=1;k2<=nd;k2++){ var iso2 = y+"-"+String(mo).padStart(2,"0")+"-"+String(k2).padStart(2,"0"); sum += '<td style="text-align:center;font-size:11.5px;font-weight:700;background:var(--surface-2)">'+(cnt[iso2]?cnt[iso2]:'<span style="color:var(--ink-faint)">-</span>')+'</td>'; }
     sum += '</tr>';
     html += '<div class="pp-wrap"><table class="pp" style="min-width:'+(120+nd*42)+'px"><thead>'+th+'</thead><tbody>'+body+sum+'</tbody></table></div>';
-    html += '<div class="gt-legend">'+SHIFT_ST.map(function(t){ return '<span><i style="background:'+t[3]+';border-radius:3px"></i>'+esc(t[1])+'＝'+esc(t[2])+'</span>'; }).join("")+'</div>';
+    html += '<div class="gt-legend">'+types.map(function(t){ return '<span><i style="background:'+t[3]+';border-radius:3px"></i>'+esc(t[1])+'＝'+esc(t[2])+'（'+t[4]+'）</span>'; }).join("")+'</div>';
     return html;
   }
   function renderShiftPage(){
@@ -5608,7 +5623,7 @@
       var code = shiftCode(ix, m.name, iso), st = shiftSt(code);
       var steps = state.steps.filter(secretVisible).filter(function(x){ return x.startDate && x.startDate<=iso && ((x.endDate&&x.endDate>=x.startDate)?x.endDate:x.startDate)>=iso && stepWho(x).indexOf(m.name)!==-1 && projectVisibleId(x.projectId); });
       return '<tr><td style="padding:6px 8px;white-space:nowrap;font-weight:600">'+esc(m.name)+'</td><td style="padding:6px 8px;white-space:nowrap">'+(st?'<span style="background:'+st[3]+';color:#fff;border-radius:5px;padding:1px 8px;font-size:11.5px;font-weight:700">'+esc(st[2])+'</span>':'<span style="color:var(--ink-faint)">未入力</span>')+'</td><td style="padding:6px 8px;font-size:12px">'+
-        (steps.length ? steps.map(function(x){ return esc((x.projectName?x.projectName+"：":"")+(x.name||"工程")); }).join("<br>") : '<span style="color:var(--ink-faint)">—</span>')+(code==="off" && steps.length ? '<div style="color:#c0463d;font-weight:700;font-size:11.5px">⚠ 休みの日に工程があります</div>' : '')+'</td></tr>';
+        (steps.length ? steps.map(function(x){ return esc((x.projectName?x.projectName+"：":"")+(x.name||"工程")); }).join("<br>") : '<span style="color:var(--ink-faint)">—</span>')+(st && st[4]==="休み" && steps.length ? '<div style="color:#c0463d;font-weight:700;font-size:11.5px">⚠ 休みの日に工程があります</div>' : '')+'</td></tr>';
     });
     openModal(fmtDate(iso)+" の状況", '<div style="max-height:60vh;overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr style="font-size:11.5px;color:var(--ink-soft);text-align:left"><th style="padding:4px 8px">メンバー</th><th style="padding:4px 8px">勤務</th><th style="padding:4px 8px">担当の工程</th></tr></thead><tbody>'+rows.join("")+'</tbody></table></div>', '<button class="btn" data-close-modal>閉じる</button>');
   }
@@ -5971,14 +5986,15 @@
     q("[data-shift-cell]", function(el){ el.addEventListener("click", function(){
       var a = el.getAttribute("data-shift-cell").split("|"), n = a[0], iso = a[1];
       if(!shiftCanEdit(n)){ toast(n===state.myName ? "この操作を行う権限がありません" : "他の人のシフトは管理者のみ変更できます"); return; }
-      var b = state.shiftBrush || "work", cur = shiftCode(shiftIndex(), n, iso), ch = {};
+      var b = state.shiftBrush || (shiftTypes()[0]||["clear"])[0], cur = shiftCode(shiftIndex(), n, iso), ch = {};
       ch[iso] = (b==="clear" || cur===b) ? "" : b; shiftSave(n, ch);
     }); });
     q("[data-shift-fill]", function(el){ el.addEventListener("click", function(ev){
-      ev.preventDefault(); var n = el.getAttribute("data-shift-fill"), base = state.shiftMonth||localToday().slice(0,7), y = +base.slice(0,4), mo = +base.slice(5,7), nd = new Date(y,mo,0).getDate(), ix = shiftIndex(), ch = {};
-      for(var k=1;k<=nd;k++){ var iso = base+"-"+String(k).padStart(2,"0"), dow = parseISO(iso).getDay(); if(dow>0 && dow<6 && !shiftCode(ix, n, iso)) ch[iso] = "work"; }
+      ev.preventDefault(); var wkT = shiftTypes().filter(function(t){ return t[4]==="出勤"; })[0]; if(!wkT){ toast("マスタに「出勤」の区分がありません"); return; } var wk = wkT[0];
+      var n = el.getAttribute("data-shift-fill"), base = state.shiftMonth||localToday().slice(0,7), y = +base.slice(0,4), mo = +base.slice(5,7), nd = new Date(y,mo,0).getDate(), ix = shiftIndex(), ch = {};
+      for(var k=1;k<=nd;k++){ var iso = base+"-"+String(k).padStart(2,"0"), dow = parseISO(iso).getDay(); if(dow>0 && dow<6 && !shiftCode(ix, n, iso)) ch[iso] = wk; }
       if(!Object.keys(ch).length){ toast("入力できる空きの平日がありません"); return; }
-      shiftSave(n, ch); toast(n+"さんの平日（空欄のみ）を出勤にしました");
+      shiftSave(n, ch); toast(n+"さんの平日（空欄のみ）を「"+wk+"」にしました");
     }); });
     q("[data-ppl-nav]", function(el){ el.addEventListener("click", function(){
       var n = +el.getAttribute("data-ppl-nav"), d = (PPL_SCALES[state.pplScale]||PPL_SCALES["1w"]).days;
@@ -9231,6 +9247,7 @@
     {key:"propertyTypes", label:"物件種類", arr:PROPERTY_TYPES, note:"物件情報の「物件種類」に出ます"},
     {key:"propertyStructures", label:"物件構造", arr:PROPERTY_STRUCTURES, note:"物件情報の「構造」に出ます"},
     {key:"stepNames", label:"工程名", arr:STEP_NAMES, note:"工程表の「工程・予定を追加」で、入力欄の候補として出ます（工程名は自由に入力できます）"},
+    {key:"shiftTypes", label:"シフトの勤務区分", arr:SHIFT_TYPES, note:"シフト調整の入力に出る勤務の種類です。1行に「名称｜略称｜種別｜色」の形で書きます（略称・色は省略できます）。種別は 出勤（1人と数える）／半日（0.5人）／休み（工程が入ると警告）／その他（数えない）。例：出張｜出張｜出勤｜#2f6fb3　※削除しても、入力済みのシフトは灰色で残ります"},
     {key:"eventTypes", label:"予定の種類", arr:EVENT_TYPES, note:"カレンダーの「予定を追加」で選ぶ種類に出ます"},
     {key:"reportTypes", label:"報告書の種類", arr:REPORT_TYPES, note:"報告書の「報告書を作成」で選ぶ種類と、一覧の絞り込みに出ます"},
     {key:"accountItems", label:"勘定科目", arr:ACCOUNT_ITEMS, note:"予算管理の「勘定科目ごとの予算」と実績の入力に出ます。削除しても、登録済みの予算・実績は残ります。freee連携済みなら、freeeの勘定科目を取り込めます"}
@@ -9242,6 +9259,7 @@
     ["member","メンバー",["divisions","roles"]],
     ["schedule","カレンダー",["stepNames"]],
     ["calendar","カレンダー",["eventTypes"]],
+    ["shift","シフト調整",["shiftTypes"]],
     ["reports","報告書",["reportTypes"]],
     ["budget","予算管理",["accountItems"]]
   ];
@@ -13924,6 +13942,11 @@
       if(!list.length){ toast("項目を1つ以上入力してください"); return; }
       if(key==="statuses"){ var miss = STATUS_REQUIRED.filter(function(x){ return list.indexOf(x)===-1; }); if(miss.length){ toast("次の進捗は集計に使うため削除できません：" + miss.join("・")); return; } }
       if(list.some(function(x){ return x.length>30; })){ toast("1項目は30文字以内にしてください"); return; }
+      if(key==="shiftTypes"){
+        var ps = list.map(shiftParse).filter(Boolean), nm = ps.map(function(t){ return t[0]; });
+        if(nm.some(function(n,i){ return nm.indexOf(n)!==i; })){ toast("勤務区分の名称が重なっています（先頭の「｜」までが名称です）"); return; }
+        if(!ps.some(function(t){ return t[4]==="出勤"; })){ toast("種別が「出勤」の区分を1つ以上残してください"); return; }
+      }
       saveMaster(key, list, "マスタを保存しました");
     }); });
     c.querySelectorAll("[data-master-reset]").forEach(function(btn){ btn.addEventListener("click", function(){
