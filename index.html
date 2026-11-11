@@ -1177,6 +1177,7 @@
     {id:"calendar", label:"カレンダー", icon:iCalendar},
     {id:"schedule", label:"カレンダー", icon:iGantt},
     {id:"shift", label:"シフト調整", icon:iUsers},
+    {id:"call", label:"音声通話", icon:iPhoneCall},
     {id:"reports", label:"報告書", icon:iDoc},
     {id:"budget", label:"予算管理", icon:iYenIcon, adminOnly:true},
     {id:"chat", label:"チャット", icon:iChat},
@@ -1638,6 +1639,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-11-1", title:"11月11日の更新", items:[
+      {t:"メニューに「音声通話」を追加しました", d:"メンバーを選んで発信すると、相手のアプリに着信が出ます。応答・拒否・ミュート・終了ができ、最近の通話も確認できます。相手がアプリを開いているときに届きます。初回はマイクの許可が必要です。"},
       {t:"顧客登録で、freeeの取引先から情報を読み込めます（管理者）", d:"顧客の登録画面の「freeeの取引先から読み込む」で取引先を検索して選ぶと、名前・ふりがな・メール・電話・住所が入力され、登録するとfreeeの取引先と紐づきます。すでに登録済みの取引先は二重登録を防ぐため読み込めません。", admin:true},
       {t:"設定に「操作ログ」を追加しました（管理者）", d:"誰が・いつ・何を登録／変更／削除したかを、管理者が設定 → 操作ログで全件確認できます（メンバー・対象・期間で絞り込み、CSV出力も可能）。", admin:true},
       {t:"シフト調整の勤務区分をマスタ管理で編集できます", d:"設定 → マスタ管理 → 「シフト調整画面」で、出勤・休み・午前休などの区分を追加・変更・並べ替えできます（略称・色・人数の数え方も指定できます）。", admin:true},
@@ -2239,6 +2241,7 @@
 
   function subscribeAll(){
     subscribeProjects();
+    subscribeCalls();
     db.collection("customers").onSnapshot(function(snap){
       state.customers = snap.docs.map(toObj).sort(function(a,b){return (b.registeredDate||"").localeCompare(a.registeredDate||"");});
       state.loaded.customers=true; bgRender();
@@ -3051,7 +3054,7 @@
   // 管理者が「設定 > 管理画面」で、スマホ下部のバーに出す項目と順番を決める。全員に共通。保存先: settings/mobileNav
   var MOBILE_NAV_DEFAULT = ["home","sales","construction","chat"];
   var MOBILE_NAV_MAX = 4;   // 右端の「メニュー」と合わせて5つまで
-  var BN_SHORT = {help:"使い方", home:"ホーム", tasks:"タスク", sales:"営業", construction:"施工", calendar:"予定", schedule:"カレンダー", shift:"シフト", reports:"報告書", budget:"予算", chat:"チャット", members:"メンバー", customers:"顧客", files:"写真", apps:"連携", settings:"設定"};
+  var BN_SHORT = {help:"使い方", home:"ホーム", tasks:"タスク", sales:"営業", construction:"施工", calendar:"予定", schedule:"カレンダー", shift:"シフト", call:"通話", reports:"報告書", budget:"予算", chat:"チャット", members:"メンバー", customers:"顧客", files:"写真", apps:"連携", settings:"設定"};
   function mobileNavTabs(){
     var seen = {}, list = (state.mobileNav || MOBILE_NAV_DEFAULT).filter(function(id){
       if(seen[id] || !TABS.some(function(t){ return t.id===id; })) return false; seen[id] = 1; return true;
@@ -4245,6 +4248,7 @@
     home:["mine","担当分","自分が担当の案件に関する内容が表示されます"], tasks:["mine","担当分","自分が担当のタスクが中心です"],
     sales:["mine","担当分","自分が担当の案件だけ表示されます（管理者は全案件）"], construction:["mine","担当分","自分が担当の案件だけ表示されます（管理者は全案件）"],
     shift:["view","一部","全員の勤務を見られます。入力は自分の分だけ（管理者は全員分）"],
+    call:["all","全員","全員が使えます（相手がアプリを開いているときに届きます）"],
     schedule:["mine","担当分","自分が担当の案件の工程だけ表示されます"], reports:["mine","担当分","自分が担当の案件の報告書です"],
     chat:["mine","担当分","担当案件のチャットだけ使えます（社外メンバーには案件チャットは表示されません）"], files:["mine","担当分","自分が担当の案件の写真・ファイルです。社外秘は社外メンバーに非表示"],
     help:["all","全員","全員が使えます"], apps:["all","全員","全員が使えます"], customers:["all","全員","全員が使えます"], settings:["all","全員","個人情報は全員。会社情報・管理画面などは管理者のみ"],
@@ -4400,6 +4404,7 @@
     else if(state.tab==="calendar") c.innerHTML = banner+renderCalendar();
     else if(state.tab==="schedule") c.innerHTML = banner+renderSchedule();
     else if(state.tab==="shift") c.innerHTML = banner+renderShiftPage();
+    else if(state.tab==="call") c.innerHTML = banner+renderCallPage();
     else if(state.tab==="reports") c.innerHTML = banner+renderReports();
     else if(state.tab==="chat") c.innerHTML = renderChat();
     else if(state.tab==="members") c.innerHTML = banner+renderMembers();
@@ -5618,6 +5623,187 @@
     html += '<div class="gt-legend">'+types.map(function(t){ return '<span><i style="background:'+t[3]+';border-radius:3px"></i>'+esc(t[1])+'＝'+esc(t[2])+'（'+t[4]+'）</span>'; }).join("")+'</div>';
     return html;
   }
+  // ---- 音声通話（WebRTC）。接続の受け渡しは calls コレクションで行う（音声そのものはサーバーを通らず、端末同士で直接つなぐ） ----
+  var CALL_RING_MS = 45000;
+  var callSt = null, callsUnsub = null, callRingTimer = null, callTick = null, callCtx = null;
+  state.callHist = null; state.callErr = "";
+  function iPhoneCall(){ return svgIcon('<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>'); }
+  function callSupported(){ return !!(window.RTCPeerConnection && navigator.mediaDevices && navigator.mediaDevices.getUserMedia); }
+  function callWaitIce(pc){
+    return new Promise(function(res){
+      if(pc.iceGatheringState==="complete") return res();
+      var t = setTimeout(done, 4000);
+      function done(){ clearTimeout(t); pc.removeEventListener("icegatheringstatechange", chk); res(); }
+      function chk(){ if(pc.iceGatheringState==="complete") done(); }
+      pc.addEventListener("icegatheringstatechange", chk);
+    });
+  }
+  function callMakePc(stream){
+    var pc = new RTCPeerConnection({iceServers:[{urls:["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}]});
+    stream.getTracks().forEach(function(t){ pc.addTrack(t, stream); });
+    pc.ontrack = function(ev){
+      var a = document.getElementById("call-audio");
+      if(!a){ a = document.createElement("audio"); a.id = "call-audio"; a.autoplay = true; a.setAttribute("playsinline",""); document.body.appendChild(a); }
+      a.srcObject = ev.streams[0]; var p = a.play(); if(p && p.catch) p.catch(function(){});
+    };
+    pc.onconnectionstatechange = function(){
+      if(!callSt || callSt.pc!==pc) return;
+      if(pc.connectionState==="connected" && callSt.phase!=="active"){ callSt.phase = "active"; callSt.started = Date.now(); callStopRing(); if(callSt.ringTimer){ clearTimeout(callSt.ringTimer); callSt.ringTimer = null; } callUi(); }
+      else if(pc.connectionState==="failed"){ toast("通話をつなげられませんでした（回線の状態によっては通話できないことがあります）"); callEnd("ended"); }
+      else if(pc.connectionState==="disconnected"){ var p0 = pc; setTimeout(function(){ if(callSt && callSt.pc===p0 && p0.connectionState==="disconnected"){ toast("通話が切れました"); callEnd("ended"); } }, 6000); }
+    };
+    return pc;
+  }
+  function callMicError(e){ var n = e && e.name; return (n==="NotAllowedError"||n==="SecurityError") ? "マイクの使用が許可されていません。ブラウザの設定でマイクを許可してください" : (n==="NotFoundError" ? "マイクが見つかりません" : "マイクを使えませんでした"); }
+  function callGetMic(){ return navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}, video:false}); }
+  function callStart(peer){
+    if(!db){ toast("プレビューでは通話できません"); return; }
+    if(!callSupported()){ toast("この端末・ブラウザは音声通話に対応していません"); return; }
+    if(callSt){ toast("通話中です"); return; }
+    if(!state.canWrite){ toast("この操作を行う権限がありません"); return; }
+    var me = callSt = {peer:peer, role:"out", phase:"ringing"};
+    callUi();
+    callGetMic().then(function(stream){
+      if(callSt!==me){ stream.getTracks().forEach(function(t){ t.stop(); }); return; }
+      var pc = callMakePc(stream); me.pc = pc; me.stream = stream;
+      return pc.createOffer().then(function(o){ return pc.setLocalDescription(o); }).then(function(){ return callWaitIce(pc); }).then(function(){
+        if(callSt!==me) return;
+        return db.collection("calls").add({from:state.myName, to:peer, status:"ringing", active:true, offer:JSON.stringify(pc.localDescription), createdAt:new Date().toISOString()});
+      }).then(function(ref){
+        if(!ref) return;
+        if(callSt!==me){ db.collection("calls").doc(ref.id).update({status:"missed", active:false}).catch(function(){}); return; }
+        me.id = ref.id;
+        me.ringTimer = setTimeout(function(){ if(callSt===me && me.phase==="ringing"){ toast(peer+"さんは応答しませんでした"); callEnd("missed"); } }, CALL_RING_MS);
+      });
+    }).catch(function(e){ if(callSt===me){ toast(callMicError(e)); callCleanup(); } });
+  }
+  function callAccept(){
+    var s = callSt; if(!s || s.role!=="in" || s.phase!=="incoming") return;
+    callStopRing(); s.phase = "connecting"; callUi();
+    callGetMic().then(function(stream){
+      if(callSt!==s){ stream.getTracks().forEach(function(t){ t.stop(); }); return; }
+      var pc = callMakePc(stream); s.pc = pc; s.stream = stream;
+      return pc.setRemoteDescription(JSON.parse(s.offer)).then(function(){ return pc.createAnswer(); }).then(function(a){ return pc.setLocalDescription(a); }).then(function(){ return callWaitIce(pc); }).then(function(){
+        if(callSt!==s) return;
+        return db.collection("calls").doc(s.id).update({status:"active", answer:JSON.stringify(pc.localDescription), answeredAt:new Date().toISOString()});
+      });
+    }).catch(function(e){ if(callSt===s){ toast(callMicError(e)); db.collection("calls").doc(s.id).update({status:"declined"}).catch(function(){}); callCleanup(); } });
+  }
+  function callEnd(reason){
+    var s = callSt; if(!s) return;
+    if(s.id && db){
+      var u;
+      if(reason==="declined_out") u = {status:"declined", active:false, endedAt:new Date().toISOString()};
+      else if(s.phase==="incoming" || reason==="declined") u = {status:"declined"};       // 拒否：発信側が確認してから終了にする
+      else u = {status:reason||"ended", active:false, endedAt:new Date().toISOString()};
+      db.collection("calls").doc(s.id).update(u).catch(function(){});
+    }
+    callCleanup();
+  }
+  function callCleanup(){
+    var s = callSt; callSt = null; callStopRing();
+    if(s){
+      if(s.ringTimer) clearTimeout(s.ringTimer);
+      try{ if(s.pc){ s.pc.onconnectionstatechange = null; s.pc.close(); } }catch(e){}
+      try{ if(s.stream) s.stream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){}
+    }
+    var a = document.getElementById("call-audio"); if(a){ a.srcObject = null; a.remove(); }
+    if(callTick){ clearInterval(callTick); callTick = null; }
+    callUi();
+    if(state.tab==="call"){ state.callHist = null; render(); }
+  }
+  function callStopRing(){ if(callRingTimer){ clearInterval(callRingTimer); callRingTimer = null; } }
+  function callStartRing(){
+    callStopRing();
+    var beep = function(){
+      try{
+        callCtx = callCtx || new (window.AudioContext||window.webkitAudioContext)();
+        if(callCtx.state==="suspended") callCtx.resume();
+        [0, 0.35].forEach(function(dt){ var o = callCtx.createOscillator(), g = callCtx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(callCtx.destination); var t0 = callCtx.currentTime+dt; g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.25, t0+0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0+0.25); o.start(t0); o.stop(t0+0.3); });
+      }catch(e){}
+      try{ if(navigator.vibrate) navigator.vibrate([300,150,300]); }catch(e){}
+    };
+    beep(); callRingTimer = setInterval(beep, 2500);
+  }
+  function callOnSnap(docs){
+    if(!state.authed || !state.myName) return;
+    var me = state.myName, now = Date.now();
+    docs.forEach(function(d){
+      var age = now - new Date(d.createdAt||0).getTime();
+      if(d.to===me && d.status==="ringing" && age < CALL_RING_MS+5000 && !(callSt && callSt.id===d.id)){
+        if(callSt){ db.collection("calls").doc(d.id).update({status:"declined"}).catch(function(){}); return; }   // 通話中は話し中として断る
+        callSt = {id:d.id, peer:d.from, role:"in", phase:"incoming", offer:d.offer};
+        callStartRing(); callUi();
+        try{ if(document.hidden && window.Notification && Notification.permission==="granted") new Notification("音声通話の着信", {body:d.from+"さんから"}); }catch(e){}
+        return;
+      }
+      if(d.from===me && d.active && age > 120000 && !(callSt && callSt.id===d.id)) db.collection("calls").doc(d.id).update({active:false, status:"missed"}).catch(function(){});   // 残った古い呼び出しを片付ける
+      if(callSt && callSt.id===d.id && callSt.role==="out"){
+        if(d.status==="active" && d.answer && !callSt.answered){
+          callSt.answered = true; callSt.phase = "connecting"; callUi();
+          callSt.pc.setRemoteDescription(JSON.parse(d.answer)).catch(function(){ toast("通話をつなげられませんでした"); callEnd("ended"); });
+        }
+        if(d.status==="declined"){ toast(callSt.peer+"さんが通話を断りました"); callEnd("declined_out"); }
+      }
+    });
+    // 相手が切った・発信を取り消した（呼び出しの記録が有効でなくなった）
+    if(callSt && callSt.id && !docs.some(function(d){ return d.id===callSt.id; })){
+      var wasIn = callSt.phase==="incoming";
+      if(wasIn) toast(callSt.peer+"さんからの着信が終了しました"); else if(callSt.phase==="active"||callSt.phase==="connecting") toast("通話が終了しました");
+      callCleanup();
+    }
+  }
+  function subscribeCalls(){
+    if(callsUnsub || !db) return;
+    try{ callsUnsub = db.collection("calls").where("active","==",true).onSnapshot(function(snap){ state.callErr = ""; callOnSnap(snap.docs.map(toObj)); }, function(e){ state.callErr = (e && e.code)||"error"; if(state.tab==="call") render(); }); }catch(e){}
+  }
+  function callFmtDur(ms){ var s = Math.max(0, Math.round(ms/1000)); return Math.floor(s/60)+":"+("0"+(s%60)).slice(-2); }
+  function callUi(){
+    var el = document.getElementById("call-ui");
+    if(!callSt){ if(el) el.remove(); return; }
+    if(!el){ el = document.createElement("div"); el.id = "call-ui"; el.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:9999;display:flex;justify-content:center;padding:12px;pointer-events:none"; document.body.appendChild(el);
+      el.addEventListener("click", function(ev){ var b = ev.target.closest("[data-call-act]"); if(!b) return; var a = b.getAttribute("data-call-act");
+        if(a==="accept") callAccept(); else if(a==="decline") callEnd("declined"); else if(a==="hang") callEnd("ended");
+        else if(a==="mute" && callSt && callSt.stream){ callSt.muted = !callSt.muted; callSt.stream.getAudioTracks().forEach(function(t){ t.enabled = !callSt.muted; }); callUi(); } }); }
+    var s = callSt, txt = s.phase==="incoming" ? "着信中…" : (s.phase==="ringing" ? "呼び出し中…" : (s.phase==="connecting" ? "接続中…" : callFmtDur(Date.now()-(s.started||Date.now()))));
+    var btn = function(a, label, bg){ return '<button type="button" data-call-act="'+a+'" style="border:0;border-radius:999px;padding:11px 20px;font-size:14px;font-weight:700;color:#fff;background:'+bg+';cursor:pointer">'+label+'</button>'; };
+    el.innerHTML = '<div style="pointer-events:auto;background:#17212b;color:#fff;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.35);padding:14px 16px;min-width:290px;max-width:96vw;display:flex;align-items:center;gap:14px;flex-wrap:wrap">'+
+      '<div style="flex:1;min-width:120px"><div style="font-size:11px;opacity:.7">'+(s.role==="in"?"音声通話（着信）":"音声通話")+'</div><div style="font-size:16px;font-weight:700">'+esc(s.peer||"")+'</div><div id="call-time" style="font-size:13px;opacity:.85">'+txt+'</div></div>'+
+      (s.phase==="incoming" ? btn("accept","応答","#1f9d55")+btn("decline","拒否","#d6302b")
+        : ((s.phase==="active" ? btn("mute", s.muted?"ミュート解除":"ミュート", s.muted?"#b7791f":"#3b4a5a") : "")+btn("hang","終了","#d6302b")))+'</div>';
+    if(s.phase==="active" && !callTick) callTick = setInterval(function(){ var t = document.getElementById("call-time"); if(t && callSt && callSt.started) t.textContent = callFmtDur(Date.now()-callSt.started); }, 1000);
+  }
+  function callHistLoad(){
+    if(!db){ state.callHist = []; return; }
+    state.callHist = "loading";
+    db.collection("calls").orderBy("createdAt","desc").limit(60).get().then(function(snap){
+      var me = state.myName; state.callHist = snap.docs.map(toObj).filter(function(d){ return d.from===me || d.to===me; }).slice(0,20);
+      if(state.tab==="call") render();
+    }).catch(function(){ state.callHist = []; if(state.tab==="call") render(); });
+  }
+  function renderCallPage(){
+    var me = state.myName, h = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">音声通話</h1></div>';
+    h += '<div class="card" style="font-size:12.5px;color:var(--ink-soft);line-height:1.8;margin-bottom:12px">相手を選んで「発信」を押すと、相手のアプリに着信が出ます（相手がアプリを開いている間だけ届きます）。音声は端末どうしで直接つながります。初めて使うときは、マイクの許可を求められます。'+(callSupported()?'':'<br><b style="color:var(--danger)">この端末・ブラウザは音声通話に対応していません。</b>')+(!db?'<br><b style="color:var(--warning)">プレビュー表示のため通話できません。</b>':'')+(state.callErr?'<br><b style="color:var(--danger)">通話の準備ができていません（'+esc(state.callErr)+'）。データベースのルールに calls を追加する必要があります。</b>':'')+'</div>';
+    var list = state.members.filter(function(m){ return m.name && m.name!==me; }).sort(function(a,b){ return String(a.kana||a.name).localeCompare(String(b.kana||b.name),"ja"); });
+    h += '<div class="card"><div style="font-weight:700;margin-bottom:8px">相手を選ぶ</div>'+(list.length ? list.map(function(m){
+      return '<div style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--border)"><div style="flex:1;min-width:0"><div style="font-weight:600">'+esc(m.name)+(m.kind==="external"?' <span style="font-size:11px;color:var(--ink-faint)">（社外）</span>':'')+'</div><div style="font-size:11.5px;color:var(--ink-faint)">'+esc(m.company||"")+'</div></div><button class="btn primary sm" data-call-to="'+esc(m.name)+'"'+(callSt?' disabled':'')+'>'+iPhoneCall()+' 発信</button></div>';
+    }).join("") : '<div style="color:var(--ink-faint);font-size:12.5px">メンバーがいません</div>')+'</div>';
+    var hist = state.callHist;
+    h += '<div class="card" style="margin-top:12px"><div style="font-weight:700;margin-bottom:8px">最近の通話</div>';
+    if(hist==="loading" || hist===null) h += '<div style="color:var(--ink-faint);font-size:12.5px">読み込み中…</div>';
+    else if(!hist.length) h += '<div style="color:var(--ink-faint);font-size:12.5px">通話の記録はありません</div>';
+    else h += hist.map(function(d){
+      var out = d.from===me, peer = out ? d.to : d.from, dur = (d.answeredAt && d.endedAt) ? callFmtDur(new Date(d.endedAt)-new Date(d.answeredAt)) : "";
+      var lab = d.answeredAt ? (out?"発信":"着信")+"　"+dur : (d.status==="declined" ? (out?"断られました":"拒否") : (out?"応答なし":"不在着信"));
+      var miss = !d.answeredAt && !out;
+      return '<div style="display:flex;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border);font-size:12.5px"><span style="flex:1;font-weight:600'+(miss?';color:var(--danger)':'')+'">'+esc(peer)+'</span><span style="color:var(--ink-soft)">'+esc(lab)+'</span><span style="color:var(--ink-faint)">'+esc(fmtDateTime(d.createdAt))+'</span></div>';
+    }).join("");
+    return h+'</div>';
+  }
+  function bindCallEvents(c){
+    c.querySelectorAll("[data-call-to]").forEach(function(b){ b.addEventListener("click", function(){ callStart(b.getAttribute("data-call-to")); }); });
+    if(state.callHist===null) callHistLoad();
+  }
   function renderShiftPage(){
     return '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">シフト調整</h1></div>'+renderShiftBoard();
   }
@@ -6424,7 +6610,7 @@
   function secretSet(p){ return (p && Array.isArray(p.secretFields)) ? p.secretFields : secretDefaults(); }
   /* ============ 機能制限（設定→機能制限。管理者が、一般・社外メンバーが使える機能を決める） ============ */
   // 管理者は常にすべて使えます。保存先：settings/access
-  var ACCESS_TABS = [["home","ホーム"],["help","使い方・Q&A"],["tasks","タスク管理"],["sales","営業案件一覧"],["construction","施工案件一覧"],["schedule","カレンダー"],["shift","シフト調整"],["reports","報告書"],["chat","チャット"],["apps","連携アプリ"],["members","メンバー管理"],["customers","顧客管理"],["files","写真・ファイル"]];
+  var ACCESS_TABS = [["home","ホーム"],["help","使い方・Q&A"],["tasks","タスク管理"],["sales","営業案件一覧"],["construction","施工案件一覧"],["schedule","カレンダー"],["shift","シフト調整"],["call","音声通話"],["reports","報告書"],["chat","チャット"],["apps","連携アプリ"],["members","メンバー管理"],["customers","顧客管理"],["files","写真・ファイル"]];
   var ACCESS_DEFAULT = {general:{edit:true, del:true, scope:"mine", tabs:{}}, external:{edit:true, del:true, scope:"mine", tabs:{}}};
   function accessRule(role, key){
     var d = ACCESS_DEFAULT[role]; if(!d) return key==="scope" ? "all" : true;
@@ -13473,6 +13659,7 @@
       pickUploadSize(fl, function(){ fl.forEach(function(file){ uploadProjectFile(pid, file, fid); }); });
     });
     if(state.tab==="calendar"||state.tab==="schedule"||state.tab==="shift") bindScheduleEvents(c);
+    if(state.tab==="call") bindCallEvents(c);
     if(state.tab==="reports" || state.tab==="project-detail") bindReportEvents(c);
     if(state.tab==="tasks"){
       var tf = state.taskFilter;
