@@ -1176,6 +1176,7 @@
     {id:"construction", label:"施工案件一覧", icon:iDoc},
     {id:"calendar", label:"カレンダー", icon:iCalendar},
     {id:"schedule", label:"カレンダー", icon:iGantt},
+    {id:"shift", label:"シフト調整", icon:iUsers},
     {id:"reports", label:"報告書", icon:iDoc},
     {id:"budget", label:"予算管理", icon:iYenIcon, adminOnly:true},
     {id:"chat", label:"チャット", icon:iChat},
@@ -1189,7 +1190,7 @@
   ];
   function iYenIcon(){ return svgIcon('<circle cx="12" cy="12" r="9"/><path d="M8.5 7.5 12 12l3.5-4.5M12 12v5M9.5 13h5M9.5 15.5h5"/>'); }
   function iCardIcon(){ return svgIcon('<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6 16c.5-1.4 1.7-2 3-2s2.5.6 3 2"/><path d="M14.5 10h3.5M14.5 13.5h2.5"/>'); }
-  function tabVisible(t){ if(t.id==="calendar") return false; return t.id==="cards" ? cardsAllowed() : (!t.adminOnly || !!state.isAdmin); }
+  function tabVisible(t){ if(t.id==="calendar") return false; if(t.id==="shift" && isExternalViewer()) return false; return t.id==="cards" ? cardsAllowed() : (!t.adminOnly || !!state.isAdmin); }
   // 名刺管理は管理者のほか、管理者が指定したメンバー（members の cardAccess）も使える
   function cardsAllowed(){ if(state.isAdmin) return true; var m = state.myName ? state.members.find(function(x){ return x.name===state.myName; }) : null; return !!(m && m.cardAccess); }
   var SUBPAGES = {"project-form":1,"project-detail":1,"member-form":1,"project-files":1};
@@ -1635,8 +1636,8 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-11-1", title:"11月11日の更新", items:[
-      {t:"メニューの「工程表」を「カレンダー」に変更しました", d:"中身（横断工程表・担当別・シフト調整・工程一覧・月カレンダー・予定一覧）は今までどおりです。"},
-      {t:"「シフト調整」を追加しました（工程表 → シフト調整）", d:"メンバーごとに、日ごとの勤務（出勤・休み・午前休・午後休・直行・未定）を入力できる月表です。同じ表に工程の件数も出るので、休みの日に工程が入っていると赤い枠で気づけます。日付を押すと、その日の全員の勤務と担当工程を確認できます。自分の行は誰でも、全員分は管理者が入力できます。"},
+      {t:"メニューの「工程表」を「カレンダー」に変更しました", d:"中身（横断工程表・担当別・工程一覧・月カレンダー・予定一覧）は今までどおりです。"},
+      {t:"「シフト調整」を追加しました（メニュー → シフト調整）", d:"メンバーごとに、日ごとの勤務（出勤・休み・午前休・午後休・直行・未定）を入力できる月表です。同じ表に工程の件数も出るので、休みの日に工程が入っていると赤い枠で気づけます。日付を押すと、その日の全員の勤務と担当工程を確認できます。自分の行は誰でも、全員分は管理者が入力できます。"},
       {t:"案件に「問合日」と「現地調査日」を追加しました", d:"案件の登録・編集画面と案件詳細に入力欄が増えました（社外秘の設定もできます）。案件一覧では「表示項目」から列として表示・並び替えでき、CSV取込・一括編集にも対応しています。"},
       {t:"写真を案件のチャットに送れます（加工した写真もOK）", d:"写真・ファイルで写真を拡大して「💬 チャットに送る」を押すと、その案件のチャットに写真が投稿されます。加工済みの写真は書き込み入りの画像で送られます。加工を保存した直後にも「チャットにも送りますか？」と確認が出ます。"},
       {t:"写真・ファイルの写真にも、書き込み・文字入れ・明るさ調整ができます", d:"写真・ファイル（一覧・案件別どちらも）で写真をタップして拡大し、左上の「✎ 加工」を押します。案件別の画面は、写真の「編集」からも加工できます。矢印・四角・丸・ペン・黒塗り・文字（移動・大きさ変更つき）に対応。元の写真は変わらず、加工した内容は重ねて保存されます。加工した写真には一覧に「加工済」と表示され、拡大表示と「写真に保存」では書き込み入りの画像になります（「ダウンロード」は元の写真です）。"},
@@ -3042,7 +3043,7 @@
   // 管理者が「設定 > 管理画面」で、スマホ下部のバーに出す項目と順番を決める。全員に共通。保存先: settings/mobileNav
   var MOBILE_NAV_DEFAULT = ["home","sales","construction","chat"];
   var MOBILE_NAV_MAX = 4;   // 右端の「メニュー」と合わせて5つまで
-  var BN_SHORT = {help:"使い方", home:"ホーム", tasks:"タスク", sales:"営業", construction:"施工", calendar:"予定", schedule:"カレンダー", reports:"報告書", budget:"予算", chat:"チャット", members:"メンバー", customers:"顧客", files:"写真", apps:"連携", settings:"設定"};
+  var BN_SHORT = {help:"使い方", home:"ホーム", tasks:"タスク", sales:"営業", construction:"施工", calendar:"予定", schedule:"カレンダー", shift:"シフト", reports:"報告書", budget:"予算", chat:"チャット", members:"メンバー", customers:"顧客", files:"写真", apps:"連携", settings:"設定"};
   function mobileNavTabs(){
     var seen = {}, list = (state.mobileNav || MOBILE_NAV_DEFAULT).filter(function(id){
       if(seen[id] || !TABS.some(function(t){ return t.id===id; })) return false; seen[id] = 1; return true;
@@ -4235,13 +4236,14 @@
   var TAB_ROLE = {
     home:["mine","担当分","自分が担当の案件に関する内容が表示されます"], tasks:["mine","担当分","自分が担当のタスクが中心です"],
     sales:["mine","担当分","自分が担当の案件だけ表示されます（管理者は全案件）"], construction:["mine","担当分","自分が担当の案件だけ表示されます（管理者は全案件）"],
+    shift:["shift","一部","全員の勤務を見られます。入力は自分の分だけ（管理者は全員分）。社外メンバーには表示されません"],
     schedule:["mine","担当分","自分が担当の案件の工程だけ表示されます"], reports:["mine","担当分","自分が担当の案件の報告書です"],
     chat:["mine","担当分","担当案件のチャットだけ使えます（社外メンバーには案件チャットは表示されません）"], files:["mine","担当分","自分が担当の案件の写真・ファイルです。社外秘は社外メンバーに非表示"],
     help:["all","全員","全員が使えます"], apps:["all","全員","全員が使えます"], customers:["all","全員","全員が使えます"], settings:["all","全員","個人情報は全員。会社情報・管理画面などは管理者のみ"],
     members:["view","閲覧のみ","一覧は全員が見られます。登録・編集は管理者のみ"],
     budget:["admin","管理者","管理者専用"], sns:["admin","管理者","管理者専用"], cards:["card","限定","管理者と、管理者が許可したメンバーのみ"]
   };
-  var ROLE_TRIPLET = {all:["◎","◎","◎"], mine:["◎","○","○"], view:["◎","△","△"], admin:["◎","×","×"], card:["◎","△","×"]};
+  var ROLE_TRIPLET = {all:["◎","◎","◎"], mine:["◎","○","○"], view:["◎","△","△"], admin:["◎","×","×"], card:["◎","△","×"], shift:["◎","△","×"]};
   function roleChipHtml(icon, label, v){
     var d = {"◎":["#1f7a4d","#e6f4ec","すべて"],"○":["#2f5bea","#e8eefd","担当のみ"],"△":["#b7791f","#fdf3de","一部のみ"],"×":["#b4443a","#fbe9e7","使えない"]}[v];
     return '<span class="rc" style="background:'+d[1]+';color:'+d[0]+'">'+icon+' '+label+' '+v+' '+d[2]+'</span>';
@@ -4388,6 +4390,7 @@
     else if(state.tab==="tasks") c.innerHTML = banner+renderTasks();
     else if(state.tab==="calendar") c.innerHTML = banner+renderCalendar();
     else if(state.tab==="schedule") c.innerHTML = banner+renderSchedule();
+    else if(state.tab==="shift") c.innerHTML = banner+renderShiftPage();
     else if(state.tab==="reports") c.innerHTML = banner+renderReports();
     else if(state.tab==="chat") c.innerHTML = renderChat();
     else if(state.tab==="members") c.innerHTML = banner+renderMembers();
@@ -5028,7 +5031,7 @@
   }
   function schedSwitch(){
     var on = state.tab==="calendar" ? (state.calView==="list"?"events":"month") : (state.ganttView||"chart");
-    return '<div class="segmented" style="margin-bottom:14px">'+[["chart","横断工程表（案件別）"],["people","担当別"],["shift","シフト調整"],["list","工程一覧"],["month","月カレンダー"],["events","予定一覧"]].filter(function(x){ return x[0]!=="shift" || !isExternalViewer(); }).map(function(x){ return '<div class="segopt'+(on===x[0]?' active':'')+'" data-sched-view="'+x[0]+'">'+x[1]+'</div>'; }).join("")+'</div>';
+    return '<div class="segmented" style="margin-bottom:14px">'+[["chart","横断工程表（案件別）"],["people","担当別"],["list","工程一覧"],["month","月カレンダー"],["events","予定一覧"]].map(function(x){ return '<div class="segopt'+(on===x[0]?' active':'')+'" data-sched-view="'+x[0]+'">'+x[1]+'</div>'; }).join("")+'</div>';
   }
   function renderCalendar(){
     if(!state.loaded.projects || !state.loaded.tasks || !state.loaded.steps || !state.loaded.events) return skeleton();
@@ -5434,8 +5437,7 @@
     var grid = 'background-image:linear-gradient(to right,#EEF1F0 0,#EEF1F0 '+dw+'px,transparent '+dw+'px,transparent '+(6*dw)+'px,#EEF1F0 '+(6*dw)+'px,#EEF1F0 '+(7*dw)+'px),linear-gradient(to right,rgba(0,0,0,.06) 1px,transparent 1px);background-size:'+(7*dw)+'px 100%,'+dw+'px 100%;background-position:'+(-startDow*dw)+'px 0,0 0;';
     var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">カレンダー</h1>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap">'+csvToolbar("steps")+'<button class="btn outline" data-sched-print>'+iDownload()+' 印刷 / PDF</button><button class="btn primary" data-step-add="">'+iPlus()+' 工程・予定を追加</button></div></div><div style="height:12px"></div>'+
-      schedSwitch()+(state.ganttView==="shift" ? "" : stepScopeBar());
-    if(state.ganttView==="shift" && !isExternalViewer()) return html + renderShiftBoard();
+      schedSwitch()+stepScopeBar();
     if(state.ganttView==="list") return html + renderStepList();
     if(state.ganttView==="people") return html + renderPeopleChart();
     html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
@@ -5591,6 +5593,10 @@
     html += '<div class="pp-wrap"><table class="pp" style="min-width:'+(120+nd*42)+'px"><thead>'+th+'</thead><tbody>'+body+sum+'</tbody></table></div>';
     html += '<div class="gt-legend">'+SHIFT_ST.map(function(t){ return '<span><i style="background:'+t[3]+';border-radius:3px"></i>'+esc(t[1])+'＝'+esc(t[2])+'</span>'; }).join("")+'</div>';
     return html;
+  }
+  function renderShiftPage(){
+    if(isExternalViewer()) return emptyState(iUsers,"この画面は社外メンバーには表示されません","");
+    return '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">シフト調整</h1></div>'+renderShiftBoard();
   }
   function openShiftDay(iso){
     var ix = shiftIndex(), rows = state.members.filter(function(m){ return m.name; }).map(function(m){
@@ -9408,6 +9414,7 @@
   var PERM_ROWS = [
     ["メニュー", null],
     ["ホーム・タスク管理・営業案件一覧・施工案件一覧・カレンダー・報告書・チャット・写真ファイル","◎","○","○","一般・社外は自分が担当の案件に関するものだけ表示されます（管理者は全案件）"],
+    ["シフト調整","◎","△","×","全員の勤務を見られます。入力は自分の分だけ（管理者は全員分）。社外メンバーには表示されません"],
     ["顧客管理","◎","◎","◎","顧客の登録・編集は全員可。ただし案件の画面では、社外メンバーに顧客情報は出ません"],
     ["メンバー管理","◎","△","△","一覧は全員が見られます。登録・編集・権限変更は管理者のみ"],
     ["連携アプリ","◎","◎","◎","LINE WORKSなど、接続済みの連携アプリが開けます"],
@@ -13189,7 +13196,7 @@
       pfInput.value = "";
       pickUploadSize(fl, function(){ fl.forEach(function(file){ uploadProjectFile(pid, file, fid); }); });
     });
-    if(state.tab==="calendar"||state.tab==="schedule") bindScheduleEvents(c);
+    if(state.tab==="calendar"||state.tab==="schedule"||state.tab==="shift") bindScheduleEvents(c);
     if(state.tab==="reports" || state.tab==="project-detail") bindReportEvents(c);
     if(state.tab==="tasks"){
       var tf = state.taskFilter;
