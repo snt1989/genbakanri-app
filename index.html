@@ -1639,6 +1639,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-11-1", title:"11月11日の更新", items:[
+      {t:"音声通話を使うには、パスワードが必要になりました", d:"管理者が設定の管理画面で「音声通話のパスワード」を決めます。端末ごとに一度入力すると、その端末では覚えます。未設定のあいだは誰でも使えます。"},
       {t:"メニューに「音声通話」を追加しました", d:"メンバーを選んで発信すると、相手のアプリに着信が出ます。応答・拒否・ミュート・終了ができ、最近の通話も確認できます。相手がアプリを開いているときに届きます。初回はマイクの許可が必要です。"},
       {t:"顧客登録で、freeeの取引先から情報を読み込めます（管理者）", d:"顧客の登録画面の「freeeの取引先から読み込む」で取引先を検索して選ぶと、名前・ふりがな・メール・電話・住所が入力され、登録するとfreeeの取引先と紐づきます。すでに登録済みの取引先は二重登録を防ぐため読み込めません。", admin:true},
       {t:"設定に「操作ログ」を追加しました（管理者）", d:"誰が・いつ・何を登録／変更／削除したかを、管理者が設定 → 操作ログで全件確認できます（メンバー・対象・期間で絞り込み、CSV出力も可能）。", admin:true},
@@ -2213,6 +2214,7 @@
     loadMasters();
     loadFreeeSettings();
     loadMobileNav();
+    loadCallPw();
     loadBrand();
     loadListDefaults();
     loadMyListPrefs();
@@ -5624,6 +5626,25 @@
     return html;
   }
   // ---- 音声通話（WebRTC）。接続の受け渡しは calls コレクションで行う（音声そのものはサーバーを通らず、端末同士で直接つなぐ） ----
+  // ---- 通話パスワード（管理者が設定。端末ごとに一度入力すると、その端末では覚える） ----
+  state.callPassword = null;   // null=未読込、""=未設定
+  function callPw(){ return state.callPassword || ""; }
+  function callUnlockKey(){ return "gc_callpw_ok"; }
+  function callUnlocked(){
+    var pw = callPw(); if(!pw) return true;
+    try{ return localStorage.getItem(callUnlockKey())===callHash(pw); }catch(e){ return !!state.callSessionOk; }
+  }
+  function callHash(pw){ var h = 5381; for(var i=0;i<pw.length;i++) h = ((h<<5)+h+pw.charCodeAt(i))|0; return "h"+h; }
+  function callUnlockSave(){ try{ if(callPw()) localStorage.setItem(callUnlockKey(), callHash(callPw())); else localStorage.removeItem(callUnlockKey()); }catch(e){} state.callSessionOk = true; }
+  function loadCallPw(){
+    if(!db){ state.callPassword = ""; return; }
+    db.doc("settings/call").get().then(function(snap){ state.callPassword = (snap.exists && snap.data().password) || ""; if(state.tab==="call") render(); }).catch(function(){ state.callPassword = ""; });
+  }
+  function callLockHtml(){
+    return '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">音声通話</h1></div>'+
+      '<div class="card" style="max-width:420px;padding:18px;display:flex;flex-direction:column;gap:12px"><div style="font-size:13px;line-height:1.7">音声通話を使うには、パスワードが必要です。<br><span style="font-size:11.5px;color:var(--ink-faint)">パスワードは管理者にご確認ください。</span></div>'+
+      '<input type="password" id="call-pw-in" autocomplete="off" placeholder="通話パスワード"><div><button class="btn primary" id="call-pw-go">開く</button></div></div>';
+  }
   var CALL_RING_MS = 45000;
   var callSt = null, callsUnsub = null, callRingTimer = null, callTick = null, callCtx = null;
   state.callHist = null; state.callErr = "";
@@ -5660,6 +5681,7 @@
     if(!db){ toast("プレビューでは通話できません"); return; }
     if(!callSupported()){ toast("この端末・ブラウザは音声通話に対応していません"); return; }
     if(callSt){ toast("通話中です"); return; }
+    if(!callUnlocked()){ toast("通話パスワードを入力してください"); return; }
     if(!state.canWrite){ toast("この操作を行う権限がありません"); return; }
     var me = callSt = {peer:peer, role:"out", phase:"ringing"};
     callUi();
@@ -5679,6 +5701,7 @@
   }
   function callAccept(){
     var s = callSt; if(!s || s.role!=="in" || s.phase!=="incoming") return;
+    if(!callUnlocked()){ toast("通話パスワードを入力してください（メニューの音声通話から）"); return; }
     callStopRing(); s.phase = "connecting"; callUi();
     callGetMic().then(function(stream){
       if(callSt!==s){ stream.getTracks().forEach(function(t){ t.stop(); }); return; }
@@ -5730,7 +5753,7 @@
     var me = state.myName, now = Date.now();
     docs.forEach(function(d){
       var age = now - new Date(d.createdAt||0).getTime();
-      if(d.to===me && d.status==="ringing" && age < CALL_RING_MS+5000 && !(callSt && callSt.id===d.id)){
+      if(d.to===me && d.status==="ringing" && callUnlocked() && age < CALL_RING_MS+5000 && !(callSt && callSt.id===d.id)){
         if(callSt){ db.collection("calls").doc(d.id).update({status:"declined"}).catch(function(){}); return; }   // 通話中は話し中として断る
         callSt = {id:d.id, peer:d.from, role:"in", phase:"incoming", offer:d.offer};
         callStartRing(); callUi();
@@ -5782,6 +5805,8 @@
     }).catch(function(){ state.callHist = []; if(state.tab==="call") render(); });
   }
   function renderCallPage(){
+    if(state.callPassword===null) return '<h1 class="pagetitle">音声通話</h1><div class="card" style="color:var(--ink-faint);font-size:12.5px">読み込み中…</div>';
+    if(!callUnlocked()) return callLockHtml();
     var me = state.myName, h = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">音声通話</h1></div>';
     h += '<div class="card" style="font-size:12.5px;color:var(--ink-soft);line-height:1.8;margin-bottom:12px">相手を選んで「発信」を押すと、相手のアプリに着信が出ます（相手がアプリを開いている間だけ届きます）。音声は端末どうしで直接つながります。初めて使うときは、マイクの許可を求められます。'+(callSupported()?'':'<br><b style="color:var(--danger)">この端末・ブラウザは音声通話に対応していません。</b>')+(!db?'<br><b style="color:var(--warning)">プレビュー表示のため通話できません。</b>':'')+(state.callErr?'<br><b style="color:var(--danger)">通話の準備ができていません（'+esc(state.callErr)+'）。データベースのルールに calls を追加する必要があります。</b>':'')+'</div>';
     var list = state.members.filter(function(m){ return m.name && m.name!==me; }).sort(function(a,b){ return String(a.kana||a.name).localeCompare(String(b.kana||b.name),"ja"); });
@@ -5801,6 +5826,13 @@
     return h+'</div>';
   }
   function bindCallEvents(c){
+    var go = c.querySelector("#call-pw-go");
+    if(go){
+      var tryPw = function(){ var v = (c.querySelector("#call-pw-in")||{}).value||""; if(v!==callPw()){ toast("パスワードが違います"); return; } callUnlockSave(); render(); };
+      go.addEventListener("click", tryPw);
+      var inp = c.querySelector("#call-pw-in"); if(inp) inp.addEventListener("keydown", function(ev){ if(ev.key==="Enter") tryPw(); });
+      return;
+    }
     c.querySelectorAll("[data-call-to]").forEach(function(b){ b.addEventListener("click", function(){ callStart(b.getAttribute("data-call-to")); }); });
     if(state.callHist===null) callHistLoad();
   }
@@ -10022,6 +10054,13 @@
     html += '<div><button class="btn primary" id="del-pw-save">'+iAdmin()+'削除用パスワードを変更する</button></div>';
     html += '</div>';
 
+    html += '<h2 style="font-size:13.5px;margin:4px 0 10px">音声通話のパスワード</h2>';
+    html += '<div class="card" style="padding:16px 18px;max-width:520px;display:flex;flex-direction:column;gap:12px;margin-bottom:18px">';
+    html += '<div style="font-size:11.5px;color:var(--ink-faint);line-height:1.6">メニューの「音声通話」を使うときに入力するパスワードです（全員共通）。端末ごとに一度入力すると、その端末では覚えます。パスワードを変更すると、全員が入力し直しになります。'+(callPw()?'<br>現在：<b>設定済み</b>':'<br><b style="color:var(--danger)">現在は未設定です（誰でも使えます）。</b>')+'</div>';
+    html += field("新しい通話パスワード（4文字以上。空にして保存すると解除）", '<input type="password" id="call-pw-new" autocomplete="new-password">');
+    html += '<div><button class="btn primary" id="call-pw-save">'+iAdmin()+'通話パスワードを保存する</button></div>';
+    html += '</div>';
+
     html += '<h2 style="font-size:13.5px;margin:4px 0 10px">社外秘の初期設定</h2>';
     html += '<div class="card" style="padding:16px 18px;max-width:520px;display:flex;flex-direction:column;gap:12px;margin-bottom:18px">';
     html += '<div style="font-size:11.5px;color:var(--ink-faint);line-height:1.6">チェックした項目は、案件の登録時に最初から「社外秘」（社外メンバーに非表示）になります。個別に設定を変えていない既存の案件にも反映されます。案件ごとの設定は案件の編集画面で変更できます。</div>';
@@ -14241,6 +14280,15 @@
       db.doc("settings/photo").set(Object.assign({}, v, {updatedAt:new Date().toISOString(), updatedBy:state.myName||""})).then(function(){ toast("写真の設定を保存しました"); }).catch(function(){ toast("保存に失敗しました"); });
     });
     renderSettingsAccessBind(); auditBind(c);
+    var callPwSave = document.getElementById("call-pw-save");
+    if(callPwSave) callPwSave.addEventListener("click", function(){
+      if(!state.isAdmin){ toast("通話パスワードの変更は管理者のみ行えます"); return; }
+      var v = document.getElementById("call-pw-new").value;
+      if(v && v.length<4){ toast("通話パスワードは4文字以上で入力してください"); return; }
+      var done = function(){ state.callPassword = v; callUnlockSave(); toast(v ? "通話パスワードを保存しました" : "通話パスワードを解除しました"); render(); };
+      if(db) db.doc("settings/call").set({password:v, updatedAt:new Date().toISOString(), updatedBy:state.myName||""}).then(done).catch(function(){ toast("保存に失敗しました"); });
+      else done();
+    });
     var delPwSave = document.getElementById("del-pw-save");
     if(delPwSave) delPwSave.addEventListener("click", function(){
       if(!state.isAdmin){ toast("削除用パスワードの変更は管理者のみ行えます"); return; }
