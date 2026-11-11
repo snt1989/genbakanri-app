@@ -6918,6 +6918,12 @@
 
       Object.assign(data, projectCustomerData(cdata), readPropertyData());
       data.secretFields = readSecrets(document.getElementById("content"), state.editingProject||state.copySrc||{});
+      // 編集のときは、画面を開いてから自分が変えた項目だけを保存する。
+      // （全項目を書き込むと、編集中に他の人が変えた進捗などを、古い値で上書きして戻してしまうため）
+      if(state.editingProject){
+        var orig0 = state.editingProject, same0 = function(a,b){ try{ return JSON.stringify(a===undefined?"":a)===JSON.stringify(b===undefined?"":b); }catch(e){ return false; } };
+        Object.keys(data).forEach(function(k){ if(k!=="name" && same0(data[k], orig0[k])) delete data[k]; });
+      }
       var doSave = function(){
       ensureCustomer(cdata, function(customerId){
         data.customerId = customerId;
