@@ -1564,7 +1564,7 @@
     });
     var ack = tkAcked();
     state.tasks.filter(function(t){ return t.done && taskRequestedByMe(t) && ack.indexOf(t.id)===-1; }).sort(function(a,b){ return String(b.doneAt||"").localeCompare(String(a.doneAt||"")); }).forEach(function(t){
-      items.push({grp:"task", urgent:true, title:"依頼したタスクが完了しました："+(t.title||"タスク"), sub:(t.assignee||"")+"さんが完了"+(t.doneAt?"（"+fmtDateTime(t.doneAt)+"）":"")+(t.projectName?" ／ "+t.projectName:""), go:function(){ state.taskFilter.scope = "requested"; state.taskFilter.status = "all"; setTab("tasks"); }});
+      items.push({grp:"task", urgent:true, title:"依頼したタスクが完了しました："+(t.title||"タスク"), sub:(t.assignee||"")+"さんが完了"+(t.doneAt?"（"+fmtDateTime(t.doneAt)+"）":"")+(t.projectName?" ／ "+t.projectName:""), go:function(){ var tf0 = state.taskFilter; tf0.scope = "requested"; if(tf0.status==="open"){ tf0.status = "all"; tf0._auto = true; } setTab("tasks"); }});
     });
     state.tasks.filter(function(t){ return !t.done && t.dueDate===tmr && mine(t); }).forEach(function(t){
       items.push({grp:"task", title:t.title||"タスク", sub:"明日が期限"+(t.projectName?" ／ "+t.projectName:""), go:function(){ setTab("tasks"); }});
@@ -1636,6 +1636,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-11-1", title:"11月11日の更新", items:[
+      {t:"タスク管理で、完了したタスクが混ざって表示されることがある問題を直しました", d:"「自分が依頼」を見たあと「すべて」「自分の担当」に戻すと、完了済みのタスクも並んだままになっていました。戻したときは未完了のみの表示に戻ります。"},
       {t:"メニューの「工程表」を「カレンダー」に変更しました", d:"中身（横断工程表・担当別・工程一覧・月カレンダー・予定一覧）は今までどおりです。"},
       {t:"「シフト調整」を追加しました（メニュー → シフト調整）", d:"メンバーごとに、日ごとの勤務（出勤・休み・午前休・午後休・直行・未定）を入力できる月表です。同じ表に工程の件数も出るので、休みの日に工程が入っていると赤い枠で気づけます。日付を押すと、その日の全員の勤務と担当工程を確認できます。自分の行は誰でも、全員分は管理者が入力できます。"},
       {t:"案件に「問合日」と「現地調査日」を追加しました", d:"案件の登録・編集画面と案件詳細に入力欄が増えました（社外秘の設定もできます）。案件一覧では「表示項目」から列として表示・並び替えでき、CSV取込・一括編集にも対応しています。"},
@@ -13200,9 +13201,12 @@
     if(state.tab==="reports" || state.tab==="project-detail") bindReportEvents(c);
     if(state.tab==="tasks"){
       var tf = state.taskFilter;
-      c.querySelectorAll("[data-task-scope]").forEach(function(el){ el.addEventListener("click", function(){ tf.scope = el.getAttribute("data-task-scope"); if(tf.scope==="requested") tf.status = "all"; render(); }); });
+      c.querySelectorAll("[data-task-scope]").forEach(function(el){ el.addEventListener("click", function(){ tf.scope = el.getAttribute("data-task-scope");
+        if(tf.scope==="requested"){ if(tf.status==="open"){ tf.status = "all"; tf._auto = true; } }   // 依頼したタスクの完了を見られるよう、一時的に「すべて」にする
+        else if(tf._auto){ tf.status = "open"; tf._auto = false; }   // 「すべて」「自分の担当」に戻したら、未完了だけの表示に戻す（完了済みが混ざらないように）
+        render(); }); });
       if(tf.scope==="requested") tkAckDone();   // 「自分が依頼」を開いたら、完了のお知らせは確認済みにする
-      c.querySelectorAll("[data-task-status]").forEach(function(el){ el.addEventListener("click", function(){ tf.status = el.getAttribute("data-task-status"); render(); }); });
+      c.querySelectorAll("[data-task-status]").forEach(function(el){ el.addEventListener("click", function(){ tf.status = el.getAttribute("data-task-status"); tf._auto = false; render(); }); });
       var tq = document.getElementById("tk-q"); if(tq) tq.addEventListener("keydown", function(e){ if(e.key==="Enter"){ tf.q = tq.value.trim(); render(); } }), tq.addEventListener("change", function(){ tf.q = tq.value.trim(); render(); });
       var tp = document.getElementById("tk-project"); if(tp) tp.addEventListener("change", function(){ tf.project = tp.value; render(); });
       
