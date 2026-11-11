@@ -1338,6 +1338,7 @@
     var l = document.getElementById("lightbox"); if(!l || !lbState) return;
     var it = lbState.list[lbState.i], n = lbState.list.length;
     var fdoc = lbFileDoc(it), pb = l.querySelector(".lb-pe"); if(pb) pb.style.display = (fdoc && canEditPhoto(fdoc)) ? "" : "none";
+    var cb = l.querySelector(".lb-ch"); if(cb) cb.style.display = (fdoc && canChatPhoto(fdoc)) ? "" : "none";
     var im = l.querySelector("img"); im.src = it.href;
     if(fdoc && photoEdited(fdoc)){   // 加工した写真は、書き込みと明るさを反映した画像で表示（保存もこの画像）
       var want = it.href;
@@ -1353,10 +1354,14 @@
     closeLightbox();
     lbState = {list:list, i:i};
     var l = document.createElement("div"); l.id = "lightbox";
-    l.innerHTML = '<div class="lb-top"><span class="lb-count"></span><span style="display:flex;gap:8px"><button class="lb-btn lb-pe" title="書き込み・文字入れ・明るさ調整" style="display:none">✎ 加工</button><a class="lb-btn lb-dl" title="写真アプリに保存">写真に保存</a><button class="lb-btn lb-x" title="閉じる">✕ 閉じる</button></span></div>'+
+    l.innerHTML = '<div class="lb-top"><span class="lb-count"></span><span style="display:flex;gap:8px"><button class="lb-btn lb-ch" title="この写真（加工済みならその内容）を案件のチャットに送る" style="display:none">💬 チャットに送る</button><button class="lb-btn lb-pe" title="書き込み・文字入れ・明るさ調整" style="display:none">✎ 加工</button><a class="lb-btn lb-dl" title="写真アプリに保存">写真に保存</a><button class="lb-btn lb-x" title="閉じる">✕ 閉じる</button></span></div>'+
       '<button class="lb-btn lb-nav prev" aria-label="前へ">‹</button><img alt=""><button class="lb-btn lb-nav next" aria-label="次へ">›</button>';
     document.body.appendChild(l);
     l.querySelector(".lb-x").addEventListener("click", closeLightbox);
+    l.querySelector(".lb-ch").addEventListener("click", function(){
+      var it = lbState && lbState.list[lbState.i], f = it && lbFileDoc(it); if(!f) return;
+      sendPhotoToChat(f);
+    });
     l.querySelector(".lb-pe").addEventListener("click", function(){
       var it = lbState && lbState.list[lbState.i], f = it && lbFileDoc(it); if(!f) return;
       closeLightbox(); editFilePhoto(f);
@@ -1630,6 +1635,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-11-1", title:"11月11日の更新", items:[
+      {t:"写真を案件のチャットに送れます（加工した写真もOK）", d:"写真・ファイルで写真を拡大して「💬 チャットに送る」を押すと、その案件のチャットに写真が投稿されます。加工済みの写真は書き込み入りの画像で送られます。加工を保存した直後にも「チャットにも送りますか？」と確認が出ます。"},
       {t:"写真・ファイルの写真にも、書き込み・文字入れ・明るさ調整ができます", d:"写真・ファイル（一覧・案件別どちらも）で写真をタップして拡大し、左上の「✎ 加工」を押します。案件別の画面は、写真の「編集」からも加工できます。矢印・四角・丸・ペン・黒塗り・文字（移動・大きさ変更つき）に対応。元の写真は変わらず、加工した内容は重ねて保存されます。加工した写真には一覧に「加工済」と表示され、拡大表示と「写真に保存」では書き込み入りの画像になります（「ダウンロード」は元の写真です）。"},
       {t:"案件一覧の1件あたりの縦幅を小さくしました", d:"担当者のタグを横に並べ、工程表・報告書・チャットのボタンも横並びにして、顧客を編集ボタンも小さくしました。1画面で見える案件数が増えます（スマホの縦並び表示は今までどおりです）。"}
     ]},
@@ -6923,7 +6929,37 @@
       if(base+extra>980000){ toast("この写真は容量がいっぱいで、書き込みを保存できません。「写真を軽量化」をしてからやり直してください"); return; }
       _peBake = {};
       writeDoc("files", f.id, data, "写真の加工を保存しました");
+      var merged = Object.assign({}, f, data);
+      setTimeout(function(){ if(canChatPhoto(merged) && confirm("加工した写真を、この案件のチャットにも送りますか？")) sendPhotoToChat(merged, true); }, 400);
     });
+  }
+  // 写真（加工済みなら書き込み・明るさ入りの画像）を、案件のチャットに送る
+  function canChatPhoto(f){
+    if(!f || !isImageFile(f) || f.chunked || !f.projectId || isExternalViewer()) return false;
+    return state.projects.some(function(q){ return q.id===f.projectId; });
+  }
+  function sendPhotoToChat(f, noAsk){
+    var p = state.projects.find(function(q){ return q.id===f.projectId; }); if(!p){ toast("この写真の案件が見つかりません"); return; }
+    if(!seesAllProjects() && !isMyProject(p)){ toast("この案件の担当者ではないため、チャットに送れません"); return; }
+    if(PROJ_ARCHIVED.indexOf(p.status)!==-1){ toast("清算済・失注の案件のチャットは非表示です。ステータスを戻すと送れます"); return; }
+    var chat = state.chats.find(function(c){ return c.projectId===p.id; }), ed = photoEdited(f);
+    if(!noAsk && !confirm((ed?"加工した写真":"この写真")+"を、案件のチャット「"+(chat?chat.name:p.name)+"」に送ります。チャットのメンバー全員に見えます。\n\nよろしいですか？")) return;
+    toast("チャットに送る準備をしています…");
+    var base = String(f.filename||"写真").replace(/\.[^.]+$/,"");
+    var getAtt = ed ?
+      peBake(f).then(function(b){ return uploadBlob(new File([b], base+"（加工）.jpg", {type:"image/jpeg"})).then(function(r){ return {url:r.url, filename:base+"（加工）.jpg", contentType:"image/jpeg"}; }); }) :
+      Promise.resolve({url:fileUrl(f), filename:f.filename||"写真.jpg", contentType:f.contentType||"image/jpeg"});
+    getAtt.then(function(att){
+      ensureProjectChat(p, function(cid){
+        var msg = {text:"", author:state.myName||"自分", ts:new Date().toISOString(), attachment:att};
+        var done = function(){ toast("チャットに送りました"); };
+        if(!db){ msg.id = uid(); state.chatMsgs[cid] = (state.chatMsgs[cid]||[]).concat([msg]); var ch = state.chats.find(function(z){ return z.id===cid; }); if(ch) ch.updatedAt = msg.ts; done(); return; }
+        db.collection("chats").doc(cid).collection("messages").add(msg).then(function(){
+          db.collection("chats").doc(cid).update({updatedAt:msg.ts}).catch(function(){});
+          pushNotify(cid, "（写真: "+att.filename+"）"); done();
+        }).catch(function(){ toast("送信に失敗しました"); });
+      });
+    }).catch(function(e){ if(e && e.message==="too large") uploadFail(e); else toast("写真を準備できませんでした"); });
   }
   // 書き込みと明るさを焼き込んだ画像（拡大表示・保存用）。iPhone/iPadのSafariでも動くよう、明るさ等は画素を直接計算する
   var _peBake = {};
@@ -8404,13 +8440,14 @@
     openModal("ファイルの編集",
       '<label class="field">ファイル名<input type="text" id="f-fname" value="'+esc(f.filename||"")+'"></label>'+
       '<label class="field">フォルダ<select id="f-fmove"><option value="">フォルダなし</option>'+folders.map(function(g){ return '<option value="'+esc(g.id)+'"'+(f.folderId===g.id?' selected':'')+'>'+esc(g.name)+(g.secret?'（社外秘）':'')+'</option>'; }).join("")+'</select></label>'+
-      (canEditPhoto(f) ? '<div style="margin:2px 0 10px"><button class="btn" id="f-fpe" type="button">✎ 写真を加工（書き込み・文字入れ・明るさ）'+(photoEdited(f)?'（加工済）':'')+'</button><div style="font-size:11px;color:var(--ink-faint);margin-top:3px">元の写真は変わりません。書き込みと明るさは重ねて保存され、一覧・拡大表示・「写真に保存」に反映されます。</div></div>' : '')+
+      (canEditPhoto(f) ? '<div style="margin:2px 0 10px"><button class="btn" id="f-fpe" type="button">✎ 写真を加工（書き込み・文字入れ・明るさ）'+(photoEdited(f)?'（加工済）':'')+'</button><button class="btn" id="f-fchat" type="button" style="margin-left:6px">💬 チャットに送る</button><div style="font-size:11px;color:var(--ink-faint);margin-top:3px">元の写真は変わりません。書き込みと明るさは重ねて保存され、一覧・拡大表示・「写真に保存」に反映されます。</div></div>' : '')+
       '<div style="font-size:11.5px;color:var(--ink-faint)">'+esc(fileDate(f))+(f.uploadedBy?" ・ "+esc(f.uploadedBy):"")+(f.size?" ・ "+fmtSize(f.size):"")+'</div>',
       '<button class="btn" id="f-fdel" style="color:var(--danger);margin-right:auto">'+iTrash()+' 削除</button><button class="btn" id="f-fdl">'+iDownload()+' ダウンロード</button><button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-fsave">保存する</button>');
     document.getElementById("f-fdel").addEventListener("click", function(){
       confirmDelete("このファイルを削除しますか？", function(){ deleteDoc("files", f.id, "削除しました"); });
     });
     document.getElementById("f-fdl").addEventListener("click", function(){ downloadFiles([f], f.filename); });
+    var fch = document.getElementById("f-fchat"); if(fch) fch.addEventListener("click", function(){ closeModal(); sendPhotoToChat(f); });
     var fpe = document.getElementById("f-fpe"); if(fpe) fpe.addEventListener("click", function(){ closeModal(); editFilePhoto(f); });
     document.getElementById("f-fsave").addEventListener("click", function(){
       var name = document.getElementById("f-fname").value.trim() || f.filename;
