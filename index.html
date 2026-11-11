@@ -1108,8 +1108,13 @@
       // connect immediately.
       (async function(){
         try{
-          var existing = await fsMod.getDocs(fsMod.query(fsMod.collection(fs, "projects"), fsMod.limit(1)));   // 空かどうかだけ調べる（全件は読まない）
-          if(existing.empty){
+          // 【重要】初期データ（サンプル）の投入は、「サーバーに実際に問い合わせて、案件もメンバーも1件もない」と確認できたときだけ行う。
+          // 以前は端末の保存データ（キャッシュ）が空なだけでも投入してしまい、通信が不安定な起動時に、実データ（同じIDの案件・タスク・メンバー・顧客）を
+          // 古いサンプルで上書きして、削除したメンバーが戻る・案件の進捗やタスクの完了が古い状態に戻る、という不具合の原因になっていた。
+          var existing = await fsMod.getDocsFromServer(fsMod.query(fsMod.collection(fs, "projects"), fsMod.limit(1)));   // 空かどうかだけ調べる（全件は読まない）
+          var existingM = existing.empty ? await fsMod.getDocsFromServer(fsMod.query(fsMod.collection(fs, "members"), fsMod.limit(1))) : null;
+          var seededMark = existing.empty ? await fsMod.getDocFromServer(fsMod.doc(fs, "settings", "seeded")) : null;
+          if(existing.empty && existingM && existingM.empty && seededMark && !seededMark.exists() && !existing.metadata.fromCache){
             var SEED = window.__GENBA_SEED_DATA__ || {};
             var batch = fsMod.writeBatch(fs);
             (SEED.customers||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "customers", r.id), r.data); });
@@ -1118,6 +1123,7 @@
             (SEED.tasks||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "tasks", r.id), r.data); });
             (SEED.chats||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "chats", r.id), r.data); });
             (SEED.messages||[]).forEach(function(r){ batch.set(fsMod.doc(fs, "chats", r.chatId, "messages", r.id), r.data); });
+            batch.set(fsMod.doc(fs, "settings", "seeded"), {at:new Date().toISOString()});
             await batch.commit();
           }
         }catch(e){ console.error("Firestore seed failed (non-fatal)", e); }
