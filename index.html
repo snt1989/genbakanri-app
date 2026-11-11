@@ -1638,6 +1638,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-11-1", title:"11月11日の更新", items:[
+      {t:"設定に「操作ログ」を追加しました（管理者）", d:"誰が・いつ・何を登録／変更／削除したかを、管理者が設定 → 操作ログで全件確認できます（メンバー・対象・期間で絞り込み、CSV出力も可能）。", admin:true},
       {t:"シフト調整の勤務区分をマスタ管理で編集できます", d:"設定 → マスタ管理 → 「シフト調整画面」で、出勤・休み・午前休などの区分を追加・変更・並べ替えできます（略称・色・人数の数え方も指定できます）。", admin:true},
       {t:"設定に「機能制限」を追加しました（管理者）", d:"一般・社外メンバーごとに、データの登録・編集、削除、見られる案件の範囲、メニューごとの利用を決められます。管理者は制限されません。", admin:true},
       {t:"タスク管理で、完了したタスクが混ざって表示されることがある問題を直しました", d:"「自分が依頼」を見たあと「すべて」「自分の担当」に戻すと、完了済みのタスクも並んだままになっていました。戻したときは未完了のみの表示に戻ります。"},
@@ -5558,8 +5559,9 @@
       // 画面にはすぐ反映する（保存に失敗したときは元に戻る）
       if(cur){ cur.days = Object.assign({}, cur.days||{}, days); }
       else { state.shifts = (state.shifts||[]).concat([{id:id, ym:ym, memberId:m.id, name:name, days:Object.assign({}, days)}]); }
-      if(!db) return;
+      if(!db){ Object.keys(days).forEach(function(d){ auditLog("更新", "shifts", id, name+" "+ym+"-"+d, "シフト："+(days[d]||"（消去）")); }); return; }
       var full = {ym:ym, memberId:m.id, name:name, days:(cur?cur.days:days), updatedAt:now, updatedBy:state.myName||""};
+      Object.keys(days).forEach(function(d){ auditLog("更新", "shifts", id, name+" "+ym+"-"+d, "シフト："+(days[d]||"（消去）")); });
       var p = cur ? db.collection("shifts").doc(id).update(upd) : db.collection("shifts").doc(id).set(full);
       p.catch(function(){ return db.collection("shifts").doc(id).set(full); }).catch(function(e){ toast("シフトを保存できませんでした"+(e&&e.code==="permission-denied"?"（権限がありません）":"")); });
     });
@@ -6933,7 +6935,16 @@
     arr = instrSanitize(arr); if(newTrash) newTrash = instrSanitize(newTrash);
     var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
     var finished = false, done = function(){ if(finished) return; finished = true; if(dkey) instrDraftClear(dkey); closeModal(); toast(msg); render(); };
-    if(!db){ p.instructions = arr; if(newTrash) p.instrTrash = newTrash; done(); return; }
+    var prevInstr = p.instructions || [];
+    var auditInstr = function(){
+      var a = arr||[], b = prevInstr, ids = {}; a.forEach(function(x){ ids[x.id] = x; });
+      var removed = b.filter(function(x){ return !ids[x.id]; }), added = a.filter(function(x){ return !b.some(function(y){ return y.id===x.id; }); });
+      var changed = a.filter(function(x){ var o = b.find(function(y){ return y.id===x.id; }); return o && JSON.stringify(o)!==JSON.stringify(x); });
+      added.forEach(function(x){ auditLog("登録", "projects", pid, p.name, "指示書を作成："+(x.title||"")); });
+      changed.forEach(function(x){ auditLog("更新", "projects", pid, p.name, "指示書を編集："+(x.title||"")); });
+      removed.forEach(function(x){ auditLog("削除", "projects", pid, p.name, "指示書を削除："+(x.title||"")); });
+    };
+    if(!db){ auditInstr(); p.instructions = arr; if(newTrash) p.instrTrash = newTrash; done(); return; }
     var prev = p.instructions, prevTrash = p.instrTrash;
     var patchLocal = function(v, tv){
       [projSets.X, projSets.A, projSets.B].forEach(function(set){ if(set && set[pid]){ set[pid].instructions = v; if(newTrash) set[pid].instrTrash = tv; } });
@@ -6947,7 +6958,7 @@
       toast("通信待ちです。指示書は先に反映しました。接続が戻り次第、自動で保存されます（この端末にも控えてあります）", 7000);
     }, 10000);
     db.collection("projects").doc(pid).update(newTrash ? {instructions:arr, instrTrash:newTrash} : {instructions:arr}).then(function(){
-      clearTimeout(slow);
+      clearTimeout(slow); auditInstr();
       if(soft){ finished = true; if(dkey) instrDraftClear(dkey); toast("通信が戻り、指示書を保存しました"); return; }
       done();
     }).catch(function(err){
@@ -9141,7 +9152,7 @@
   // (admins only: stats, permission/password management, backup).
   function settingsSections(){
     var s = state.isAdmin ? [["company","会社情報"],["personal","個人情報"]] : [["personal","個人情報"]];   // 会社情報は管理者のみ
-    if(state.isAdmin){ s.push(["admin","管理画面"]); s.push(["access","機能制限"]); s.push(["loginlog","ログイン履歴"]); s.push(["master","マスタ管理"]); s.push(["trash","ゴミ箱"]); }
+    if(state.isAdmin){ s.push(["admin","管理画面"]); s.push(["access","機能制限"]); s.push(["loginlog","ログイン履歴"]); s.push(["audit","操作ログ"]); s.push(["master","マスタ管理"]); s.push(["trash","ゴミ箱"]); }
     if(worksAvailable()) s.push(["works","LINE WORKS"]);
     if(state.isAdmin){ s.push(["freee","freee連携"]); s.push(["backup","バックアップ"]); }
     return s;
@@ -9167,13 +9178,14 @@
     if(state.settingsSeg!=="admin") state.navDraft = null;
     var html = '<h1 class="pagetitle">'+(state.settingsSeg==="personal"?"個人情報":"設定")+'</h1><div style="height:14px"></div>';
     if(tabs.length && state.settingsSeg!=="personal") html += '<div class="segmented" style="margin-bottom:16px">'+tabs.map(function(x){
-      return '<div class="segopt'+((state.settingsSeg===x[0] || (x[0]==="integ" && inInteg))?" active":"")+'" data-setseg="'+x[0]+'">'+((x[0]==="company"||x[0]==="admin"||x[0]==="access"||x[0]==="integ"||x[0]==="loginlog"||x[0]==="freee"||x[0]==="master"||x[0]==="trash"||x[0]==="backup")?iAdmin():'')+x[1]+'</div>';
+      return '<div class="segopt'+((state.settingsSeg===x[0] || (x[0]==="integ" && inInteg))?" active":"")+'" data-setseg="'+x[0]+'">'+((x[0]==="company"||x[0]==="admin"||x[0]==="access"||x[0]==="audit"||x[0]==="integ"||x[0]==="loginlog"||x[0]==="freee"||x[0]==="master"||x[0]==="trash"||x[0]==="backup")?iAdmin():'')+x[1]+'</div>';
     }).join("")+'</div>';
     if(inInteg && integ.length>1) html += '<div class="admtabs">'+integ.map(function(x){ return '<div class="admtab'+(state.settingsSeg===x[0]?" active":"")+'" data-setseg="'+x[0]+'">'+x[1].replace(/連携$/,"")+'</div>'; }).join("")+'</div>';
     if(state.settingsSeg==="personal") html += renderSettingsPersonal();
     else if(state.settingsSeg==="admin") html += renderSettingsAdmin();
     else if(state.settingsSeg==="access") html += renderSettingsAccess();
     else if(state.settingsSeg==="loginlog") html += renderSettingsLoginLog();
+    else if(state.settingsSeg==="audit") html += renderSettingsAudit();
     else if(state.settingsSeg==="freee") html += renderSettingsFreee();
     else if(state.settingsSeg==="works") html += renderSettingsWorks();
     else if(state.settingsSeg==="master") html += renderSettingsMaster();
@@ -9417,6 +9429,60 @@
       p.then(function(snap){ clearTimeout(timer); done(snap.docs.map(toObj), false); },
              function(){ clearTimeout(timer); done(null, true); });
     }catch(e){ clearTimeout(timer); done(null, true); }
+  }
+  function auditLoad(force){
+    var L = state.auditLogs = state.auditLogs || {list:null, loading:false, who:"all", col:"all", act:"all", days:"7", q:"", lim:300};
+    if(L.loading || (L.list && !force)) return;
+    if(!db){ L.list = localAudit.slice(); return; }
+    L.loading = true; L.error = false;
+    var fin = false, done = function(list, err){ if(fin) return; fin = true; L.loading = false; L.error = !!err; if(list) L.list = list; else if(!L.list) L.list = []; if(state.tab==="settings" && state.settingsSeg==="audit") render(); };
+    var timer = setTimeout(function(){ done(null, true); }, 15000);
+    try{
+      db.collection("auditLogs").orderBy("ts","desc").limit(L.lim||300).get().then(function(snap){ clearTimeout(timer); done(snap.docs.map(toObj), false); }, function(){ clearTimeout(timer); done(null, true); });
+    }catch(e){ clearTimeout(timer); done(null, true); }
+  }
+  function auditFiltered(){
+    var L = state.auditLogs, since = L.days==="all" ? "" : new Date(Date.now()-Number(L.days)*86400000).toISOString(), q = (L.q||"").trim().toLowerCase();
+    return (L.list||[]).slice().sort(function(a,b){ return String(b.ts).localeCompare(String(a.ts)); }).filter(function(x){
+      if(since && String(x.ts)<since) return false;
+      if(L.who!=="all" && x.by!==L.who) return false;
+      if(L.col!=="all" && x.col!==L.col) return false;
+      if(L.act!=="all" && x.action!==L.act) return false;
+      if(q && (String(x.label||"")+String(x.detail||"")+String(x.by||"")).toLowerCase().indexOf(q)===-1) return false;
+      return true;
+    });
+  }
+  function renderSettingsAudit(){
+    if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
+    auditLoad();
+    var L = state.auditLogs; if(!L.list) return skeleton();
+    var list = auditFiltered(), opt = function(v, cur, label){ return '<option value="'+esc(v)+'"'+(cur===v?" selected":"")+'>'+esc(label)+'</option>'; };
+    var errBar = L.error ? '<div class="card" style="padding:12px 14px;max-width:760px;margin-bottom:12px;border-color:var(--danger);font-size:12.5px;line-height:1.7">操作ログを読み込めませんでした（通信の混雑や、データベースの権限設定で「auditLogs」が許可されていない可能性があります）。</div>' : '';
+    var html = errBar+'<div style="font-size:12px;color:var(--ink-faint);line-height:1.7;max-width:760px;margin-bottom:12px">誰が・いつ・何を登録／変更／削除したかの記録です（案件・顧客・タスク・工程・予定・報告書・ファイル・指示書・シフト・チャット投稿など）。パスワードや写真の中身は記録しません。チャットは投稿したことだけで、本文は記録しません。ログインの記録は「ログイン履歴」にあります。</div>';
+    html += '<div class="card filter-card"><div class="filter-line">'+
+      '<div class="fitem"><span>メンバー</span><select data-adf="who">'+opt("all",L.who,"すべて")+state.members.map(function(m){ return opt(m.name,L.who,m.name); }).join("")+'</select></div>'+
+      '<div class="fitem"><span>対象</span><select data-adf="col">'+opt("all",L.col,"すべて")+Object.keys(AUDIT_COLS).map(function(k){ return opt(k,L.col,AUDIT_COLS[k]); }).join("")+'</select></div>'+
+      '<div class="fitem"><span>操作</span><select data-adf="act">'+opt("all",L.act,"すべて")+opt("登録",L.act,"登録")+opt("更新",L.act,"更新")+opt("削除",L.act,"削除")+'</select></div>'+
+      '<div class="fitem"><span>期間</span><select data-adf="days">'+opt("1",L.days,"24時間")+opt("7",L.days,"7日")+opt("30",L.days,"30日")+opt("90",L.days,"90日")+opt("all",L.days,"すべて")+'</select></div>'+
+      '<div class="fitem"><span>検索</span><input type="text" id="ad-q" placeholder="対象名・内容" value="'+esc(L.q||"")+'"></div>'+
+      '<button class="btn" id="ad-reload">'+(L.loading?"更新中…":"最新の情報に更新")+'</button><button class="btn outline" id="ad-csv">'+iDownload()+' CSV出力</button></div></div>';
+    html += '<div class="summary-line"><span>記録 <b>'+list.length+'</b>件'+(list.length>500?'（新しい500件を表示）':'')+' ／ 読み込み済み '+L.list.length+'件</span></div>';
+    html += list.length ? '<div class="tablewrap"><table><thead><tr><th>日時</th><th>メンバー</th><th>操作</th><th>対象</th><th>内容</th></tr></thead><tbody>'+list.slice(0,500).map(function(x){
+      var cls = x.action==="削除" ? "danger" : (x.action==="登録" ? "" : "muted");
+      return '<tr><td class="num" data-label="日時">'+fmtDateTime(x.ts)+'</td><td class="cell-main">'+esc(x.by||"—")+'</td><td data-label="操作"><span class="tag '+cls+'">'+esc(x.action)+'</span></td><td data-label="対象"><div style="font-size:11.5px;color:var(--ink-faint)">'+esc(x.colLabel||x.col)+'</div><div style="font-size:12.5px">'+esc(x.label||"—")+'</div></td><td data-label="内容" style="font-size:12px;line-height:1.6">'+esc(x.detail||"")+'</td></tr>';
+    }).join("")+'</tbody></table></div>' : emptyState(iBox,"該当する記録がありません","操作を行うとここに残ります");
+    if(db && L.list.length>=(L.lim||300)) html += '<div style="text-align:center;margin:14px 0"><button class="btn outline" id="ad-more">さらに古い記録を読み込む</button></div>';
+    return html;
+  }
+  function auditBind(c){
+    c.querySelectorAll("[data-adf]").forEach(function(el){ el.addEventListener("change", function(){ state.auditLogs[el.getAttribute("data-adf")] = el.value; render(); }); });
+    var q = document.getElementById("ad-q"); if(q){ q.addEventListener("change", function(){ state.auditLogs.q = q.value; render(); }); q.addEventListener("keydown", function(e){ if(e.key==="Enter"){ state.auditLogs.q = q.value; render(); } }); }
+    var rl = document.getElementById("ad-reload"); if(rl) rl.addEventListener("click", function(){ auditLoad(true); render(); });
+    var mo = document.getElementById("ad-more"); if(mo) mo.addEventListener("click", function(){ state.auditLogs.lim = (state.auditLogs.lim||300)+500; auditLoad(true); render(); });
+    var cv = document.getElementById("ad-csv"); if(cv) cv.addEventListener("click", function(){
+      var rows = [["日時","メンバー","操作","対象の種類","対象","内容"]].concat(auditFiltered().map(function(x){ return [fmtDateTime(x.ts), x.by||"", x.action||"", x.colLabel||x.col||"", x.label||"", x.detail||""]; }));
+      downloadBlob("操作ログ-"+todayISO()+".csv", new Blob(["﻿"+rows.map(function(r){ return r.map(csvEscape).join(","); }).join("\r\n")], {type:"text/csv;charset=utf-8"}));
+    });
   }
   function renderSettingsLoginLog(){
     if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
@@ -11717,6 +11783,43 @@
   }
 
   /* ============ db writes ============ */
+  /* ============ 操作ログ（誰が・いつ・何を入力／変更／削除したか。管理者が 設定→操作ログ で全件見られる） ============ */
+  var AUDIT_COLS = {projects:"案件", customers:"顧客", tasks:"タスク", steps:"工程", events:"予定", reports:"報告書", files:"写真・ファイル", folders:"フォルダ", members:"メンバー", budgets:"予算", shifts:"シフト", chats:"チャット", cards:"名刺", snsPosts:"SNS投稿", settings:"設定"};
+  var AUDIT_KEYS = {name:"名前", title:"件名", status:"進捗", amount:"金額", done:"完了", dueDate:"期限", assignee:"担当", note:"メモ", startDate:"開始日", endDate:"終了日", progress:"進捗率", filename:"ファイル名", folderId:"フォルダ", division:"事業部", type:"種類", customerName:"顧客", phone:"電話", email:"メール", company:"会社", date:"日付", category:"分類", text:"内容", instructions:"指示書", permission:"権限", workInstruction:"施工指示", address:"住所", assignees:"担当者"};
+  var AUDIT_SKIP = {customerRegion:1, addressMode:1, region:1, updatedAt:1, updatedBy:1, createdAt:1, createdBy:1, history:1, id:1, url:1, marks:1, instrTrash:1, docDrafts:1, secretFields:1};
+  function auditShort(v, n){
+    if(v===undefined || v===null || v==="") return "（空）";
+    if(typeof v==="object") return "（変更あり）";
+    var t = String(v).replace(/\s+/g," "); return t.length>(n||28) ? t.slice(0,n||28)+"…" : t;
+  }
+  function auditDiff(col, oldRec, data){
+    var out = [];
+    Object.keys(data||{}).forEach(function(k){
+      if(AUDIT_SKIP[k] || out.length>=8) return;
+      var lab = (col==="projects" && PROJ_HIST_FIELDS[k]) || AUDIT_KEYS[k] || k;
+      if(k==="password"){ out.push("パスワードを変更"); return; }
+      var nv = data[k], ov = oldRec ? oldRec[k] : undefined;
+      var emp = function(v){ return v===undefined || v===null || v==="" || (Array.isArray(v) && !v.length); };
+      if(oldRec && (JSON.stringify(nv)===JSON.stringify(ov) || (emp(nv) && emp(ov)))) return;
+      if(k==="assignees" && oldRec && Array.isArray(nv) && Array.isArray(ov) && nv.map(function(x){ return x&&x.name!==undefined ? x.name : x; }).join()===ov.map(function(x){ return x&&x.name!==undefined ? x.name : x; }).join()) return;
+      if(!oldRec) { if(nv!=="" && nv!==null && nv!==undefined && nv!==false && !(Array.isArray(nv)&&!nv.length)) out.push(lab+"："+auditShort(nv)); return; }
+      out.push(typeof nv==="object" || typeof ov==="object" ? lab+"を変更" : lab+"："+auditShort(ov)+" → "+auditShort(nv));
+    });
+    return out.join(" ／ ").slice(0,360);
+  }
+  function auditLabel(col, rec, data){
+    var r = Object.assign({}, rec||{}, data||{});
+    if(col==="steps") return (r.projectName?r.projectName+"：":"")+(r.name||"工程");
+    var f = {projects:"name", customers:"name", tasks:"title", events:"title", reports:"title", files:"filename", folders:"name", members:"name", budgets:"name", cards:"name"}[col];
+    return String(r[f] || r.projectName || r.name || r.title || "").slice(0,60);
+  }
+  var localAudit = [];
+  function auditLog(action, col, id, label, detail){
+    var rec = {ts:new Date().toISOString(), by:state.myName||"", action:action, col:col, colLabel:AUDIT_COLS[col]||col, docId:id||"", label:String(label||"").slice(0,80), detail:String(detail||"").slice(0,400)};
+    if(!db){ localAudit.unshift(Object.assign({id:uid()}, rec)); return; }
+    try{ var p = db.collection("auditLogs").add(rec); if(p && p.catch) p.catch(function(){}); }catch(e){}
+    if(state.auditLogs && state.auditLogs.list){ state.auditLogs.list.unshift(Object.assign({id:uid()}, rec)); }
+  }
   function writeDoc(col,id,data,msg,after){
     if(!state.canWrite){ toast("この操作を行う権限がありません"); return; }
     if(col==="members" && !state.isAdmin){
@@ -11731,7 +11834,9 @@
     if((col==="projects"||col==="customers") && state.myName){ data.updatedBy = state.myName; if(!id) data.createdBy = state.myName; }
     var oldRec = id ? (rawOf(col).find(function(x){ return x.id===id; }) || null) : null;
     var hn = histNext(col, oldRec, data); if(hn) data.history = hn;
+    var aDetail = auditDiff(col, oldRec, data), aLabel = auditLabel(col, oldRec, data);
     if(!db){
+      auditLog(id ? "更新" : "登録", col, id||"", aLabel, aDetail);
       var arr = rawOf(col);
       if(id){ var idx=arr.findIndex(function(x){return x.id===id;}); if(idx>-1) arr[idx]=Object.assign({},arr[idx],data); }
       else { data.id=uid(); data.createdAt=new Date().toISOString(); arr.unshift(data); }
@@ -11740,6 +11845,7 @@
     var p = id ? db.collection(col).doc(id).update(data) : db.collection(col).add(Object.assign({createdAt:new Date().toISOString()},data));
     p.then(function(ref){
       closeModal(); toast(msg);
+      auditLog(id ? "更新" : "登録", col, id||(ref&&ref.id), aLabel, aDetail);
       // LINE WORKS・アプリの通知は、サーバーに保存できたことを確認してから送る（保存できなかった変更を知らせないため）
       (p.__ack || p).then(function(){ try{ worksNotifyAfterWrite(col, id||(ref&&ref.id), data, oldRec); }catch(e){} }, function(){});
       if(after) after(id||(ref&&ref.id));
@@ -11763,6 +11869,8 @@
     if(!accessAllows("del")){ toast("削除の権限がありません（管理者が「設定→機能制限」で変更できます）"); return; }
     if(col==="members" && !state.isAdmin){ toast("メンバーの削除は管理者のみ行えます"); return; }
     var put = trashPut(col,id);
+    var delLabel = auditLabel(col, rawOf(col).find(function(x){ return x.id===id; }), null);
+    put.then(function(){ auditLog("削除", col, id, delLabel, ""); });
     if(!db){ put.then(function(){ setRaw(col, rawOf(col).filter(function(x){return x.id!==id;})); toast(msg+"（プレビューのみ）"); render(); if(after) after(); }); return; }
     put.then(function(){ return db.collection(col).doc(id).delete(); }).then(function(){ if(col==="files") filesExtraRemove(id); toast(msg); if(after) after();}).catch(function(){toast("削除に失敗しました");});
   }
@@ -12381,12 +12489,15 @@
     if((col==="projects"||col==="customers") && state.myName){ data.updatedBy = state.myName; if(!id) data.createdBy = state.myName; }
     var hn = histNext(col, id ? (rawOf(col).find(function(x){ return x.id===id; }) || null) : null, data); if(hn) data.history = hn;
     if(!db){
+      auditLog(id ? "更新" : "登録", col, id||"", auditLabel(col, null, data), auditDiff(col, null, data));
       var arr = rawOf(col);
       if(id){ var i = arr.findIndex(function(x){return x.id===id;}); if(i>-1) arr[i] = Object.assign({}, arr[i], data); }
       else arr.unshift(Object.assign({id:uid(), createdAt:now}, data));
       return Promise.resolve();
     }
-    return id ? db.collection(col).doc(id).update(data) : db.collection(col).add(Object.assign({createdAt:now}, data));
+    var oldR = id ? (rawOf(col).find(function(x){ return x.id===id; }) || null) : null, rp = id ? db.collection(col).doc(id).update(data) : db.collection(col).add(Object.assign({createdAt:now}, data));
+    rp.then(function(ref){ auditLog(id ? "更新" : "登録", col, id||(ref&&ref.id), auditLabel(col, oldR, data), auditDiff(col, oldR, data)); }, function(){});
+    return rp;
   }
   function deleteRaw(col, id){
     return trashPut(col,id).then(function(){
@@ -13634,7 +13745,9 @@
         msg.author = state.myName; msg.ts = new Date().toISOString(); if(!db) msg.id = uid();
         var cid = state.activeChat;
         if(!db){ state.chatMsgs[cid] = (state.chatMsgs[cid]||[]).concat([msg]); var ch=state.chats.find(function(x){return x.id===cid;}); if(ch) ch.updatedAt=msg.ts; if(done) done(); render(); return; }
+        var chN = (state.chats.find(function(x){return x.id===cid;})||{}).name || "";
         db.collection("chats").doc(cid).collection("messages").add(msg).then(function(){
+          auditLog("登録", "chats", cid, chN, msg.attachment ? "ファイル・写真を投稿："+(msg.attachment.filename||"") : (msg.stamp ? "スタンプを投稿" : "メッセージを投稿（"+String(msg.text||"").length+"文字）"));
           db.collection("chats").doc(cid).update({updatedAt:msg.ts}).catch(function(){});
           pushNotify(cid, msg.text || (msg.stamp ? "【スタンプ】"+stampOf(msg.stamp).t : "") || (msg.attachment ? "（添付: "+(msg.attachment.filename||"ファイル")+"）" : (msg.location ? "📍 現在地" : "")));
           if(done) done();
@@ -13887,7 +14000,7 @@
       if(!db){ toast("保存しました（プレビューのみ）"); return; }
       db.doc("settings/photo").set(Object.assign({}, v, {updatedAt:new Date().toISOString(), updatedBy:state.myName||""})).then(function(){ toast("写真の設定を保存しました"); }).catch(function(){ toast("保存に失敗しました"); });
     });
-    renderSettingsAccessBind();
+    renderSettingsAccessBind(); auditBind(c);
     var delPwSave = document.getElementById("del-pw-save");
     if(delPwSave) delPwSave.addEventListener("click", function(){
       if(!state.isAdmin){ toast("削除用パスワードの変更は管理者のみ行えます"); return; }
