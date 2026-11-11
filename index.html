@@ -489,6 +489,20 @@
   .gt-tg{border:none;background:none;cursor:pointer;color:var(--ink-soft);padding:0 2px;font-size:12px}
   .gt-add{padding:2px 6px;flex:none}
   .wchips{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+  /* 案件一覧：1件あたりの縦幅を小さくして、一覧で多くの案件を見渡せるように（スマホの縦並び表示は別） */
+  @media (min-width:701px){
+    .proj-list tbody td{padding-top:7px;padding-bottom:7px;vertical-align:top;}
+    .proj-list td.cell-main{min-width:300px;}
+    .proj-list .cell-name{font-size:13.5px;line-height:1.35;}
+    .proj-list .cell-sub{margin-top:1px;line-height:1.35;}
+    .proj-list .tagrow{gap:3px;margin-top:3px;}
+    .proj-list .tag{font-size:10px;padding:0 7px;line-height:17px;}
+    .proj-list .wchips{flex-direction:row;flex-wrap:wrap;gap:3px;max-width:200px;}
+    .proj-list .wchip{font-size:10.5px;padding:0 8px;line-height:19px;min-height:0;}
+    .proj-list td[data-label="顧客"] .btn.sm{margin-top:3px !important;padding:0 10px;min-height:26px;font-size:11px;}
+    .proj-list td .btn.sm{min-height:28px;}
+  }
+
   .wchip{display:inline-flex;align-items:center;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;border:1px solid transparent;font-family:inherit;white-space:nowrap;text-decoration:none}
   .wchip.on{background:var(--success-soft);color:var(--success);cursor:pointer}
   .wchip.off{background:var(--surface);color:var(--ink-faint);border:1px dashed #c3c9c6;cursor:pointer}
@@ -1602,6 +1616,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-11-1", title:"11月11日の更新", items:[
+      {t:"案件一覧の1件あたりの縦幅を小さくしました", d:"担当者のタグを横に並べ、工程表・報告書・チャットのボタンも横並びにして、顧客を編集ボタンも小さくしました。1画面で見える案件数が増えます（スマホの縦並び表示は今までどおりです）。"}
+    ]},
     {id:"2026-11-10-13", admin:true, title:"11月10日の更新（その13）", items:[
       {t:"freeeに作成した見積書を、アプリから編集してfreeeにも反映できるようにしました", d:"予算管理の「保存した見積書・発注書」から、freeeに作成済みの見積書を「開く」と、取引先・件名・日付・明細・備考を直して「freeeの見積書を更新」で、freee側も同じ内容に書き換わります。アプリの中だけ直したいときは「アプリ内のみ保存」を使います。"}
     ]},
