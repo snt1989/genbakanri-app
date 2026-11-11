@@ -577,6 +577,7 @@
   .photo-thumb.filekind{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--ink-soft);padding:8px;}
   .photo-thumb.filekind svg{width:26px;height:26px;}
   .photo-thumb .fname{font-size:10px;text-align:center;line-height:1.3;word-break:break-all;max-width:100%;padding:0 4px;}
+  .pe-badge{position:absolute;left:4px;bottom:4px;background:rgba(20,20,20,.62);color:#fff;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px;line-height:16px;pointer-events:none}
   .photo-thumb .thumb-del{position:absolute;top:4px;right:4px;background:rgba(20,20,20,.55);color:#fff;border:none;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;opacity:0;transition:opacity .12s;}
   .photo-thumb:hover .thumb-del{opacity:1;}
   .photo-thumb .thumb-proj{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(transparent,rgba(0,0,0,.55));color:#fff;font-size:10px;padding:10px 6px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -1325,6 +1326,8 @@
         navigator.share({files:[f]}).catch(function(e){ if(e && e.name==="AbortError") return; plain(); });
       }else plain();
     };
+    var fd = lbFileDoc(it);
+    if(fd && photoEdited(fd)){ peBake(fd).then(function(b){ go(b); }, function(){ plain(); }); return; }
     var c = lbBlobs[it.href];
     if(c && c.blob) go(c.blob); else lbPrefetch(it.href).then(go);
   }
@@ -1334,20 +1337,30 @@
   function lbPaint(){
     var l = document.getElementById("lightbox"); if(!l || !lbState) return;
     var it = lbState.list[lbState.i], n = lbState.list.length;
-    l.querySelector("img").src = it.href;
+    var fdoc = lbFileDoc(it), pb = l.querySelector(".lb-pe"); if(pb) pb.style.display = (fdoc && canEditPhoto(fdoc)) ? "" : "none";
+    var im = l.querySelector("img"); im.src = it.href;
+    if(fdoc && photoEdited(fdoc)){   // 加工した写真は、書き込みと明るさを反映した画像で表示（保存もこの画像）
+      var want = it.href;
+      peBakedUrl(fdoc).then(function(u){ if(u && lbState && lbState.list[lbState.i]===it){ im.src = u; var d2 = l.querySelector(".lb-dl"); d2.href = u; } });
+    }
     l.querySelector(".lb-count").textContent = n>1 ? (lbState.i+1)+" / "+n : "";
     var dl = l.querySelector(".lb-dl"); dl.href = it.href; dl.setAttribute("download", it.name || "photo.jpg");
     lbPrefetch(it.href);
     l.querySelectorAll(".lb-nav").forEach(function(b){ b.style.display = n>1 ? "" : "none"; });
   }
+  function lbFileDoc(it){ if(!it || !it.fid) return null; return (state.files||[]).find(function(x){ return x.id===it.fid; }) || null; }
   function openLightbox(list, i){
     closeLightbox();
     lbState = {list:list, i:i};
     var l = document.createElement("div"); l.id = "lightbox";
-    l.innerHTML = '<div class="lb-top"><span class="lb-count"></span><span style="display:flex;gap:8px"><a class="lb-btn lb-dl" title="写真アプリに保存">写真に保存</a><button class="lb-btn lb-x" title="閉じる">✕ 閉じる</button></span></div>'+
+    l.innerHTML = '<div class="lb-top"><span class="lb-count"></span><span style="display:flex;gap:8px"><button class="lb-btn lb-pe" title="書き込み・文字入れ・明るさ調整" style="display:none">✎ 加工</button><a class="lb-btn lb-dl" title="写真アプリに保存">写真に保存</a><button class="lb-btn lb-x" title="閉じる">✕ 閉じる</button></span></div>'+
       '<button class="lb-btn lb-nav prev" aria-label="前へ">‹</button><img alt=""><button class="lb-btn lb-nav next" aria-label="次へ">›</button>';
     document.body.appendChild(l);
     l.querySelector(".lb-x").addEventListener("click", closeLightbox);
+    l.querySelector(".lb-pe").addEventListener("click", function(){
+      var it = lbState && lbState.list[lbState.i], f = it && lbFileDoc(it); if(!f) return;
+      closeLightbox(); editFilePhoto(f);
+    });
     l.querySelector(".lb-dl").addEventListener("click", function(e){
       var touch = ("ontouchstart" in window) || (navigator.maxTouchPoints>0);
       if(touch && navigator.share && navigator.canShare){ e.preventDefault(); lbSave(); }   // スマホ: 共有シート → 「画像を保存」
@@ -1381,7 +1394,7 @@
           var h = x.getAttribute("href") || "", im = x.querySelector("img:not(.lb-img)");
           if(!im || x.hasAttribute("download") || seen[h]) return;
           var ok = /^data:image\//i.test(h) || (x.getAttribute("target")==="_blank" && /^(https?:|\/|blob:)/i.test(h));
-          if(!ok) return; seen[h] = 1; list.push({href:h, name:nameOf(x)});
+          if(!ok) return; seen[h] = 1; list.push({href:h, name:nameOf(x), fid:x.getAttribute("data-fid")||x.getAttribute("data-row-id")||""});
         });
         var idx = list.findIndex(function(x){ return x.href===href; }); if(idx<0){ list.push({href:href, name:""}); idx = list.length-1; }
         openLightbox(list, idx);
@@ -1617,6 +1630,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-11-1", title:"11月11日の更新", items:[
+      {t:"写真・ファイルの写真にも、書き込み・文字入れ・明るさ調整ができます", d:"写真・ファイル（一覧・案件別どちらも）で写真をタップして拡大し、左上の「✎ 加工」を押します。案件別の画面は、写真の「編集」からも加工できます。矢印・四角・丸・ペン・黒塗り・文字（移動・大きさ変更つき）に対応。元の写真は変わらず、加工した内容は重ねて保存されます。加工した写真には一覧に「加工済」と表示され、拡大表示と「写真に保存」では書き込み入りの画像になります（「ダウンロード」は元の写真です）。"},
       {t:"案件一覧の1件あたりの縦幅を小さくしました", d:"担当者のタグを横に並べ、工程表・報告書・チャットのボタンも横並びにして、顧客を編集ボタンも小さくしました。1画面で見える案件数が増えます（スマホの縦並び表示は今までどおりです）。"}
     ]},
     {id:"2026-11-10-13", admin:true, title:"11月10日の更新（その13）", items:[
@@ -2945,7 +2959,7 @@
   }
   function fileThumb(f, withDelete, showProject){
     var inner = isImageFile(f) ?
-      '<img src="'+esc(fileUrl(f))+'" loading="lazy" decoding="async">' :
+      '<img src="'+esc(fileUrl(f))+'"'+(photoEdited(f)?' style="filter:'+peFilter(f.fx)+'"':'')+' loading="lazy" decoding="async">'+(photoEdited(f)?'<span class="pe-badge">✎加工済</span>':'') :
       '<div class="filekind" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px">'+iFile()+'<span class="fname">'+esc(f.filename||"ファイル")+'</span></div>';
     var cls = "photo-thumb"+(isImageFile(f)?"":" filekind");
     return '<a href="'+esc(fileUrl(f))+'" target="_blank" rel="noopener" class="'+cls+'" data-row-id="'+esc(f.id)+'" style="display:block">'+inner+
@@ -6897,6 +6911,63 @@
       close(); if(onDone) onDone();
     });
   }
+  /* ---- 写真・ファイル画面の写真の加工（元の写真は変えず、書き込み・明るさをファイルに重ねて保存） ---- */
+  function photoEdited(f){ return !!(f && ((f.marks && f.marks.length) || f.fx)); }
+  function canEditPhoto(f){ return !!(f && isImageFile(f) && !f.chunked && state.canWrite && !isExternalViewer()); }
+  function editFilePhoto(f){
+    if(!canEditPhoto(f)){ toast("この写真は加工できません"); return; }
+    var item = {marks:JSON.parse(JSON.stringify(f.marks||[])), ar:f.ar||null, fx:f.fx||null};
+    openPhotoEditor(f, item, function(){
+      var marks = item.marks||[], data = {marks:marks, ar:item.ar||null, fx:item.fx||null, editedAt:new Date().toISOString(), editedBy:state.myName||""};
+      var extra = JSON.stringify(data).length, base = String(f.url||"").length;
+      if(base+extra>980000){ toast("この写真は容量がいっぱいで、書き込みを保存できません。「写真を軽量化」をしてからやり直してください"); return; }
+      _peBake = {};
+      writeDoc("files", f.id, data, "写真の加工を保存しました");
+    });
+  }
+  // 書き込みと明るさを焼き込んだ画像（拡大表示・保存用）。iPhone/iPadのSafariでも動くよう、明るさ等は画素を直接計算する
+  var _peBake = {};
+  function peBake(f){
+    var key = f.id+"|"+JSON.stringify([f.marks||[], f.fx||null, f.ar||null]);
+    if(_peBake[key]) return _peBake[key];
+    _peBake[key] = fileBlob(f).then(function(b){
+      return new Promise(function(ok, ng){
+        var u = URL.createObjectURL(b), im = new Image();
+        im.onload = function(){
+          URL.revokeObjectURL(u);
+          var sc = Math.min(1, 2400/Math.max(im.naturalWidth, im.naturalHeight)), W = Math.max(1,Math.round(im.naturalWidth*sc)), H = Math.max(1,Math.round(im.naturalHeight*sc));
+          var cv = document.createElement("canvas"); cv.width = W; cv.height = H; var cx = cv.getContext("2d");
+          cx.drawImage(im, 0, 0, W, H);
+          var fx = f.fx;
+          if(fx && (fx.b!==100 || fx.c!==100 || fx.g)){
+            var id = cx.getImageData(0,0,W,H), d = id.data, bb = (fx.b||100)/100, cc = (fx.c||100)/100;
+            for(var i=0;i<d.length;i+=4){
+              var r = d[i]*bb, g = d[i+1]*bb, b2 = d[i+2]*bb;
+              r = (r-128)*cc+128; g = (g-128)*cc+128; b2 = (b2-128)*cc+128;
+              if(fx.g){ var y = 0.299*r+0.587*g+0.114*b2; r = g = b2 = y; }
+              d[i] = r<0?0:r>255?255:r; d[i+1] = g<0?0:g>255?255:g; d[i+2] = b2<0?0:b2>255?255:b2;
+            }
+            cx.putImageData(id,0,0);
+          }
+          var done = function(){ cv.toBlob(function(o){ o ? ok(o) : ng(); }, "image/jpeg", 0.9); };
+          if(!(f.marks||[]).length){ done(); return; }
+          var ar = H/W, svg = '<svg xmlns="http://www.w3.org/2000/svg" width="'+W+'" height="'+H+'" viewBox="0 0 1 '+ar+'" preserveAspectRatio="none">'+(f.marks||[]).map(peMarkSvg).join("")+'</svg>';
+          var si = new Image();
+          si.onload = function(){ try{ cx.drawImage(si, 0, 0, W, H); }catch(e){} done(); };
+          si.onerror = done;
+          si.src = "data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);
+        };
+        im.onerror = function(){ URL.revokeObjectURL(u); ng(); };
+        im.src = u;
+      });
+    });
+    _peBake[key].catch(function(){ delete _peBake[key]; });
+    return _peBake[key];
+  }
+  var _peUrls = {};
+  function peBakedUrl(f){
+    return peBake(f).then(function(b){ var k = f.id+"|"+b.size; if(!_peUrls[k]) _peUrls[k] = URL.createObjectURL(b); return _peUrls[k]; }, function(){ return null; });
+  }
   function instrPicker(el, pid, sel){
     var imgs = filesForProject(pid).filter(function(f){ return isImageFile(f) && !f.chunked; });
     if(!imgs.length){ el.innerHTML = '<div style="font-size:12px;color:var(--ink-faint)">この案件に写真がありません。案件の「写真・ファイル」に追加してから選べます（表示されないときは、案件の画面で「写真・ファイルを読み込む」を押してください）。</div>'; return; }
@@ -8233,7 +8304,7 @@
     list.slice(0,fileLimit("pf")).forEach(function(f){
       var on = !!state.pfSel[f.id];
       tiles += '<div class="pf-tile'+(on?' on':'')+'"><input type="checkbox" class="pf-chk" data-pf-chk="'+esc(f.id)+'"'+(on?' checked':'')+'><button class="pf-edit" data-pf-edit-file="'+esc(f.id)+'">'+iEdit()+'編集</button>'+
-        '<a class="pf-main" href="'+esc(fileUrl(f))+'" target="_blank" rel="noopener">'+(isImageFile(f)?'<img src="'+esc(fileUrl(f))+'" loading="lazy" decoding="async">':iFileKind(f))+'</a>'+
+        '<a class="pf-main" data-fid="'+esc(f.id)+'" href="'+esc(fileUrl(f))+'" target="_blank" rel="noopener">'+(isImageFile(f)?'<img src="'+esc(fileUrl(f))+'"'+(photoEdited(f)?' style="filter:'+peFilter(f.fx)+'"':'')+' loading="lazy" decoding="async">'+(photoEdited(f)?'<span class="pe-badge">✎加工済</span>':''):iFileKind(f))+'</a>'+
         '<a class="pf-name" href="'+esc(fileUrl(f))+'" target="_blank" rel="noopener" title="'+esc(f.filename||"")+'">'+esc(f.filename||"ファイル")+'</a>'+
         '<div class="pf-sub">'+esc(fileDate(f))+(f.size?' ・ '+fmtSize(f.size):'')+'</div><div class="pf-sub2">'+uploaderHtml(f.uploadedBy)+'</div></div>';
       rowsHtml += '<tr class="rowhover"><td style="width:32px"><input type="checkbox" data-pf-chk="'+esc(f.id)+'"'+(on?' checked':'')+'></td>'+
@@ -8333,12 +8404,14 @@
     openModal("ファイルの編集",
       '<label class="field">ファイル名<input type="text" id="f-fname" value="'+esc(f.filename||"")+'"></label>'+
       '<label class="field">フォルダ<select id="f-fmove"><option value="">フォルダなし</option>'+folders.map(function(g){ return '<option value="'+esc(g.id)+'"'+(f.folderId===g.id?' selected':'')+'>'+esc(g.name)+(g.secret?'（社外秘）':'')+'</option>'; }).join("")+'</select></label>'+
+      (canEditPhoto(f) ? '<div style="margin:2px 0 10px"><button class="btn" id="f-fpe" type="button">✎ 写真を加工（書き込み・文字入れ・明るさ）'+(photoEdited(f)?'（加工済）':'')+'</button><div style="font-size:11px;color:var(--ink-faint);margin-top:3px">元の写真は変わりません。書き込みと明るさは重ねて保存され、一覧・拡大表示・「写真に保存」に反映されます。</div></div>' : '')+
       '<div style="font-size:11.5px;color:var(--ink-faint)">'+esc(fileDate(f))+(f.uploadedBy?" ・ "+esc(f.uploadedBy):"")+(f.size?" ・ "+fmtSize(f.size):"")+'</div>',
       '<button class="btn" id="f-fdel" style="color:var(--danger);margin-right:auto">'+iTrash()+' 削除</button><button class="btn" id="f-fdl">'+iDownload()+' ダウンロード</button><button class="btn" data-close-modal>キャンセル</button><button class="btn primary" id="f-fsave">保存する</button>');
     document.getElementById("f-fdel").addEventListener("click", function(){
       confirmDelete("このファイルを削除しますか？", function(){ deleteDoc("files", f.id, "削除しました"); });
     });
     document.getElementById("f-fdl").addEventListener("click", function(){ downloadFiles([f], f.filename); });
+    var fpe = document.getElementById("f-fpe"); if(fpe) fpe.addEventListener("click", function(){ closeModal(); editFilePhoto(f); });
     document.getElementById("f-fsave").addEventListener("click", function(){
       var name = document.getElementById("f-fname").value.trim() || f.filename;
       writeDoc("files", f.id, {filename:name, folderId: document.getElementById("f-fmove").value||null}, "ファイルを更新しました");
