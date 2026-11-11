@@ -1175,7 +1175,7 @@
     {id:"sales", label:"営業案件一覧", icon:iBriefcase},
     {id:"construction", label:"施工案件一覧", icon:iDoc},
     {id:"calendar", label:"カレンダー", icon:iCalendar},
-    {id:"schedule", label:"予定・カレンダー", icon:iGantt},
+    {id:"schedule", label:"カレンダー", icon:iGantt},
     {id:"reports", label:"報告書", icon:iDoc},
     {id:"budget", label:"予算管理", icon:iYenIcon, adminOnly:true},
     {id:"chat", label:"チャット", icon:iChat},
@@ -1635,7 +1635,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-11-1", title:"11月11日の更新", items:[
-      {t:"メニューの「工程表」を「予定・カレンダー」に変更しました", d:"中身（横断工程表・担当別・シフト調整・工程一覧・月カレンダー・予定一覧）は今までどおりです。"},
+      {t:"メニューの「工程表」を「カレンダー」に変更しました", d:"中身（横断工程表・担当別・シフト調整・工程一覧・月カレンダー・予定一覧）は今までどおりです。"},
       {t:"「シフト調整」を追加しました（工程表 → シフト調整）", d:"メンバーごとに、日ごとの勤務（出勤・休み・午前休・午後休・直行・未定）を入力できる月表です。同じ表に工程の件数も出るので、休みの日に工程が入っていると赤い枠で気づけます。日付を押すと、その日の全員の勤務と担当工程を確認できます。自分の行は誰でも、全員分は管理者が入力できます。"},
       {t:"案件に「問合日」と「現地調査日」を追加しました", d:"案件の登録・編集画面と案件詳細に入力欄が増えました（社外秘の設定もできます）。案件一覧では「表示項目」から列として表示・並び替えでき、CSV取込・一括編集にも対応しています。"},
       {t:"写真を案件のチャットに送れます（加工した写真もOK）", d:"写真・ファイルで写真を拡大して「💬 チャットに送る」を押すと、その案件のチャットに写真が投稿されます。加工済みの写真は書き込み入りの画像で送られます。加工を保存した直後にも「チャットにも送りますか？」と確認が出ます。"},
@@ -3042,7 +3042,7 @@
   // 管理者が「設定 > 管理画面」で、スマホ下部のバーに出す項目と順番を決める。全員に共通。保存先: settings/mobileNav
   var MOBILE_NAV_DEFAULT = ["home","sales","construction","chat"];
   var MOBILE_NAV_MAX = 4;   // 右端の「メニュー」と合わせて5つまで
-  var BN_SHORT = {help:"使い方", home:"ホーム", tasks:"タスク", sales:"営業", construction:"施工", calendar:"予定", schedule:"予定・カレンダー", reports:"報告書", budget:"予算", chat:"チャット", members:"メンバー", customers:"顧客", files:"写真", apps:"連携", settings:"設定"};
+  var BN_SHORT = {help:"使い方", home:"ホーム", tasks:"タスク", sales:"営業", construction:"施工", calendar:"予定", schedule:"カレンダー", reports:"報告書", budget:"予算", chat:"チャット", members:"メンバー", customers:"顧客", files:"写真", apps:"連携", settings:"設定"};
   function mobileNavTabs(){
     var seen = {}, list = (state.mobileNav || MOBILE_NAV_DEFAULT).filter(function(id){
       if(seen[id] || !TABS.some(function(t){ return t.id===id; })) return false; seen[id] = 1; return true;
@@ -5041,7 +5041,7 @@
     var items = scheduleItems().filter(function(it){ return state.calFilter[it.group]; });
     var MAXL = 4;
     var chips = [["project","案件・引渡し","k-project"],["step","工程","k-step"],["task","タスク","k-task"],["event","予定","k-event"]];
-    var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">予定・カレンダー</h1>'+
+    var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">カレンダー</h1>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap">'+csvToolbar("events")+'<button class="btn outline" data-sched-print>'+iDownload()+' 印刷 / PDF</button><button class="btn outline" id="gc-open">'+iCalendar()+' Googleカレンダー連携</button><button class="btn primary" data-cal-add="'+today+'">'+iPlus()+' 予定を追加</button></div></div><div style="height:12px"></div>'+
       schedSwitch();
     html += '<div style="margin:-4px 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="chip-toggle'+(calMineOn()?' on':' off')+'" id="cal-mine" style="cursor:pointer">自分の予定のみ</span><span style="font-size:11.5px;color:var(--ink-faint)">'+(calMineOn()?'自分が担当の案件・工程・タスクと、自分が登録した予定を表示しています':'全員分を表示しています')+'</span></div>';
@@ -5432,7 +5432,7 @@
     var start = state.ganttStart, end = addDays(start,days-1), W = days*dw;
     var startDow = parseISO(start).getDay();
     var grid = 'background-image:linear-gradient(to right,#EEF1F0 0,#EEF1F0 '+dw+'px,transparent '+dw+'px,transparent '+(6*dw)+'px,#EEF1F0 '+(6*dw)+'px,#EEF1F0 '+(7*dw)+'px),linear-gradient(to right,rgba(0,0,0,.06) 1px,transparent 1px);background-size:'+(7*dw)+'px 100%,'+dw+'px 100%;background-position:'+(-startDow*dw)+'px 0,0 0;';
-    var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">予定・カレンダー</h1>'+
+    var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><h1 class="pagetitle">カレンダー</h1>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap">'+csvToolbar("steps")+'<button class="btn outline" data-sched-print>'+iDownload()+' 印刷 / PDF</button><button class="btn primary" data-step-add="">'+iPlus()+' 工程・予定を追加</button></div></div><div style="height:12px"></div>'+
       schedSwitch()+(state.ganttView==="shift" ? "" : stepScopeBar());
     if(state.ganttView==="shift" && !isExternalViewer()) return html + renderShiftBoard();
@@ -9141,7 +9141,7 @@
     ["project","案件",["statuses"]],
     ["property","物件情報",["propertyTypes","propertyStructures"]],
     ["member","メンバー",["divisions","roles"]],
-    ["schedule","予定・カレンダー",["stepNames"]],
+    ["schedule","カレンダー",["stepNames"]],
     ["calendar","カレンダー",["eventTypes"]],
     ["reports","報告書",["reportTypes"]],
     ["budget","予算管理",["accountItems"]]
@@ -9407,7 +9407,7 @@
   // 機能ごとの利用権限の一覧（◎=すべて ○=自分の担当案件のみ △=一部 ×=使えない）
   var PERM_ROWS = [
     ["メニュー", null],
-    ["ホーム・タスク管理・営業案件一覧・施工案件一覧・予定・カレンダー・報告書・チャット・写真ファイル","◎","○","○","一般・社外は自分が担当の案件に関するものだけ表示されます（管理者は全案件）"],
+    ["ホーム・タスク管理・営業案件一覧・施工案件一覧・カレンダー・報告書・チャット・写真ファイル","◎","○","○","一般・社外は自分が担当の案件に関するものだけ表示されます（管理者は全案件）"],
     ["顧客管理","◎","◎","◎","顧客の登録・編集は全員可。ただし案件の画面では、社外メンバーに顧客情報は出ません"],
     ["メンバー管理","◎","△","△","一覧は全員が見られます。登録・編集・権限変更は管理者のみ"],
     ["連携アプリ","◎","◎","◎","LINE WORKSなど、接続済みの連携アプリが開けます"],
