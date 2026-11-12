@@ -1663,6 +1663,7 @@
   var RELEASES = [
     {id:"2026-11-11-1", title:"11月11日の更新", items:[
       {t:"音声通話を使うには、パスワードが必要になりました", d:"管理者が設定の管理画面で「音声通話のパスワード」を決めます。端末ごとに一度入力すると、その端末では覚えます。未設定のあいだは誰でも使えます。"},
+      {t:"設定に「連携アプリ」の編集画面を追加しました（管理者）", d:"設定の「連携アプリ」で、アプリの名前・URL・説明・アイコン・並び順を変えたり、使わないアプリを非表示にしたり、新しいアプリを追加したりできます。", admin:true},
       {t:"メニューに「音声通話」を追加しました", d:"メンバーを選んで発信すると、相手のアプリに着信が出ます。応答・拒否・ミュート・終了ができ、最近の通話も確認できます。相手がアプリを開いているときに届きます。初回はマイクの許可が必要です。"},
       {t:"顧客登録で、freeeの取引先から情報を読み込めます（管理者）", d:"顧客の登録画面の「freeeの取引先から読み込む」で取引先を検索して選ぶと、名前・ふりがな・メール・電話・住所が入力され、登録するとfreeeの取引先と紐づきます。すでに登録済みの取引先は二重登録を防ぐため読み込めません。", admin:true},
       {t:"設定に「操作ログ」を追加しました（管理者）", d:"誰が・いつ・何を登録／変更／削除したかを、管理者が設定 → 操作ログで全件確認できます（メンバー・対象・期間で絞り込み、CSV出力も可能）。", admin:true},
@@ -2238,6 +2239,7 @@
     loadFreeeSettings();
     loadMobileNav();
     loadCallPw();
+    loadAppsCfg();
     loadBrand();
     loadListDefaults();
     loadMyListPrefs();
@@ -4270,19 +4272,41 @@
   }
   /* ============ 連携アプリ（外部アプリへのリンク集） ============ */
   var APP_LINKS = [
-    {name:"備品管理アプリ", url:"https://bihinkanriapp.vercel.app/", icon:iBox, sso:true, desc:"備品・貸出の管理。同じ氏名の社員がいれば自動でログインします。"},
-    {name:"報告写真アプリ", url:"https://houkokusho-two.vercel.app/", icon:iImage, desc:"報告写真の作成・管理。"},
-    {name:"黒板アプリ", url:"https://kokubanapp.vercel.app/", icon:iImage, desc:"工事用の電子小黒板。"},
-    {name:"勤怠アプリ", url:"https://kintaiapp-one.vercel.app/", icon:iCalendar, desc:"勤怠(出退勤)の管理。"},
-    {name:"社用車管理アプリ", url:"https://shayosha-kanri.vercel.app/", icon:iBriefcase2, site:true, desc:"社用車の管理。案件の画面から開くと、出発登録の行先に現場名が入ります。"},
-    {name:"除雪作業管理アプリ", url:"https://jyosestu-app.vercel.app/", icon:iBriefcase2, jyosetsu:true, desc:"除雪作業の管理。同じ氏名のメンバーがいれば自動でログインします。"},
-    {name:"大東受注アプリ", url:"https://daito-kanriapp000.vercel.app/", icon:iBriefcase2, daito:true, desc:"大東の受注の管理。大東アプリにアカウントがある人だけ入れます（ある人は自動でログイン）。"}
+    {key:"bihin", name:"備品管理アプリ", url:"https://bihinkanriapp.vercel.app/", icon:iBox, sso:true, desc:"備品・貸出の管理。同じ氏名の社員がいれば自動でログインします。"},
+    {key:"houkoku", name:"報告写真アプリ", url:"https://houkokusho-two.vercel.app/", icon:iImage, desc:"報告写真の作成・管理。"},
+    {key:"kokuban", name:"黒板アプリ", url:"https://kokubanapp.vercel.app/", icon:iImage, desc:"工事用の電子小黒板。"},
+    {key:"kintai", name:"勤怠アプリ", url:"https://kintaiapp-one.vercel.app/", icon:iCalendar, desc:"勤怠(出退勤)の管理。"},
+    {key:"shayosha", name:"社用車管理アプリ", url:"https://shayosha-kanri.vercel.app/", icon:iBriefcase2, site:true, desc:"社用車の管理。案件の画面から開くと、出発登録の行先に現場名が入ります。"},
+    {key:"jyosetsu", name:"除雪作業管理アプリ", url:"https://jyosestu-app.vercel.app/", icon:iBriefcase2, jyosetsu:true, desc:"除雪作業の管理。同じ氏名のメンバーがいれば自動でログインします。"},
+    {key:"daito", name:"大東受注アプリ", url:"https://daito-kanriapp000.vercel.app/", icon:iBriefcase2, daito:true, desc:"大東の受注の管理。大東アプリにアカウントがある人だけ入れます（ある人は自動でログイン）。"}
   ];
+  // 連携アプリの一覧：初期の一覧に、管理者が設定で変えた内容（名前・URL・説明・アイコン・並び順・非表示・追加）を重ねる
+  var APP_ICONS = [["box","箱（備品）",iBox],["image","画像",iImage],["calendar","カレンダー",iCalendar],["briefcase","カバン",iBriefcase2],["users","人",iUsers],["doc","書類",iDoc],["chat","チャット",iChat],["home","家",iHome]];
+  state.appsCfg = null;
+  function appIconFn(k, fallback){ var f = APP_ICONS.find(function(x){ return x[0]===k; }); return f ? f[2] : (fallback||iBriefcase2); }
+  function appLinksAll(){
+    var cfg = (state.appsCfg && Array.isArray(state.appsCfg.items)) ? state.appsCfg.items : [];
+    var base = {}; APP_LINKS.forEach(function(a){ base[a.key] = a; });
+    var out = [], seen = {};
+    cfg.forEach(function(c){
+      if(!c || !c.key || seen[c.key]) return; seen[c.key] = 1;
+      var b = base[c.key];
+      if(b) out.push(Object.assign({}, b, {name:c.name||b.name, url:c.url||b.url, desc:(c.desc!==undefined?c.desc:b.desc), icon:appIconFn(c.icon, b.icon), hidden:!!c.hidden, iconKey:c.icon||""}));
+      else if(c.custom) out.push({key:c.key, custom:true, name:c.name||"アプリ", url:c.url||"", desc:c.desc||"", icon:appIconFn(c.icon), hidden:!!c.hidden, iconKey:c.icon||""});
+    });
+    APP_LINKS.forEach(function(a){ if(!seen[a.key]) out.push(Object.assign({}, a, {hidden:false, iconKey:""})); });   // 後から増えた初期アプリは、末尾に出す
+    return out;
+  }
+  function appLinks(){ return appLinksAll().filter(function(a){ return !a.hidden && /^https?:\/\//i.test(a.url||""); }); }
+  function loadAppsCfg(){
+    if(!db){ state.appsCfg = {items:[]}; return; }
+    db.doc("settings/apps").get().then(function(snap){ state.appsCfg = snap.exists ? snap.data() : {items:[]}; if(state.tab==="apps" || state.tab==="project-detail" || (state.tab==="settings" && state.settingsSeg==="apps")) render(); }).catch(function(){ state.appsCfg = {items:[]}; });
+  }
   function renderAppsPage(){
     return '<div class="apps-page"><div style="margin-bottom:12px"><h1 style="font-size:22px;margin:0">連携アプリ</h1><div style="font-size:12.5px;color:var(--ink-soft);margin-top:2px">社内の関連アプリを新しいタブで開きます。</div></div>'+
       '<div class="apps-grid">'+
-      APP_LINKS.map(function(a){
-        return '<a class="app-tile" '+(a.sso?'data-bihin-link="1" ':'')+(a.site?'data-shayosha-link="1" ':'')+(a.daito?'data-daito-link="1" ':'')+(a.jyosetsu?'data-jyosetsu-link="1" ':'')+(a.name==="報告写真アプリ"?'data-report-open="1" ':'')+'href="'+esc(a.url)+'" target="_blank" rel="noopener noreferrer">'+
+      appLinks().map(function(a){
+        return '<a class="app-tile" '+(a.sso?'data-bihin-link="1" ':'')+(a.site?'data-shayosha-link="1" ':'')+(a.daito?'data-daito-link="1" ':'')+(a.jyosetsu?'data-jyosetsu-link="1" ':'')+(a.key==="houkoku"?'data-report-open="1" ':'')+'href="'+esc(a.url)+'" target="_blank" rel="noopener noreferrer">'+
           '<span class="app-ico">'+a.icon()+'</span>'+
           '<span class="app-nm">'+esc(a.name)+'<span class="app-ext"> ↗</span></span>'+
           '<span class="app-ds">'+esc(a.desc)+'</span>'+
@@ -6722,6 +6746,54 @@
     }).catch(function(){});
   }
   document.addEventListener("visibilitychange", function(){ if(!document.hidden && state.authed && Date.now()-_accessAt>60000) loadAccess(); });
+  var appsDraft = null;
+  function renderSettingsApps(){
+    if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
+    if(state.appsCfg===null && !db) state.appsCfg = {items:[]};
+    if(state.appsCfg===null){ if(!state.appsCfgAsked){ state.appsCfgAsked = true; loadAppsCfg(); } return '<div class="card" style="padding:18px">読み込み中…</div>'; }
+    if(!appsDraft) appsDraft = appLinksAll().map(function(a){ return {key:a.key, custom:!!a.custom, name:a.name, url:a.url, desc:a.desc||"", icon:a.iconKey||"", hidden:!!a.hidden}; });
+    var rows = appsDraft.map(function(a,i){
+      var isDef = !a.custom, def = isDef ? APP_LINKS.find(function(x){ return x.key===a.key; }) : null;
+      return '<div class="card" data-app-row="'+i+'" style="padding:12px 14px;display:flex;flex-direction:column;gap:8px'+(a.hidden?';opacity:.6':'')+'">'+
+        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><b style="font-size:12px;color:var(--ink-faint)">'+(i+1)+'</b>'+
+          '<input type="text" data-app-f="name" value="'+esc(a.name)+'" placeholder="アプリの名前" style="flex:1;min-width:140px">'+
+          '<button type="button" class="btn sm outline" data-app-mv="up" '+(i===0?'disabled':'')+' title="上へ">↑</button><button type="button" class="btn sm outline" data-app-mv="down" '+(i===appsDraft.length-1?'disabled':'')+' title="下へ">↓</button></div>'+
+        '<input type="text" data-app-f="url" value="'+esc(a.url)+'" placeholder="https://..." inputmode="url" autocapitalize="off">'+
+        '<textarea data-app-f="desc" rows="2" placeholder="説明（画面に表示されます）">'+esc(a.desc)+'</textarea>'+
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><label style="font-size:12px;display:flex;align-items:center;gap:6px">アイコン<select data-app-f="icon" style="width:auto"><option value="">'+(isDef?'初期のまま':'カバン')+'</option>'+APP_ICONS.map(function(x){ return '<option value="'+x[0]+'"'+(a.icon===x[0]?' selected':'')+'>'+x[1]+'</option>'; }).join("")+'</select></label>'+
+          '<label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-app-f="hidden"'+(a.hidden?' checked':'')+' style="width:auto"> 表示しない</label>'+
+          (a.custom ? '<button type="button" class="btn sm outline" data-app-del="1" style="margin-left:auto;color:var(--danger)">削除</button>' : '<span style="margin-left:auto;font-size:11px;color:var(--ink-faint)">'+(def&&(def.sso||def.site||def.daito||def.jyosetsu)?'自動ログインあり':'')+'</span>')+'</div></div>';
+    }).join("");
+    return '<div style="max-width:720px;display:flex;flex-direction:column;gap:10px"><div class="card" style="padding:16px 18px"><h2 style="font-size:13.5px;margin-bottom:6px">連携アプリの編集</h2><div style="font-size:11.5px;color:var(--ink-faint);line-height:1.7">メニューの「連携アプリ」と、案件画面のボタンに出るアプリを編集します。名前・URL・説明・アイコン・並び順を変えたり、使わないアプリを非表示にしたり、新しいアプリを追加できます。<br>URLは https:// から始まるものだけ使えます。備品・社用車・除雪・大東の自動ログインは、初期のアプリに付いている機能です（URLを変えても、そのまま働きます）。</div></div>'+rows+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn outline" id="app-add">＋ アプリを追加</button><button class="btn primary" id="app-save">保存する</button><button class="btn outline" id="app-reset">初期の状態に戻す</button></div></div>';
+  }
+  function renderSettingsAppsBind(){
+    if(state.tab!=="settings" || state.settingsSeg!=="apps"){ appsDraft = null; return; }
+    var c = document.getElementById("content"); if(!c || !appsDraft) return;
+    var sync = function(){ c.querySelectorAll("[data-app-row]").forEach(function(row){ var i = +row.getAttribute("data-app-row"), a = appsDraft[i]; if(!a) return;
+      row.querySelectorAll("[data-app-f]").forEach(function(el){ var f = el.getAttribute("data-app-f"); a[f] = el.type==="checkbox" ? el.checked : el.value.trim(); }); }); };
+    c.querySelectorAll("[data-app-f]").forEach(function(el){ el.addEventListener("input", sync); el.addEventListener("change", sync); });   // 入力中に画面が再描画されても、入力内容が消えないようにする
+    c.querySelectorAll("[data-app-row]").forEach(function(row){ var i = +row.getAttribute("data-app-row");
+      row.querySelectorAll("[data-app-mv]").forEach(function(b){ b.addEventListener("click", function(){ sync(); var j = i + (b.getAttribute("data-app-mv")==="up"?-1:1); if(j<0||j>=appsDraft.length) return; var t = appsDraft[i]; appsDraft[i] = appsDraft[j]; appsDraft[j] = t; render(); }); });
+      var d = row.querySelector("[data-app-del]"); if(d) d.addEventListener("click", function(){ sync(); if(!confirm("このアプリを削除します。よろしいですか？")) return; appsDraft.splice(i,1); render(); });
+      var h = row.querySelector('[data-app-f="hidden"]'); if(h) h.addEventListener("change", function(){ sync(); render(); });
+    });
+    document.getElementById("app-add").addEventListener("click", function(){ sync(); appsDraft.push({key:"c_"+uid(), custom:true, name:"", url:"https://", desc:"", icon:"", hidden:false}); render(); setTimeout(function(){ var r = document.querySelectorAll("[data-app-row]"); if(r.length) r[r.length-1].scrollIntoView({block:"center"}); }, 50); });
+    document.getElementById("app-reset").addEventListener("click", function(){ if(!confirm("連携アプリを、初期の状態（追加したアプリは削除）に戻します。よろしいですか？")) return; save({items:[]}, "初期の状態に戻しました"); });
+    document.getElementById("app-save").addEventListener("click", function(){
+      sync();
+      for(var i=0;i<appsDraft.length;i++){ var a = appsDraft[i];
+        if(!a.name){ toast((i+1)+"番目のアプリの名前を入力してください"); return; }
+        if(!/^https?:\/\/[^\s]+$/i.test(a.url||"")){ toast("「"+a.name+"」のURLは https:// から始まる形式で入力してください"); return; } }
+      save({items:appsDraft.map(function(a){ return {key:a.key, custom:!!a.custom, name:a.name, url:a.url, desc:a.desc||"", icon:a.icon||"", hidden:!!a.hidden}; })}, "連携アプリを保存しました");
+    });
+    function save(val, msg){
+      if(!state.isAdmin){ toast("連携アプリの変更は管理者のみ行えます"); return; }
+      var data = Object.assign({}, val, {updatedAt:new Date().toISOString(), updatedBy:state.myName||""});
+      var done = function(){ state.appsCfg = data; appsDraft = null; toast(msg); render(); };
+      if(db) db.doc("settings/apps").set(data).then(done).catch(function(){ toast("保存に失敗しました"); }); else done();
+    }
+  }
   function renderSettingsAccess(){
     if(!state.isAdmin) return emptyState(iBox,"管理者のみ閲覧できます","");
     var sel = function(role, key, opts, val){ return '<select data-acc="'+role+'|'+key+'" style="width:auto;min-width:0">'+opts.map(function(o){ return '<option value="'+o[0]+'"'+(String(val)===String(o[0])?' selected':'')+'>'+o[1]+'</option>'; }).join("")+'</select>'; };
@@ -7696,10 +7768,10 @@
     var btn = function(a){
       var short = a.name.replace(/アプリ$/,"");
       var inner = '<span class="pa-ico">'+a.icon()+'</span><span class="pa-name"><span>'+esc(short)+'</span><span class="pa-sfx">アプリ</span></span>';
-      if(a.name==="報告写真アプリ") return '<button type="button" class="btn sm outline pa-btn" data-report-project="'+esc(p.id)+'" title="この案件を指定して報告写真アプリを開きます（作ったPDFはこの案件のファイルに保存できます）">'+inner+'</button>';
+      if(a.key==="houkoku") return '<button type="button" class="btn sm outline pa-btn" data-report-project="'+esc(p.id)+'" title="この案件を指定して報告写真アプリを開きます（作ったPDFはこの案件のファイルに保存できます）">'+inner+'</button>';
       return '<a class="btn sm outline pa-btn" '+(a.sso?'data-bihin-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を指定して備品管理アプリを開きます（持出時の現場名が自動で入ります）" ':'')+(a.site?'data-shayosha-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を行先に入れて社用車管理アプリを開きます（ログインも引き継ぎます）" ':'')+(a.daito?'data-daito-link="1" title="大東アプリのアカウントがある人だけ入れます" ':'')+(a.jyosetsu?'data-jyosetsu-link="1" ':'')+'href="'+esc(a.url+((a.sso||a.site)?"?site="+encodeURIComponent(p.name||"")+(a.site&&p.division?"&division="+encodeURIComponent(p.division):""):""))+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>';
     };
-    return '<div class="card pa-card"><div class="pa-title">連携アプリ</div><div class="pa-list">'+APP_LINKS.map(btn).join("")+'</div></div>';
+    return '<div class="card pa-card"><div class="pa-title">連携アプリ</div><div class="pa-list">'+appLinks().map(btn).join("")+'</div></div>';
   }
   function renderProjectDetail(){
     var p = state.projects.find(function(x){return x.id===state.viewingProjectId;});
@@ -9453,7 +9525,7 @@
   // (admins only: stats, permission/password management, backup).
   function settingsSections(){
     var s = state.isAdmin ? [["company","会社情報"],["personal","個人情報"]] : [["personal","個人情報"]];   // 会社情報は管理者のみ
-    if(state.isAdmin){ s.push(["admin","管理画面"]); s.push(["access","機能制限"]); s.push(["loginlog","ログイン履歴"]); s.push(["audit","操作ログ"]); s.push(["master","マスタ管理"]); s.push(["trash","ゴミ箱"]); }
+    if(state.isAdmin){ s.push(["admin","管理画面"]); s.push(["access","機能制限"]); s.push(["loginlog","ログイン履歴"]); s.push(["audit","操作ログ"]); s.push(["master","マスタ管理"]); s.push(["apps","連携アプリ"]); s.push(["trash","ゴミ箱"]); }
     if(worksAvailable()) s.push(["works","LINE WORKS"]);
     if(state.isAdmin){ s.push(["freee","freee連携"]); s.push(["backup","バックアップ"]); }
     return s;
@@ -9490,6 +9562,7 @@
     else if(state.settingsSeg==="freee") html += renderSettingsFreee();
     else if(state.settingsSeg==="works") html += renderSettingsWorks();
     else if(state.settingsSeg==="master") html += renderSettingsMaster();
+    else if(state.settingsSeg==="apps") html += renderSettingsApps();
     else if(state.settingsSeg==="trash") html += renderSettingsTrash();
     else if(state.settingsSeg==="backup") html += renderSettingsBackup();
     else html += renderSettingsCompany();
@@ -14367,7 +14440,7 @@
       if(!db){ toast("保存しました（プレビューのみ）"); return; }
       db.doc("settings/photo").set(Object.assign({}, v, {updatedAt:new Date().toISOString(), updatedBy:state.myName||""})).then(function(){ toast("写真の設定を保存しました"); }).catch(function(){ toast("保存に失敗しました"); });
     });
-    renderSettingsAccessBind(); auditBind(c);
+    renderSettingsAccessBind(); renderSettingsAppsBind(); auditBind(c);
     var callPwSave = document.getElementById("call-pw-save");
     if(callPwSave) callPwSave.addEventListener("click", function(){
       if(!state.isAdmin){ toast("通話パスワードの変更は管理者のみ行えます"); return; }
