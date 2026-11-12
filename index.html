@@ -4132,19 +4132,39 @@
     if(!aiVisible()){ if(box) box.style.display="none"; if(fab) fab.style.display="none"; return; }
     if(!fab){
       fab = document.createElement("button"); fab.id = "ai-fab"; fab.type = "button"; fab.title = "AIアシスタント"; fab.innerHTML = aiKunSvg(58)+'<span class="ai-tag">AIロボ</span>';
-      fab.addEventListener("click", function(){ state.ai.open = !state.ai.open; aiRender(); if(state.ai.open) aiProbe(); });
+      var fabMoved = false;
+      fab.addEventListener("click", function(){ if(fabMoved){ fabMoved = false; return; } state.ai.open = !state.ai.open; aiRender(); if(state.ai.open) aiProbe(); });
+      // ボタンが邪魔なときは、指で長押ししてそのまま動かすと、好きな場所に移せる（位置は端末に記憶される）
+      var fabPlace = function(x,y){
+        var w = fab.offsetWidth||44, h = fab.offsetHeight||44;
+        x = Math.max(4, Math.min(window.innerWidth-w-4, x)); y = Math.max(4, Math.min(window.innerHeight-h-4, y));
+        fab.style.left = x+"px"; fab.style.top = y+"px"; fab.style.right = "auto"; fab.style.bottom = "auto"; fab.style.animation = "none";
+        return [x,y];
+      };
+      try{ var sp = JSON.parse(localStorage.getItem("gc_ai_fab")||"null"); if(sp && typeof sp.x==="number") setTimeout(function(){ fabPlace(sp.x, sp.y); }, 0); }catch(e){}
+      var drag = null;
+      fab.addEventListener("pointerdown", function(ev){ var r = fab.getBoundingClientRect(); drag = {sx:ev.clientX, sy:ev.clientY, ox:r.left, oy:r.top, on:false, t:Date.now()}; });
+      fab.addEventListener("pointermove", function(ev){
+        if(!drag) return;
+        var dx = ev.clientX-drag.sx, dy = ev.clientY-drag.sy;
+        if(!drag.on && Math.abs(dx)+Math.abs(dy) > 8){ drag.on = true; fabMoved = true; try{ fab.setPointerCapture(ev.pointerId); }catch(e){} }
+        if(drag.on){ ev.preventDefault(); fabPlace(drag.ox+dx, drag.oy+dy); }
+      });
+      var dragEnd = function(){ if(drag && drag.on){ var r = fab.getBoundingClientRect(); try{ localStorage.setItem("gc_ai_fab", JSON.stringify({x:r.left, y:r.top})); }catch(e){} setTimeout(function(){ fabMoved = false; }, 50); } drag = null; };
+      fab.addEventListener("pointerup", dragEnd); fab.addEventListener("pointercancel", dragEnd);
+      window.addEventListener("resize", function(){ try{ var r = fab.getBoundingClientRect(); if(fab.style.left) fabPlace(r.left, r.top); }catch(e){} });
       document.body.appendChild(fab);
       var st = document.createElement("style");
       st.textContent = '#ai-fab{position:fixed;right:14px;bottom:18px;width:auto;height:auto;border:none;background:none;padding:0;cursor:pointer;z-index:900;display:flex;flex-direction:column;align-items:center;filter:drop-shadow(0 4px 6px rgba(0,0,0,.22));animation:ai-bob 2.6s ease-in-out infinite}'+
         '#ai-fab .ai-tag{margin-top:-2px;background:var(--accent,#1f7a4d);color:#fff;font-size:11px;font-weight:800;padding:2px 9px;border-radius:99px;border:2px solid #fff;letter-spacing:.05em}'+
-        '#ai-fab:hover{animation-play-state:paused;transform:scale(1.08)}'+
+        '#ai-fab{touch-action:none;-webkit-user-select:none;user-select:none}#ai-fab:hover{animation-play-state:paused;transform:scale(1.08)}'+
         '@keyframes ai-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}@keyframes ai-blink{0%,92%,100%{transform:scaleY(1)}96%{transform:scaleY(.1)}}@keyframes ai-wave{0%,100%{transform:rotate(0)}50%{transform:rotate(-22deg)}}'+
         '.ai-eyes{transform-box:fill-box;transform-origin:center;animation:ai-blink 4.2s infinite}.ai-arm-r{transform-box:fill-box;transform-origin:20% 90%;animation:ai-wave 1.8s ease-in-out infinite}.ai-ant{animation:ai-blink 2s infinite;transform-box:fill-box;transform-origin:center}'+
         '#ai-panel{position:fixed;right:16px;bottom:82px;width:392px;max-width:calc(100vw - 24px);height:min(600px,calc(100vh - 110px));background:var(--surface,#fff);color:var(--ink,#222);border:1px solid var(--border,#ddd);border-radius:14px;box-shadow:0 10px 34px rgba(0,0,0,.3);z-index:901;display:flex;flex-direction:column;overflow:hidden}'+
         '#ai-panel .ai-msgs{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}'+
         '#ai-panel .ai-b{max-width:88%;padding:9px 12px;border-radius:12px;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word}'+
         '#ai-panel .ai-u{align-self:flex-end;background:var(--accent,#1f7a4d);color:#fff}#ai-panel .ai-a{align-self:flex-start;background:var(--surface-2,#f1f4f2)}'+
-        '@media (max-width:760px){#ai-fab{bottom:calc(74px + env(safe-area-inset-bottom));right:8px}#ai-panel{right:0;left:0;bottom:0;width:100%;max-width:100%;height:86vh;border-radius:14px 14px 0 0}}';
+        '@media (max-width:760px){#ai-fab{bottom:calc(74px + env(safe-area-inset-bottom));right:8px;opacity:.92}#ai-fab svg{width:44px;height:44px}#ai-fab .ai-tag{display:none}#ai-panel{right:0;left:0;bottom:0;width:100%;max-width:100%;height:86vh;border-radius:14px 14px 0 0}}';
       document.head.appendChild(st);
     }
     fab.style.display = state.ai.open && window.innerWidth<=760 ? "none" : "flex";
