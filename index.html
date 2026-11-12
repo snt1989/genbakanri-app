@@ -827,7 +827,7 @@
     .chat-pane{display:none;}
     .chat-shell.show-pane .chat-list{display:none;}
     .chat-shell.show-pane .chat-pane{display:flex;min-height:calc(100dvh - 120px);}
-    .chat-backbar{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--surface-2);font-weight:700;font-size:14px;}
+    .chat-backbar{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--surface-2);font-weight:700;font-size:14px;position:sticky;top:calc(env(safe-area-inset-top,0px) + var(--topbar-h,56px));z-index:4;}
     .chat-back{display:inline-flex;}
     /* スマホ：チャットの幅が画面からはみ出さないようにする */
     .chat-page,.chat-shell,.chat-pane,.chat-msgs,.chat-input-wrap{width:100%;max-width:100%;min-width:0;box-sizing:border-box;}
@@ -4458,6 +4458,7 @@
     mobileSimplify();
     // 横に長いタブ（設定など）は、選択中のタブが見える位置までスクロールしておく
     document.querySelectorAll("#content .segmented").forEach(function(sg){ var on = sg.querySelector(".segopt.active"); if(on && sg.scrollWidth>sg.clientWidth) sg.scrollLeft = Math.max(0, on.offsetLeft - (sg.clientWidth-on.offsetWidth)/2); });
+    try{ var tb = document.querySelector("header.topbar"); if(tb) document.documentElement.style.setProperty("--topbar-h", tb.offsetHeight+"px"); }catch(e){}   // 「一覧」ボタンを、上の帯の下に固定するため
     if(state.tab==="chat") scrollChatToBottom(); else chatScrollKey = "";
     formLive = (state.tab==="project-form" || state.tab==="member-form") && !!c.querySelector("input, textarea, select");
   }
