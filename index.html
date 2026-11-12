@@ -4459,7 +4459,7 @@
     // 横に長いタブ（設定など）は、選択中のタブが見える位置までスクロールしておく
     document.querySelectorAll("#content .segmented").forEach(function(sg){ var on = sg.querySelector(".segopt.active"); if(on && sg.scrollWidth>sg.clientWidth) sg.scrollLeft = Math.max(0, on.offsetLeft - (sg.clientWidth-on.offsetWidth)/2); });
     try{ var tb = document.querySelector("header.topbar"); if(tb) document.documentElement.style.setProperty("--topbar-h", tb.offsetHeight+"px"); }catch(e){}   // 「一覧」ボタンを、上の帯の下に固定するため
-    if(state.tab==="chat") scrollChatToBottom(); else chatScrollKey = "";
+    if(state.tab==="chat"){ chatPrefetch(); scrollChatToBottom(); } else chatScrollKey = "";
     formLive = (state.tab==="project-form" || state.tab==="member-form") && !!c.querySelector("input, textarea, select");
   }
 
@@ -9327,8 +9327,10 @@
       html += '<div class="chat-backbar"><button class="chat-back" data-chat-back="1">'+iBack()+' 一覧</button><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(chat.name)+'</span>'+(chatProject(chat)?'<a class="btn sm primary" href="#" data-open-project="'+esc(chatProject(chat).id)+'" style="flex:none">'+iDoc()+' 案件詳細へ</a>':'')+'</div>';
       html += '<div class="chat-msgs" id="chat-msgs">';
       var msgs = state.chatMsgs[chat.id] || [];
-      if(msgs.length===0){ html += '<div style="color:var(--ink-faint);font-size:12px;text-align:center;margin-top:20px">まだメッセージはありません</div>'; }
+      if(state.chatMsgs[chat.id]===undefined && db){ html += '<div style="color:var(--ink-faint);font-size:12px;text-align:center;margin-top:20px">メッセージを読み込み中…</div>'; }
+      else if(msgs.length===0){ html += '<div style="color:var(--ink-faint);font-size:12px;text-align:center;margin-top:20px">まだメッセージはありません</div>'; }
       else{
+        if(chatMore[chat.id]) html += '<div style="text-align:center"><button class="btn sm outline" data-chat-older="'+esc(chat.id)+'">以前のメッセージを読み込む</button></div>';
         var lastDay = "";
         html += msgs.map(function(m){
           var out = "", day = chatDay(m.ts);
@@ -9379,12 +9381,27 @@
     else if(chat) setTimeout(function(){ markChatRead(chat, state.chatMsgs[chat.id]); }, 300);
     return html;
   }
-  function loadChatMsgs(chatId){
+  var chatUnsubs = {}, chatLimit = {}, chatMore = {}, chatOlderKeep = null;
+  // 最新のメッセージから先に読む（以前は古い順に200件を読んでいたため、長いチャットでは新しい発言が表示されず、読み込みも重かった）
+  function loadChatMsgs(chatId, limit){
     if(!db){ state.chatMsgs[chatId] = (SAMPLE_MSGS[chatId] || []).map(function(m){ return m.id ? m : Object.assign({id:uid()}, m); }); render(); return; }
-    db.collection("chats").doc(chatId).collection("messages").orderBy("ts").limit(200).onSnapshot(function(snap){
-      state.chatMsgs[chatId] = snap.docs.map(toObj);
+    limit = limit || chatLimit[chatId] || 50; chatLimit[chatId] = limit;
+    if(chatUnsubs[chatId]){ try{ chatUnsubs[chatId](); }catch(e){} }
+    chatUnsubs[chatId] = db.collection("chats").doc(chatId).collection("messages").orderBy("ts","desc").limit(limit).onSnapshot(function(snap){
+      state.chatMsgs[chatId] = snap.docs.map(toObj).reverse();
+      chatMore[chatId] = snap.docs.length >= limit;
       if(state.activeChat===chatId) render();
-    }, function(){});
+      if(chatOlderKeep && chatOlderKeep.id===chatId){   // 「以前のメッセージ」を読み込んだときは、見ていた位置を保つ
+        var k = chatOlderKeep; chatOlderKeep = null;
+        var e = document.getElementById("chat-msgs"); if(e) e.scrollTop = k.top + (e.scrollHeight - k.h);
+        window.scrollTo(0, k.y + (document.documentElement.scrollHeight - k.dh));
+      }
+    }, function(){ if(state.chatMsgs[chatId]===undefined){ state.chatMsgs[chatId] = []; if(state.activeChat===chatId) render(); } });
+  }
+  function chatPrefetch(){
+    // チャット一覧を開いたとき、直近のチャットは先に読み込んでおく（開いたときにすぐ表示できる）
+    if(!db) return;
+    state.chats.slice().sort(function(a,b){ return String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")); }).slice(0,3).forEach(function(c){ if(state.chatMsgs[c.id]===undefined && !chatUnsubs[c.id]) loadChatMsgs(c.id); });
   }
   var chatScrollKey = "";
   function scrollChatToBottom(){
@@ -9394,7 +9411,7 @@
     // 開いたとき・新しいメッセージが増えたときだけ、一番新しい発言が見える位置まで動かす（リアクションなどの再描画では動かさない）
     var n = state.activeChat ? ((state.chatMsgs[state.activeChat]||[]).length) : 0;
     var key = (state.activeChat||"")+":"+n;
-    if(!el || !state.activeChat || key===chatScrollKey) return;
+    if(!el || !state.activeChat || key===chatScrollKey || chatOlderKeep) return;
     chatScrollKey = key;
     var go = function(){
       var e2 = document.getElementById("chat-msgs"); if(!e2) return;
@@ -14139,6 +14156,12 @@
         });
       });
     }
+    c.querySelectorAll("[data-chat-older]").forEach(function(el){ el.addEventListener("click", function(){
+      var id = el.getAttribute("data-chat-older"), e = document.getElementById("chat-msgs");
+      chatOlderKeep = {id:id, top:e?e.scrollTop:0, h:e?e.scrollHeight:0, y:window.scrollY, dh:document.documentElement.scrollHeight};
+      el.disabled = true; el.textContent = "読み込み中…";
+      loadChatMsgs(id, (chatLimit[id]||50)+50);
+    }); });
     c.querySelectorAll("[data-chat-readers]").forEach(function(el){ el.addEventListener("click", function(){ openReadersModal(state.activeChat, el.getAttribute("data-chat-readers")); }); });
     c.querySelectorAll("[data-chat-reply]").forEach(function(el){ el.addEventListener("click", function(){
       var m = (state.chatMsgs[state.activeChat]||[]).find(function(x){return x.id===el.getAttribute("data-chat-reply");}); if(!m) return;
