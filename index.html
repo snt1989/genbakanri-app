@@ -1668,6 +1668,7 @@
     ]},
     {id:"2026-11-11-1", title:"11月11日の更新", items:[
       {t:"音声通話を使うには、パスワードが必要になりました", d:"管理者が設定の管理画面で「音声通話のパスワード」を決めます。端末ごとに一度入力すると、その端末では覚えます。未設定のあいだは誰でも使えます。"},
+      {t:"マスタの項目名を変えても、登録済みのデータが引き継がれるようになりました", d:"案件進捗・案件種類などのマスタで、項目の名前を書き換えて保存すると、その項目を使っている登録済みのデータは新しい名前に変わります。「未入力」になるのは、項目を削除したときだけです。", admin:true},
       {t:"連携アプリを、メンバーを指定して制限できるようになりました", d:"設定の「連携アプリ」で、アプリごとに「使えるメンバー」を指定できます。指定した人以外には、そのアプリ自体が表示されません（管理者は常に表示）。"},
       {t:"連携アプリに「使える人」が表示されるようになりました", d:"各アプリに、管理者・一般・社外のうち誰が使えるかが表示されます。管理者は、設定の「連携アプリ」で、一般・社外に見せるかを選べます。"},
       {t:"設定に「連携アプリ」の編集画面を追加しました（管理者）", d:"設定の「連携アプリ」で、アプリの名前・URL・説明・アイコン・並び順を変えたり、使わないアプリを非表示にしたり、新しいアプリを追加したりできます。", admin:true},
@@ -9650,7 +9651,7 @@
   // 元の配列を“その場で”書き換えるので、画面側のコードは変更不要。保存先: settings/master
   var REPORT_TYPES = ["作業報告書","日報","進捗報告書","完了報告書","是正・指摘事項報告書"];
   var MASTERS = [
-    {key:"statuses", label:"案件進捗", arr:STATUS_LIST, note:"案件の進捗（一覧の絞り込み・登録画面）に出ます。契約済・施工中・施工完了・清算済・失注は集計に使うため削除できません。色は自動で付きます"},
+    {key:"statuses", label:"案件進捗", arr:STATUS_LIST, note:"案件の進捗（一覧の絞り込み・登録画面）に出ます。契約済・施工中・施工完了・清算済・失注は集計に使うため、削除も名前の変更もできません。項目の名前を書き換えると、使っている案件は新しい名前に引き継がれます（削除したときだけ「未入力」になります）。色は自動で付きます"},
     {key:"projectTypes", label:"案件種類", arr:PROJECT_TYPES, note:"案件の登録・編集の「案件種類」に出ます"},
     {key:"divisions", label:"事業部", arr:DIVISIONS, note:"自社メンバーの「事業部」に出ます"},
     {key:"roles", label:"職種", arr:ROLES, note:"メンバーの「職種」に出ます"},
@@ -9766,24 +9767,41 @@
     propertyTypes:[["projects","propertyType"]], propertyStructures:[["projects","propertyStructure"]],
     divisions:[["members","division"]], roles:[["members","roles"]], eventTypes:[["events","category"]], reportTypes:[["reports","type"]]
   };
-  function masterAffected(key, removed){
-    var out = [];
+  // removed＝削除された項目。renames＝名前を書き換えた項目（旧名→新名）。書き換えた項目を使っているデータは、新しい名前に引き継ぐ。
+  function masterAffected(key, removed, renames){
+    var out = [], rn = renames || {};
+    var mapv = function(x){ return Object.prototype.hasOwnProperty.call(rn,x) ? rn[x] : (removed.indexOf(x)!==-1 ? null : x); };
     (MASTER_FIELDS[key]||[]).forEach(function(cf){
       var col = cf[0], fld = cf[1], rows = col==="projects" ? rawStore.projects : state[col];
       rows.forEach(function(r){
         if(fld==="roles"){
-          var cur = r.roles||[]; var next = cur.filter(function(x){ return removed.indexOf(x)===-1; });
-          if(next.length!==cur.length){ out.push({col:col,id:r.id,data:{roles:next}}); }
-        }else if(removed.indexOf(r[fld])!==-1){ var d2={}; d2[fld]=""; out.push({col:col,id:r.id,data:d2}); }
+          var cur = r.roles||[], next = []; cur.forEach(function(x){ var v = mapv(x); if(v!==null && next.indexOf(v)===-1) next.push(v); });
+          if(next.length!==cur.length || next.some(function(v,i){ return v!==cur[i]; })){ out.push({col:col,id:r.id,data:{roles:next}, renamed:next.length===cur.length}); }
+        }else if(r[fld] && (removed.indexOf(r[fld])!==-1 || Object.prototype.hasOwnProperty.call(rn,r[fld]))){
+          var v = mapv(r[fld]), d2={}; d2[fld] = v===null ? "" : v; out.push({col:col,id:r.id,data:d2, renamed:v!==null});
+        }
       });
     });
     return out;
+  }
+  // 1行ずつの並びで、同じ位置の行が別の名前に変わっていたら「名前の変更」とみなす（行を消した・足しただけなら削除・追加）
+  function masterRenames(oldArr, list){
+    var rn = {};
+    oldArr.forEach(function(n,i){
+      if(list.indexOf(n)!==-1) return;
+      var nv = list[i];
+      if(nv && oldArr.indexOf(nv)===-1 && Object.keys(rn).every(function(k){ return rn[k]!==nv; })) rn[n] = nv;
+    });
+    return rn;
   }
   function saveMaster(key, list, msg, confirmed){
     var m = MASTERS.find(function(x){return x.key===key;});
     if(!state.isAdmin){ toast("マスタの変更は管理者のみ行えます"); return; }
     var removed = m.arr.filter(function(n){ return list.indexOf(n)===-1; });
-    var affected = masterAffected(key, removed);
+    var renames = (key==="shiftTypes" || key==="accountItems" || key==="stepNames") ? {} : masterRenames(m.arr, list);   // 名前を書き換えた項目は、使っているデータを新しい名前に引き継ぐ
+    var gone = removed.filter(function(n){ return !Object.prototype.hasOwnProperty.call(renames,n); });
+    var affected = masterAffected(key, removed, renames);
+    var cleared = affected.filter(function(a){ return !a.renamed; }), carried = affected.length - cleared.length;
     var payload = {}; MASTERS.forEach(function(x){ payload[x.key] = x.key===key ? list : x.arr.slice(); });
     payload.updatedAt = new Date().toISOString();
     payload.rolesMerged = 1;
@@ -9791,14 +9809,14 @@
       var finish = function(){
         m.arr.length = 0; Array.prototype.push.apply(m.arr, list);
         if(key==="statuses") syncStatusFilters();
-        toast(msg + (affected.length ? "（"+affected.length+"件のデータを「未入力」に変更しました）" : "")); render();
+        toast(msg + (carried ? "（"+carried+"件のデータを新しい名前に引き継ぎました）" : "") + (cleared.length ? "（"+cleared.length+"件のデータを「未入力」に変更しました）" : "")); render();
       };
       var writes = affected.map(function(a){ return saveRaw(a.col, a.id, a.data); });
       var saveDoc = db ? db.doc("settings/master").set(payload) : Promise.resolve();
       Promise.all(writes.concat([saveDoc])).then(finish).catch(function(){ toast("保存に失敗しました"); });
     };
-    if(affected.length && !confirmed){
-      confirmDelete("「"+removed.filter(function(n){ return masterAffected(key,[n]).length; }).join("」「")+"」を削除します。使用中の登録済みデータ "+affected.length+"件 は「未入力」に変わります。", run);
+    if(cleared.length && !confirmed){
+      confirmDelete("「"+gone.filter(function(n){ return masterAffected(key,[n]).length; }).join("」「")+"」を削除します。使用中の登録済みデータ "+cleared.length+"件 は「未入力」に変わります。"+(carried?"（名前を変えた項目のデータ"+carried+"件は、新しい名前に引き継がれます）":""), run);
     }else run();
   }
   var LOGIN_KIND = {login:["ログイン",""], auto:["自動ログイン","muted"], fail:["失敗","danger"]};
