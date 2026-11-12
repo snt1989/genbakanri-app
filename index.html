@@ -1668,6 +1668,7 @@
     ]},
     {id:"2026-11-11-1", title:"11月11日の更新", items:[
       {t:"音声通話を使うには、パスワードが必要になりました", d:"管理者が設定の管理画面で「音声通話のパスワード」を決めます。端末ごとに一度入力すると、その端末では覚えます。未設定のあいだは誰でも使えます。"},
+      {t:"工程に「休みの日」を設定できるようになりました", d:"工程の追加・編集で、毎週休む曜日（土日など）と、日付で指定した休みを選べます。カレンダーと工程表では、休みの日が空き、工程が休みの日をまたいで続いているようには表示されません。シフト調整の「休みの日に工程がある」警告や、日報の下書きも、休みの日を除いて判定します。"},
       {t:"マスタの項目名を変えても、登録済みのデータが引き継がれるようになりました", d:"案件進捗・案件種類などのマスタで、項目の名前を書き換えて保存すると、その項目を使っている登録済みのデータは新しい名前に変わります。「未入力」になるのは、項目を削除したときだけです。", admin:true},
       {t:"連携アプリを、メンバーを指定して制限できるようになりました", d:"設定の「連携アプリ」で、アプリごとに「使えるメンバー」を指定できます。指定した人以外には、そのアプリ自体が表示されません（管理者は常に表示）。"},
       {t:"連携アプリに「使える人」が表示されるようになりました", d:"各アプリに、管理者・一般・社外のうち誰が使えるかが表示されます。管理者は、設定の「連携アプリ」で、一般・社外に見せるかを選べます。"},
@@ -5076,6 +5077,33 @@
   function secretVisible(x){ return !(x.secret && isExternalViewer()); }
   function eventIsMine(e){ return e.createdBy===state.myName || !!(e.projectId && state.projects.some(function(p){ return p.id===e.projectId && isMyProject(p); })); }
   function calMineOn(){ if(state.calMine===undefined){ var v=null; try{ v=localStorage.getItem("gc_calmine"); }catch(e){} state.calMine = v!=="0"; } return state.calMine!==false; }
+  // 工程の「休みの日」：毎週休む曜日（offWeekdays: 0=日〜6=土）と、日付で指定した休み（offDates）。開始日〜終了日のうち、休みの日は工程が無い日として扱う
+  function stepOffOn(x, iso){
+    if(!x) return false;
+    if(Array.isArray(x.offDates) && x.offDates.indexOf(iso)!==-1) return true;
+    if(Array.isArray(x.offWeekdays) && x.offWeekdays.length && x.offWeekdays.indexOf(parseISO(iso).getDay())!==-1) return true;
+    return false;
+  }
+  function stepHasOff(x){ return !!x && ((Array.isArray(x.offDates) && x.offDates.length) || (Array.isArray(x.offWeekdays) && x.offWeekdays.length)); }
+  function stepEnd(x){ return (x.endDate && x.endDate>=x.startDate) ? x.endDate : x.startDate; }
+  // 休みの日で区切った、連続する作業日のまとまり [[開始,終了],…]。休みの日だけで埋まる場合は空
+  function stepRuns(x){
+    var s0 = x.startDate, e0 = stepEnd(x);
+    if(!s0) return [];
+    if(!stepHasOff(x)) return [[s0,e0]];
+    var runs = [], cur = null, d = s0, n = 0;
+    while(d<=e0 && n<800){
+      if(!stepOffOn(x,d)){ if(cur) cur[1] = d; else { cur = [d,d]; runs.push(cur); } } else cur = null;
+      d = addDays(d,1); n++;
+    }
+    return runs;
+  }
+  function stepOffText(x){
+    if(!stepHasOff(x)) return "";
+    var wd = (x.offWeekdays||[]).slice().sort().map(function(i){ return WEEKDAYS[i]; });
+    var ds = (x.offDates||[]).slice().sort().filter(function(d){ return d>=x.startDate && d<=stepEnd(x); }).map(function(d){ return fmtDate(d); });
+    return "休み："+(wd.length?"毎週"+wd.join("・"):"")+(wd.length&&ds.length?"、":"")+ds.join("・");
+  }
   function scheduleItems(){
     var items = [], me = state.myName, mineOnly = calMineOn() && !!me;
     state.projects.forEach(function(p){
@@ -5086,7 +5114,7 @@
     });
     state.steps.filter(secretVisible).filter(function(s){ return projectVisibleId(s.projectId); }).forEach(function(s){
       if(mineOnly && stepWho(s).indexOf(me)===-1) return;
-      if(s.startDate) items.push({group:"step",kind:"step",id:s.id,title:(s.projectName?s.projectName+"：":"")+(s.name||"工程"),start:s.startDate,end:(s.endDate&&s.endDate>=s.startDate)?s.endDate:s.startDate,cls:"k-step"});
+      if(s.startDate) stepRuns(s).forEach(function(r){ items.push({group:"step",kind:"step",id:s.id,title:(s.projectName?s.projectName+"：":"")+(s.name||"工程"),start:r[0],end:r[1],cls:"k-step"}); });
     });
     state.tasks.forEach(function(t){
       if(mineOnly && taskWho(t).indexOf(me)===-1) return;
@@ -5352,7 +5380,7 @@
         badge+' <button class="btn sm" '+attr+'="'+esc(id)+'">'+iEdit()+' 編集</button></div>';
     };
     var all = [];
-    sts.forEach(function(x){ all.push({d:x.startDate||"", html:row("data-pd-step", x.id, x.secret, x.name||"（無題）", esc(range(x.startDate,x.endDate))+(x.assignee?' ・ '+esc(x.assignee):''), '<span class="badge line-gray">進捗 '+esc(String(x.progress||0))+'%</span>')}); });
+    sts.forEach(function(x){ all.push({d:x.startDate||"", html:row("data-pd-step", x.id, x.secret, x.name||"（無題）", esc(range(x.startDate,x.endDate))+(stepHasOff(x)?' ・ '+esc(stepOffText(x)):'')+(x.assignee?' ・ '+esc(x.assignee):''), '<span class="badge line-gray">進捗 '+esc(String(x.progress||0))+'%</span>')}); });
     evs.forEach(function(x){ all.push({d:x.date||"", html:row("data-pd-event", x.id, x.secret, eventLabel(x), esc(range(x.date,x.endDate)), '<span class="badge line-gray">予定</span>')}); });
     all.sort(function(a,b){ return a.d.localeCompare(b.d); });
     var rows = all.map(function(x){ return x.html; });
@@ -5504,6 +5532,9 @@
       field("案件",'<select id="f-sproj">'+state.projects.slice().sort(function(a,b){return (b.createdAt||"").localeCompare(a.createdAt||"");}).map(function(p){ return '<option value="'+esc(p.id)+'"'+(p.id===s.projectId?" selected":"")+'>'+esc(p.name)+'</option>'; }).join("")+'</select>')+
       field("工程名",'<input type="text" id="f-sname" data-ac-all="1" maxlength="60" autocomplete="off" placeholder="自由に入力（候補から選ぶこともできます）" value="'+esc(s.name||"")+'">')+
       '<div class="field-row">'+field("開始日",'<input type="date" id="f-sstart" value="'+esc(s.startDate||(st?"":today))+'">')+field("終了日",'<input type="date" id="f-send" value="'+esc(s.endDate||(st?"":today))+'">')+'</div>'+
+      '<div class="field" id="f-soff-box"><label style="font-weight:700">休みの日（任意）</label><div style="font-size:11.5px;color:var(--ink-faint);margin:2px 0 6px;line-height:1.6">開始日〜終了日のうち作業しない日を選ぶと、カレンダーと工程表で、その日が空きます。</div>'+
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px"><span style="font-size:12px">毎週休む曜日</span>'+WEEKDAYS.map(function(w,i){ return '<label style="display:flex;align-items:center;gap:3px;font-size:12.5px;padding:3px 8px;border:1px solid var(--border);border-radius:99px"><input type="checkbox" data-soff-wd="'+i+'" style="width:auto"'+((s.offWeekdays||[]).indexOf(i)!==-1?' checked':'')+'>'+w+'</label>'; }).join("")+'</div>'+
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="font-size:12px">休みの日を追加</span><input type="date" id="f-soff-date" style="width:auto"><button type="button" class="btn sm outline" id="f-soff-add">追加</button></div><div id="f-soff-list" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"></div></div>'+
       '<div class="field-row">'+field("担当者（複数選択できます）", ddMultiHtml("f-sassg", memberDdItems(state.members), stepWho(s)))+
       field("進捗（%）",'<input type="number" id="f-sprog" min="0" max="100" step="5" value="'+(+s.progress||0)+'">')+'</div>'+
       '<div class="field-row">'+field("区分（任意・工程表で見出しになります）",'<input type="text" id="f-sgroup" maxlength="30" placeholder="例：除草工" value="'+esc(s.group||"")+'">')+field("備考（任意）",'<input type="text" id="f-snote" maxlength="40" placeholder="例：予備日含む" value="'+esc(s.note||"")+'">')+'</div>'+secretRadio(s.secret),
@@ -5511,6 +5542,15 @@
     (function(){ var ni = document.getElementById("f-sname"); acDropdown(ni, function(){ return STEP_NAMES.map(function(n){ return {label:n}; }); }, function(it){ ni.value = it.label; });
       ddMultiBind("f-sassg"); })();
     if(!st) bindKindSwitch("step", projectId||"");
+    var offDates = (s.offDates||[]).slice().sort();
+    var offRender = function(){ var l = document.getElementById("f-soff-list"); if(!l) return; l.innerHTML = offDates.map(function(d,i){ return '<span style="background:var(--surface-2);border:1px solid var(--border);border-radius:99px;padding:2px 4px 2px 10px;font-size:12px;display:inline-flex;align-items:center;gap:4px">'+esc(fmtDate(d))+'（'+WEEKDAYS[parseISO(d).getDay()]+'）<button type="button" data-soff-del="'+i+'" style="border:0;background:none;cursor:pointer;font-size:14px;line-height:1;color:var(--ink-faint)">×</button></span>'; }).join(""); l.querySelectorAll("[data-soff-del]").forEach(function(b){ b.addEventListener("click", function(){ offDates.splice(+b.getAttribute("data-soff-del"),1); offRender(); }); }); };
+    offRender();
+    document.getElementById("f-soff-add").addEventListener("click", function(){
+      var inp = document.getElementById("f-soff-date"), v = inp.value; if(!v){ toast("休みの日を選んでください"); return; }
+      var a = document.getElementById("f-sstart").value, b2 = document.getElementById("f-send").value;
+      if((a && v<a) || (b2 && v>b2)){ toast("開始日〜終了日の間の日付を選んでください"); return; }
+      if(offDates.indexOf(v)===-1){ offDates.push(v); offDates.sort(); } inp.value = ""; offRender();
+    });
     if(st) document.getElementById("f-sdel").addEventListener("click", function(){ confirmDelete("この工程を削除しますか？", function(){ deleteDoc("steps", st.id, "工程を削除しました"); }); });
     document.getElementById("f-sgcal").addEventListener("click", function(){
       var pr = state.projects.find(function(x){return x.id===document.getElementById("f-sproj").value;});
@@ -5525,7 +5565,7 @@
       if(end<start){ toast("終了日は開始日以降にしてください"); return; }
       var pr = state.projects.find(function(x){return x.id===pid;});
       var prog = Math.max(0, Math.min(100, parseInt(document.getElementById("f-sprog").value||"0",10)||0));
-      writeDoc("steps", st?st.id:null, {projectId:pid, projectName:pr?pr.name:"", name:name, startDate:start, endDate:end, assignees:ddMultiVal("f-sassg"), assignee:ddMultiVal("f-sassg").join("、"), progress:prog, group:document.getElementById("f-sgroup").value.trim(), note:document.getElementById("f-snote").value.trim(), secret:document.querySelector('input[name="f-sscope"]:checked').value==="secret"}, st?"工程を更新しました":"工程を追加しました");
+      writeDoc("steps", st?st.id:null, {projectId:pid, projectName:pr?pr.name:"", name:name, startDate:start, endDate:end, assignees:ddMultiVal("f-sassg"), assignee:ddMultiVal("f-sassg").join("、"), offWeekdays:[].map.call(document.querySelectorAll("[data-soff-wd]:checked"), function(el){ return +el.getAttribute("data-soff-wd"); }), offDates:offDates.filter(function(d){ return d>=start && d<=end; }), progress:prog, group:document.getElementById("f-sgroup").value.trim(), note:document.getElementById("f-snote").value.trim(), secret:document.querySelector('input[name="f-sscope"]:checked').value==="secret"}, st?"工程を更新しました":"工程を追加しました");
     });
   }
 
@@ -5579,7 +5619,7 @@
     var dots = function(p, sts){
       var out = "";
       for(var k=0;k<days;k++){
-        var dk = addDays(start,k), act = sts.filter(function(x){ return x.startDate && x.startDate<=dk && (x.endDate||x.startDate)>=dk; }), cls = "";
+        var dk = addDays(start,k), act = sts.filter(function(x){ return x.startDate && x.startDate<=dk && (x.endDate||x.startDate)>=dk && !stepOffOn(x,dk); }), cls = "";
         if(act.length){
           if(act.some(function(x){ return (x.endDate||x.startDate)<today && (+x.progress||0)<100; })) cls = "red";
           else if(act.every(function(x){ return (+x.progress||0)>=100; })) cls = "green";
@@ -5606,7 +5646,7 @@
           lanes[li] = xe; x._lane = li;
         });
         var h = Math.max(1,lanes.length)*26+8;
-        var bars = byP[n].map(function(x){ var b = bar(x.startDate,(x.endDate&&x.endDate>=x.startDate)?x.endDate:x.startDate,"k-step",x.name,+x.progress||0,'data-cal-item="step:'+esc(x.id)+'"'); return b.replace('style="','style="top:'+(4+x._lane*26)+'px;'); }).join("");
+        var bars = byP[n].map(function(x){ return stepRuns(x).map(function(r){ var b = bar(r[0],r[1],"k-step",x.name,+x.progress||0,'data-cal-item="step:'+esc(x.id)+'"'); return b.replace('style="','style="top:'+(4+x._lane*26)+'px;'); }).join(""); }).join("");
         rows += '<div class="gt-row ppl" style="min-height:'+h+'px"><div class="gt-lbl sub"><div class="gt-pl"><span class="mini-avatar" style="background:'+avaColor(n)+';width:20px;height:20px;font-size:10px">'+esc(initials(n))+'</span><span>'+esc(n)+'</span><small>'+byP[n].length+'工程</small></div></div>'+
           '<div class="gt-cols" style="width:'+W+'px;height:'+h+'px;'+grid+'">'+bars+'</div></div>';
       });
@@ -5677,7 +5717,7 @@
     state.steps.filter(secretVisible).filter(function(x){ return x.startDate && projectVisibleId(x.projectId); }).forEach(function(x){
       var e = (x.endDate && x.endDate>=x.startDate) ? x.endDate : x.startDate; if(e<y+"-"+String(mo).padStart(2,"0")+"-01" || x.startDate>y+"-"+String(mo).padStart(2,"0")+"-"+String(nd).padStart(2,"0")) return;
       stepWho(x).forEach(function(w){
-        for(var k=1;k<=nd;k++){ var iso = y+"-"+String(mo).padStart(2,"0")+"-"+String(k).padStart(2,"0"); if(x.startDate<=iso && e>=iso && (+x.progress||0)<100){ var key = w+"|"+iso; (asg[key] = asg[key]||[]).push((x.projectName?x.projectName+"：":"")+(x.name||"工程")); } }
+        for(var k=1;k<=nd;k++){ var iso = y+"-"+String(mo).padStart(2,"0")+"-"+String(k).padStart(2,"0"); if(x.startDate<=iso && e>=iso && !stepOffOn(x,iso) && (+x.progress||0)<100){ var key = w+"|"+iso; (asg[key] = asg[key]||[]).push((x.projectName?x.projectName+"：":"")+(x.name||"工程")); } }
       });
     });
     var html = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">'+
@@ -5931,7 +5971,7 @@
   function openShiftDay(iso){
     var ix = shiftIndex(), rows = state.members.filter(function(m){ return m.name; }).map(function(m){
       var code = shiftCode(ix, m.name, iso), st = shiftSt(code);
-      var steps = state.steps.filter(secretVisible).filter(function(x){ return x.startDate && x.startDate<=iso && ((x.endDate&&x.endDate>=x.startDate)?x.endDate:x.startDate)>=iso && stepWho(x).indexOf(m.name)!==-1 && projectVisibleId(x.projectId); });
+      var steps = state.steps.filter(secretVisible).filter(function(x){ return x.startDate && x.startDate<=iso && ((x.endDate&&x.endDate>=x.startDate)?x.endDate:x.startDate)>=iso && !stepOffOn(x,iso) && stepWho(x).indexOf(m.name)!==-1 && projectVisibleId(x.projectId); });
       return '<tr><td style="padding:6px 8px;white-space:nowrap;font-weight:600">'+esc(m.name)+'</td><td style="padding:6px 8px;white-space:nowrap">'+(st?'<span style="background:'+st[3]+';color:#fff;border-radius:5px;padding:1px 8px;font-size:11.5px;font-weight:700">'+esc(st[2])+'</span>':'<span style="color:var(--ink-faint)">未入力</span>')+'</td><td style="padding:6px 8px;font-size:12px">'+
         (steps.length ? steps.map(function(x){ return esc((x.projectName?x.projectName+"：":"")+(x.name||"工程")); }).join("<br>") : '<span style="color:var(--ink-faint)">—</span>')+(st && st[4]==="休み" && steps.length ? '<div style="color:#c0463d;font-weight:700;font-size:11.5px">⚠ 休みの日に工程があります</div>' : '')+'</td></tr>';
     });
@@ -10364,7 +10404,7 @@
   // 選んだ案件・日付の工程とタスクから、作業内容のたたき台を作る
   function reportDraftText(pid, date){
     var lines = [];
-    state.steps.filter(function(x){ return x.projectId===pid && secretVisible(x) && x.startDate<=date && (x.endDate||x.startDate)>=date; }).forEach(function(x){
+    state.steps.filter(function(x){ return x.projectId===pid && secretVisible(x) && x.startDate<=date && (x.endDate||x.startDate)>=date && !stepOffOn(x,date); }).forEach(function(x){
       lines.push("・"+x.name+(x.progress!=null&&x.progress!==""?"（進捗 "+x.progress+"%）":""));
     });
     state.tasks.filter(function(x){ return x.projectId===pid && x.dueDate===date; }).forEach(function(x){ lines.push("・"+(x.done?"［完了］":"［未完了］")+x.title); });
