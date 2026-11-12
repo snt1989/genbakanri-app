@@ -4458,7 +4458,7 @@
     mobileSimplify();
     // 横に長いタブ（設定など）は、選択中のタブが見える位置までスクロールしておく
     document.querySelectorAll("#content .segmented").forEach(function(sg){ var on = sg.querySelector(".segopt.active"); if(on && sg.scrollWidth>sg.clientWidth) sg.scrollLeft = Math.max(0, on.offsetLeft - (sg.clientWidth-on.offsetWidth)/2); });
-    if(state.tab==="chat") scrollChatToBottom();
+    if(state.tab==="chat") scrollChatToBottom(); else chatScrollKey = "";
     formLive = (state.tab==="project-form" || state.tab==="member-form") && !!c.querySelector("input, textarea, select");
   }
 
@@ -9385,9 +9385,23 @@
       if(state.activeChat===chatId) render();
     }, function(){});
   }
+  var chatScrollKey = "";
   function scrollChatToBottom(){
     var el = document.getElementById("chat-msgs");
     if(el) el.scrollTop = el.scrollHeight;
+    // スマホは、チャット欄が画面ごと伸びる作りで、画面全体をスクロールする必要がある。
+    // 開いたとき・新しいメッセージが増えたときだけ、一番新しい発言が見える位置まで動かす（リアクションなどの再描画では動かさない）
+    var n = state.activeChat ? ((state.chatMsgs[state.activeChat]||[]).length) : 0;
+    var key = (state.activeChat||"")+":"+n;
+    if(!el || !state.activeChat || key===chatScrollKey) return;
+    chatScrollKey = key;
+    var go = function(){
+      var e2 = document.getElementById("chat-msgs"); if(!e2) return;
+      e2.scrollTop = e2.scrollHeight;
+      if(window.innerWidth<=760){ window.scrollTo(0, Math.max(document.documentElement.scrollHeight, document.body.scrollHeight)); }
+    };
+    go(); setTimeout(go, 150); setTimeout(go, 700);   // 画像などの読み込みで高さが変わっても、最後に合わせ直す
+    el.querySelectorAll("img").forEach(function(im){ if(!im.complete) im.addEventListener("load", go, {once:true}); });
   }
   function ensureProjectChat(project, cb){
     var existing = state.chats.find(function(c){return c.projectId===project.id;});
