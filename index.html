@@ -1686,6 +1686,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-13-1", title:"11月13日の更新", items:[
+      {t:"予算管理で、取引先を元にfreeeの書類を呼び出せます（管理者）", d:"予算管理の案件画面の「freeeの書類を呼び出す」で取引先を選ぶと、その取引先あての見積書・請求書・発注書・納品書・領収書が一覧で出ます。見積書・請求書は金額を契約金額に、発注書は予算の明細と実績に取り込めます（freeeの書類は変更しません）。", admin:true},
       {t:"施工案件一覧の上の部分をスマホ向けに整理しました", d:"管理者のCSV入力・出力などは「管理者ツール」にまとめ、通知や担当者の表示は細い1行の帯にしました。「最初に開いたときの絞り込み」は「検索・絞り込み」の中に移動しました。"},
       {t:"チャットが見えなくなる進捗を設定できます（管理者）", d:"設定 → 機能制限の下の「チャットが見えなくなるタイミング」で、どの進捗になった案件のチャットを非表示にするか選べます。初めは「清算済」「失注」です。", admin:true},
       {t:"チャットが開きやすく、読み込みも速くなりました", d:"スマホでチャットを開くと一番新しい発言の位置に移動し、「一覧」ボタンは上に固定して常に押せます。メッセージは新しいものから先に読み込みます。"},
@@ -3620,7 +3621,7 @@
         '<label class="field" style="margin:0;grid-column:1/-1">内容（任意）<input type="text" id="bg-c-memo" placeholder="例：解体材の処分費"></label>'+
       '</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="bg-c-add">'+iPlus()+' 実績を追加</button></div>'+
       '<h3 style="font-size:13px;margin:18px 0 6px">実績の一覧（'+cur().costs.length+'件）</h3><div style="flex:none">'+costRows()+'</div>';
-    openModal("予算管理："+(p.name||"案件"), body, '<button class="btn outline" id="bg-detail" style="margin-right:auto">案件の詳細を見る</button>'+(freeeAvailable()?'<button class="btn outline" id="bg-freee">freeeから実績を取り込む</button>':'')+'<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="bg-save">予算を保存する</button>');
+    openModal("予算管理："+(p.name||"案件"), body, '<button class="btn outline" id="bg-detail" style="margin-right:auto">案件の詳細を見る</button>'+(freeeAvailable()?'<button class="btn outline" id="bg-freee">freeeから実績を取り込む</button><button class="btn outline" id="bg-freee-docs">freeeの書類を呼び出す</button>':'')+'<button class="btn" data-close-modal>閉じる</button><button class="btn primary" id="bg-save">予算を保存する</button>');
     var $ = function(id){ return document.getElementById(id); };
     var mb = $("modal-box"); if(mb) mb.style.maxWidth = "960px";
     $("bg-detail").addEventListener("click", function(){ closeModal(); goProjectDetail(pid); });
@@ -3650,6 +3651,7 @@
     };
     bindDrafts();
     var bgF = $("bg-freee"); if(bgF) bgF.addEventListener("click", function(){ openBudgetFreee(pid); });
+    var bgFD = $("bg-freee-docs"); if(bgFD) bgFD.addEventListener("click", function(){ openBudgetFreeeDocs(pid); });
     var refresh = function(full){
       $("bg-head").innerHTML = headHtml(); $("bg-cats").innerHTML = catHtml();
       var ls = $("bg-c-line"), v = ls.value; ls.innerHTML = lineOpts(v);
@@ -3899,6 +3901,88 @@
         .then(function(){ var pe = document.getElementById("dl-partner"); if(pe){ keepP(); draw(); } });
     }
     function keepP(){ var pe = document.getElementById("dl-partner"); if(pe) partnerName = pe.value; var sj = document.getElementById("dl-subject"); if(sj) dSubject = sj.value; var g = function(i){ var e = document.getElementById(i); return e ? e.value : null; }; var v1 = g("dl-date"); if(v1!==null) dDate = v1; v1 = g("dl-due"); if(v1!==null) dDue = v1; v1 = g("dl-note"); if(v1!==null) dNote = v1; }
+  }
+  /* ---- freee連携：取引先を元に、freeeの書類（見積書・請求書・発注書など）を呼び出す ---- */
+  var FD_KINDS = [["quotation","見積書"],["invoice","請求書"],["purchase_order","発注書"],["delivery_slip","納品書"],["receipt","領収書"]];
+  var FD_KIND_ON = ["quotation","invoice","purchase_order"];
+  function openBudgetFreeeDocs(pid){
+    if(!state.isAdmin) return;
+    var p = state.projects.find(function(x){ return x.id===pid; }); if(!p) return;
+    var back = function(){ openBudgetModal(pid); };
+    var cu = state.customers.find(function(x){ return x.id===p.customerId; }) || null;
+    var nzp = function(x){ return String(x||"").normalize("NFKC").replace(/[\s　]/g,"").toLowerCase(); };
+    var docs = [], partnerId = 0, on = FD_KIND_ON.slice();
+    var body = '<div style="font-size:12px;color:var(--ink-soft);line-height:1.7;margin-bottom:10px">freeeに登録されている<b>取引先</b>を選ぶと、その取引先あての見積書・請求書・発注書などを呼び出して一覧にします（freeeの書類は変更しません）。見積書・請求書は金額を案件の契約金額にでき、発注書は予算の明細と実績に取り込めます。</div>'+
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end"><label class="field" style="margin:0;flex:1;min-width:220px">取引先（freeeに登録されている名前）<input type="text" id="fd-partner" list="fd-plist" autocomplete="off" value="'+esc((cu&&cu.name)||p.customerName||"")+'" placeholder="例：○○建設株式会社"><datalist id="fd-plist"></datalist></label>'+
+      '<button class="btn primary" id="fd-go">書類を呼び出す</button></div>'+
+      '<div style="display:flex;gap:6px 14px;flex-wrap:wrap;margin:10px 0 4px">'+FD_KINDS.map(function(k){ return '<label style="display:flex;align-items:center;gap:5px;font-size:12.5px"><input type="checkbox" data-fd-kind="'+k[0]+'"'+(on.indexOf(k[0])!==-1?' checked':'')+'>'+k[1]+'</label>'; }).join("")+'</div>'+
+      '<div id="fd-res" style="margin-top:8px"></div>';
+    openModal("freeeの書類を呼び出す："+(p.name||""), body, '<button class="btn" id="fd-back" style="margin-right:auto">予算管理に戻る</button><button class="btn" data-close-modal>閉じる</button>');
+    var mb = document.getElementById("modal-box"); if(mb) mb.style.maxWidth = "900px";
+    document.getElementById("fd-back").addEventListener("click", back);
+    var fillList = function(){ var dl = document.getElementById("fd-plist"); if(dl && freeePartnerCache.list) dl.innerHTML = freeePartnerCache.list.slice(0,3000).map(function(x){ return '<option value="'+esc(x.name)+'"></option>'; }).join(""); };
+    if(freeePartnerCache.list) fillList();
+    if(!freeePartnerCache.list || Date.now()-freeePartnerCache.at>30*60000){
+      freeeCall("partners.list", {}).then(function(j){ freeePartnerCache.list = j.partners||[]; freeePartnerCache.at = Date.now(); freeePartnerCache.err = false; fillList(); }).catch(function(){ freeePartnerCache.err = true; });
+    }
+    var statusOf = function(d){ return d.cancel ? '<span class="chip" style="background:var(--danger-soft,#fde8e8);color:var(--danger)">取消</span>' : (d.sending==="sent" ? '<span style="font-size:11px;color:var(--ink-faint)">送付済</span>' : '<span style="font-size:11px;color:var(--ink-faint)">'+(d.sending==="unsent"?'未送付':'')+'</span>'); };
+    var haveCost = function(num){ return ((bgDoc(pid)||{}).costs||[]).some(function(c){ return c.source==="po" && c.poNumber===num; }); };
+    var draw = function(j){
+      var res = document.getElementById("fd-res"); if(!res) return;
+      var errs = (j.errors||[]).length ? '<div style="color:var(--danger);font-size:12px;margin-bottom:6px">'+esc(j.errors.join(" ／ "))+'</div>' : "";
+      if(!docs.length){ res.innerHTML = errs+'<div style="color:var(--ink-faint);padding:12px 2px">この取引先の書類は見つかりませんでした</div>'; return; }
+      var lab = {}; FD_KINDS.forEach(function(k){ lab[k[0]] = k[1]; });
+      res.innerHTML = errs+'<div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px">'+docs.length+'件'+(j.truncated?'（上限のため古いものは含まれません）':'')+'</div>'+
+        '<div style="overflow-x:auto;flex:none"><table class="tbl" style="font-size:12.5px;min-width:640px"><thead><tr><th>種類</th><th>番号・件名</th><th>日付</th><th style="text-align:right">金額（税込）</th><th></th></tr></thead><tbody>'+
+        docs.map(function(d,i){
+          var act = "";
+          if(!d.cancel){
+            if(d.kind==="quotation" || d.kind==="invoice") act = '<button class="btn sm" data-fd-amt="'+i+'">契約金額にする</button>';
+            else if(d.kind==="purchase_order") act = haveCost(d.number) ? '<span style="font-size:11px;color:var(--ink-faint)">取込済み</span>' : '<button class="btn sm" data-fd-po="'+i+'">実績に取り込む</button>';
+          }
+          return '<tr><td style="white-space:nowrap">'+esc(lab[d.kind]||d.kind)+'</td><td><div class="num" style="font-size:12px">'+esc(d.number)+'</div><div>'+esc(d.subject||"")+'</div></td><td class="num" style="white-space:nowrap">'+esc(fmtDate(d.date))+'</td>'+
+            '<td class="num" style="text-align:right;white-space:nowrap">'+(d.total==null?"—":bgYen(d.total))+'<div>'+statusOf(d)+'</div></td>'+
+            '<td style="white-space:nowrap;text-align:right">'+act+(d.url?' <a class="btn sm" href="'+esc(d.url)+'" target="_blank" rel="noopener">freeeで開く</a>':'')+'</td></tr>';
+        }).join("")+'</tbody></table></div>';
+      res.querySelectorAll("[data-fd-amt]").forEach(function(b){ b.addEventListener("click", function(){
+        var d = docs[+b.getAttribute("data-fd-amt")], n = Math.round(Number(d.total)||0), cur = bgNum(p.amount);
+        if(!n){ toast("金額がありません"); return; }
+        if(!confirm("案件の契約金額を "+bgYen(n)+" にします（現在：" + (cur?bgYen(cur):"未設定") + "）。\n\n"+(lab[d.kind]||"")+" "+d.number+"（"+(d.subject||"")+"）の税込金額です。よろしいですか？")) return;
+        writeDoc("projects", pid, {amount:n}, "契約金額を"+bgYen(n)+"にしました", function(){ var pp = state.projects.find(function(x){ return x.id===pid; }); if(pp) p = pp; });
+      }); });
+      res.querySelectorAll("[data-fd-po]").forEach(function(b){ b.addEventListener("click", function(){
+        var d = docs[+b.getAttribute("data-fd-po")];
+        if(haveCost(d.number)){ toast("この発注書はすでに取り込み済みです"); return; }
+        b.disabled = true; b.textContent = "取込中…";
+        freeeCall("docs.get", {kind:"purchase_order", id:d.id}).then(function(g){
+          var doc = g.doc||{}, d2 = bgDoc(pid)||{}, bl = bgLines(d2).slice(), items = [], addedLines = 0;
+          if(haveCost(doc.number||d.number)){ toast("この発注書はすでに取り込み済みです"); return; }
+          var num = doc.number||d.number, date = doc.date||d.date||localToday(), vendor = doc.partnerName||d.partnerName||"";
+          (doc.lines||[]).forEach(function(l){
+            var amt = Math.round(Number(l.amount)||0); if(amt<=0) return;
+            var lid = "l"+Date.now().toString(36)+Math.random().toString(36).slice(2,5)+addedLines;
+            bl.push({id:lid, cat:"外注費", name:l.description, qty:bgNum(l.quantity), unit:l.unit||"", price:bgNum(l.unitPrice), amount:amt, fromPo:num}); addedLines++;
+            items.push({id:"c"+Date.now().toString(36)+Math.random().toString(36).slice(2,6)+addedLines, date:date, cat:"外注費", lineId:lid, vendor:vendor, memo:"発注書 "+num+"："+l.description, amount:amt, source:"po", poNumber:num});
+          });
+          if(!items.length){ toast("取り込める明細（金額のある行）がありません"); return; }
+          bgSave(pid, {lines:bl, costs:(d2.costs||[]).concat(items)}, "発注書 "+num+" の明細"+items.length+"件を、予算と実績に取り込みました", function(){ draw(lastJ); });
+        }).catch(function(e){ toast((e&&e.message)||"取り込めませんでした"); }).then(function(){ if(b.isConnected){ b.disabled = false; b.textContent = "実績に取り込む"; } });
+      }); });
+    };
+    var lastJ = {};
+    document.getElementById("fd-go").addEventListener("click", function(){
+      var name = document.getElementById("fd-partner").value.trim(), res = document.getElementById("fd-res");
+      var kinds = []; document.querySelectorAll("[data-fd-kind]:checked").forEach(function(el){ kinds.push(el.getAttribute("data-fd-kind")); });
+      if(!name){ toast("取引先を入力してください"); return; }
+      if(!kinds.length){ toast("書類の種類を選んでください"); return; }
+      FD_KIND_ON = kinds;
+      var pn = nzp(name), hit = freeePartnerCache.list ? freeePartnerCache.list.find(function(x){ return nzp(x.name)===pn; }) : null;
+      var pidF = hit ? hit.id : ((cu && cu.freeePartnerId && nzp(cu.name)===pn) ? cu.freeePartnerId : "");
+      res.innerHTML = '<div style="color:var(--ink-faint);padding:12px 2px">freeeから取得中…（書類が多いと少し時間がかかります）</div>';
+      freeeCall("docs.list", {partnerId:pidF, partnerName:name, kinds:kinds}).then(function(j){ lastJ = j; docs = j.docs||[]; draw(j); },
+        function(e){ res.innerHTML = '<div style="color:var(--danger);padding:12px 2px">取得できませんでした：'+esc(e.message||"")+'</div>'; });
+    });
+    if(cu && (cu.freeePartnerId || (document.getElementById("fd-partner").value||"").trim())) setTimeout(function(){ var g = document.getElementById("fd-go"); if(g && cu.freeePartnerId) g.click(); }, 50);
   }
   function openBudgetFreee(pid){
     if(!state.isAdmin) return;

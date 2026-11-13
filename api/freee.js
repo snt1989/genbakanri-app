@@ -70,6 +70,14 @@ async function quotedPartners(cid){
   throw F.httpErr(502, "見積書の履歴を取得できませんでした（" + (lastErr ? lastErr.message : "") + "）。freeeアプリの権限に見積書（請求書）の読み取りが必要な場合があります");
 }
 
+var DOC_KINDS = {
+  quotation: {label: "見積書", path: "quotations", one: "quotation", num: "quotation_number", date: "quotation_date", due: "expiration_date"},
+  invoice: {label: "請求書", path: "invoices", one: "invoice", num: "invoice_number", date: "billing_date", due: "payment_date"},
+  purchase_order: {label: "発注書", path: "purchase_orders", one: "purchase_order", num: "purchase_order_number", date: "purchase_order_date", due: "collects_on"},
+  delivery_slip: {label: "納品書", path: "delivery_slips", one: "delivery_slip", num: "delivery_slip_number", date: "delivery_slip_date", due: ""},
+  receipt: {label: "領収書", path: "receipts", one: "receipt", num: "receipt_number", date: "receipt_date", due: ""}
+};
+
 async function run(b, req){
   var t, cid;
   switch(b.action){
@@ -201,6 +209,60 @@ async function run(b, req){
       }
       var doc = cr.quotation || cr.purchase_order || cr;
       return {updated: !!editId, id: doc.id || editId, number: doc.quotation_number || doc.purchase_order_number || "", url: doc.report_url || "", total: doc.total_amount == null ? null : doc.total_amount, partnerId: pid};
+    }
+
+    // 取引先を指定して、freeeの請求書API（/iv）にある書類（見積書・請求書・発注書・納品書・領収書）を一覧する（読み取りのみ）
+    // { partnerId? | partnerName?, kinds?:["quotation","invoice",...] }
+    case "docs.list": {
+      t = await need(); cid = t.companyId;
+      var pid2 = Number(b.partnerId) || 0, pn2 = String(b.partnerName || "").trim();
+      if(!pid2){
+        if(!pn2) throw F.httpErr(400, "取引先を指定してください");
+        var fp2 = await F.freee("GET", "/api/1/partners", {query: {company_id: cid, keyword: pn2, limit: 50}});
+        var nn2 = norm(pn2), hit2 = (fp2.partners || []).filter(function(p){ return p.available !== false; }).map(function(p){ return {p: p, s: similarity(norm(p.name), nn2)}; }).sort(function(x, y){ return y.s - x.s; })[0];
+        if(!hit2 || hit2.s < 0.85) throw F.httpErr(400, "freeeに取引先「" + pn2 + "」が見つかりません");
+        pid2 = hit2.p.id;
+      }
+      var want2 = (Array.isArray(b.kinds) && b.kinds.length ? b.kinds : Object.keys(DOC_KINDS)).filter(function(k){ return DOC_KINDS[k]; });
+      var docs = [], truncated = false, errs = [];
+      await Promise.all(want2.map(async function(k){
+        var K = DOC_KINDS[k], off3 = 0, usePid = true;
+        try{
+          for(var pg4 = 0; pg4 < 15; pg4++){
+            var q = {company_id: cid, limit: 100, offset: off3}; if(usePid) q.partner_id = pid2;
+            var r;
+            try{ r = await F.freee("GET", "/iv/" + K.path, {query: q}); }
+            catch(e){ if(usePid && e.status === 400){ usePid = false; q = {company_id: cid, limit: 100, offset: off3}; r = await F.freee("GET", "/iv/" + K.path, {query: q}); } else throw e; }
+            var arr3 = r[K.path] || [];
+            arr3.forEach(function(o){
+              if(Number(o.partner_id) !== pid2) return;
+              docs.push({kind: k, id: o.id, number: o[K.num] || "", subject: o.subject || "", date: String(o[K.date] || o.issue_date || o.billing_date || "").slice(0, 10),
+                dueDate: String(o[K.due] || "").slice(0, 10), total: o.total_amount == null ? (o.amount_including_tax == null ? null : o.amount_including_tax) : o.total_amount,
+                cancel: o.cancel_status === "canceled", sending: o.sending_status || "", payment: o.payment_status || "", url: o.report_url || "",
+                partnerId: o.partner_id, partnerName: o.partner_display_name || o.partner_name || ""});
+            });
+            if(arr3.length < 100) break; off3 += 100;
+            if(pg4 === 14) truncated = true;
+          }
+        }catch(e){ if(e.status === 401) throw e; errs.push(K.label + "：" + (e.message || "取得できませんでした")); }
+      }));
+      docs.sort(function(a, b2){ return String(b2.date).localeCompare(String(a.date)) || (b2.id - a.id); });
+      return {partnerId: pid2, docs: docs, truncated: truncated, errors: errs};
+    }
+
+    // 書類1件の明細つき内容（読み取りのみ） { kind, id }
+    case "docs.get": {
+      t = await need(); cid = t.companyId;
+      var K2 = DOC_KINDS[b.kind], did2 = Number(b.id) || 0;
+      if(!K2 || !did2) throw F.httpErr(400, "書類を指定してください");
+      var gr = await F.freee("GET", "/iv/" + K2.path + "/" + did2, {query: {company_id: cid}});
+      var o2 = gr[K2.one] || gr;
+      return {doc: {kind: b.kind, id: o2.id, number: o2[K2.num] || "", subject: o2.subject || "", date: String(o2[K2.date] || o2.issue_date || o2.billing_date || "").slice(0, 10),
+        total: o2.total_amount == null ? null : o2.total_amount, partnerId: o2.partner_id, partnerName: o2.partner_display_name || o2.partner_name || "", memo: o2.memo || "", url: o2.report_url || "",
+        lines: (o2.lines || []).filter(function(l){ return l.type === "item"; }).map(function(l){
+          var q2 = Number(l.quantity), up2 = Number(l.unit_price), amt2 = l.amount_excluding_tax != null ? Number(l.amount_excluding_tax) : (isFinite(q2) && isFinite(up2) ? Math.round((q2 || 1) * up2) : 0);
+          return {description: String(l.description || ""), quantity: isFinite(q2) && q2 > 0 ? q2 : 1, unit: l.unit || "", unitPrice: isFinite(up2) ? up2 : 0, taxRate: l.tax_rate == null ? 10 : l.tax_rate, amount: amt2 || 0};
+        })}};
     }
 
     case "partners.push": {
