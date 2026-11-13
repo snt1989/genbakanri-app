@@ -1728,6 +1728,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-14-1", title:"11月14日の更新", items:[
+      {t:"AIロボに案件の登録を頼めます", d:"「山田様邸の除草作業を登録して。住所は…、12/1〜12/3」のように話しかけるか、依頼のメール・メモをそのまま貼り付けると、AIロボが案件の登録案を作ります。内容を確認して「実行する」を押すと登録されます（押すまでは登録されません）。書かれていない項目は空のままになり、似た案件があるときは注意が出ます。"},
       {t:"工程表にも、工程の休みの日が反映されます", d:"日付マス目の工程表・案件画面の工程表・印刷／PDFで、休みの曜日・休みの日を設定した工程は、休みの日を除いて色が付き、休みの日は斜線で表示されます。あわせて、今日の日付のマスに色が付かない表示も直しました。"}
     ]},
     {id:"2026-11-13-1", title:"11月13日の更新", items:[
@@ -4340,13 +4341,47 @@
       if(!i.text) return {err:"メモの内容がありません"};
       return {label:"メモを追加", lines:["案件："+pr.name, "内容："+String(i.text).slice(0,300)]};
     }
+    if(a.tool==="create_project"){
+      var d = aiProjectData(i); if(d.err) return {err:d.err};
+      var lines = ["案件名："+d.name, "顧客："+(d.customerName ? d.customerName+(state.customers.some(function(c){ return c.name===d.customerName; })?"":"（新しく顧客登録します）") : "（未設定）"),
+        "進捗："+d.status].concat(d.address?["物件住所："+d.address]:[]).concat(d.division?["事業部："+d.division]:[]).concat(d.assignees.length?["担当："+d.assignees.map(function(x){ return x.name; }).join("、")]:[])
+        .concat((d.startDate||d.endDate)?["期間："+(d.startDate||"？")+" 〜 "+(d.endDate||"？")]:[]).concat(d.amount?["契約金額："+d.amount.toLocaleString()+"円"]:[]).concat(d.workInstruction?["作業内容："+d.workInstruction.slice(0,120)]:[]);
+      var dups = findProjectDuplicates({name:d.name, customerName:d.customerName, propertyAddress:d.address, address:d.address}, null);
+      if(dups.length) lines.push("⚠ 似た案件があります："+dups.slice(0,3).map(function(x){ return x.p.name; }).join("、"));
+      return {label:"案件を登録", lines:lines};
+    }
     return {err:"未対応の操作です"};
+  }
+  // AIの提案（案件登録）を、保存できる形に整える。足りない・おかしい項目は err か、空にする
+  function aiProjectData(i){
+    var name = String(i.name||"").replace(/\s+/g," ").trim().slice(0,80);
+    if(!name) return {err:"案件名がありません"};
+    var iso = function(v){ return /^\d{4}-\d{2}-\d{2}$/.test(String(v||"")) ? String(v) : ""; };
+    var status = STATUS_LIST.indexOf(i.status)!==-1 ? i.status : "現地調査前";
+    var asg = []; (Array.isArray(i.assignees)?i.assignees:[]).forEach(function(n){ var m = state.members.find(function(x){ return x.name===n; }); if(m && !asg.some(function(a){ return a.name===m.name; })) asg.push({name:m.name, kind:m.kind||"internal", status:"未確認"}); });
+    var amt = state.isAdmin ? Math.max(0, Math.round(Number(i.amount)||0)) : 0;
+    return {name:name, customerName:String(i.customerName||"").trim().slice(0,80), address:String(i.address||"").trim().slice(0,150), status:status,
+      division:DIVISIONS.indexOf(i.division)!==-1 ? i.division : "", assignees:asg, startDate:iso(i.startDate), endDate:iso(i.endDate), amount:amt, workInstruction:String(i.workInstruction||"").trim().slice(0,500)};
   }
   function aiRunAction(a){
     if(!state.canWrite){ toast("この操作を行う権限がありません"); return false; }
     var i = a.input||{}, pr = state.projects.find(function(x){ return x.id===i.projectId; });
     if(a.tool==="add_task"){ writeDoc("tasks", null, {title:String(i.title).slice(0,60), dueDate:i.dueDate, assignee:i.assignee||state.myName||"", projectId:pr?pr.id:"", projectName:pr?pr.name:"", note:String(i.note||"").slice(0,500), done:false}, "タスクを追加しました"); return true; }
     if(a.tool==="set_status"){ writeDoc("projects", pr.id, {status:i.status}, "進捗を「"+i.status+"」に変更しました"); return true; }
+    if(a.tool==="create_project"){
+      var d = aiProjectData(i); if(d.err){ toast(d.err); return false; }
+      var asg = d.assignees.slice();
+      if(!seesAllProjects() && !asg.some(function(x){ return x.name===state.myName; })){ var meM = myMember(); asg.push({name:state.myName, kind:(meM&&meM.kind)||"internal", status:"確認済"}); }
+      var data = {name:d.name, assignees:asg, division:d.division, status:d.status, amount:d.amount, startDate:d.startDate, endDate:d.endDate, workInstruction:d.workInstruction,
+        handoverDate:"", estimateDate:"", inquiryDate:"", surveyDate:"", invoiceDate:"", addressMode:d.address?"new":"same", propertyAddress:d.address, secretFields:{}};
+      var save = function(cdata){
+        var o = {}; Object.keys(CUSTOMER_PROJECT_KEYS).forEach(function(k){ o[CUSTOMER_PROJECT_KEYS[k]] = cdata[k]==null ? "" : cdata[k]; });
+        ensureCustomer(cdata, function(customerId){ data.customerId = customerId; Object.assign(data, o); writeDoc("projects", null, data, "案件「"+d.name+"」を登録しました"); });
+      };
+      if(d.customerName){ var ex = state.customers.find(function(c){ return c.name===d.customerName; }); save(ex ? Object.assign({}, ex) : {name:d.customerName}); }
+      else { data.customerId = ""; writeDoc("projects", null, data, "案件「"+d.name+"」を登録しました"); }
+      return true;
+    }
     if(a.tool==="add_memo"){ var arr = projMemos(pr).slice(); arr.push({id:uid(), text:String(i.text).slice(0,3000), by:state.myName||"", at:new Date().toISOString()}); saveMemos(pr.id, arr, "メモを追加しました"); return true; }
     return false;
   }
@@ -4394,7 +4429,7 @@
     if(!state.ai.open){ if(box) box.style.display="none"; return; }
     if(!box){ box = document.createElement("div"); box.id = "ai-panel"; document.body.appendChild(box); }
     box.style.display = "flex";
-    var chips = ["今週の施工予定を教えて","期限が過ぎているタスクは？","進捗が「見積提出済」の案件を一覧にして","案件のお礼の連絡文を下書きして"];
+    var chips = ["今週の施工予定を教えて","期限が過ぎているタスクは？","新しい案件を登録したい","案件のお礼の連絡文を下書きして"];
     var body = state.ai.msgs.map(function(m,mi){
       var h = m.text ? '<div class="ai-b '+(m.role==="user"?'ai-u':'ai-a')+'">'+esc(m.text)+'</div>' : '';
       (m.actions||[]).forEach(function(a,ai){
@@ -4406,7 +4441,7 @@
     }).join("");
     if(state.ai.busy) body += '<div class="ai-b ai-a" style="color:var(--ink-faint)">考えています…</div>';
     if(state.ai.enabled===false) body = '<div class="ai-b ai-a">AIアシスタントはまだ有効になっていません。管理者が、Vercelの環境変数 <b>ANTHROPIC_API_KEY</b> を登録して再デプロイすると使えます。</div>';
-    else if(!state.ai.msgs.length) body = '<div class="ai-b ai-a">こんにちは、AIロボです！案件・タスク・予定について聞いたり、文章の下書き、アプリの使い方の質問、操作（タスク追加・進捗変更・メモ追加）の依頼ができます。操作は、確認してから実行します。</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+chips.map(function(c){ return '<button class="btn sm outline" data-ai-chip="'+esc(c)+'">'+esc(c)+'</button>'; }).join("")+'</div>';
+    else if(!state.ai.msgs.length) body = '<div class="ai-b ai-a">こんにちは、AIロボです！案件・タスク・予定について聞いたり、文章の下書き、アプリの使い方の質問、操作（案件登録・タスク追加・進捗変更・メモ追加）の依頼ができます。操作は、確認してから実行します。</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+chips.map(function(c){ return '<button class="btn sm outline" data-ai-chip="'+esc(c)+'">'+esc(c)+'</button>'; }).join("")+'</div>';
     var keep = document.getElementById("ai-in") ? document.getElementById("ai-in").value : "";
     box.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border,#ddd)"><span style="display:inline-flex">'+aiKunSvg(30)+'</span><b style="flex:1;font-size:14px">AIロボ（アシスタント）</b><button class="btn sm" id="ai-clear">新しい会話</button><button class="btn sm" id="ai-close">閉じる</button></div>'+
       '<div class="ai-msgs" id="ai-msgs">'+body+'</div>'+
