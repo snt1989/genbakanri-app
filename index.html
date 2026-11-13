@@ -445,6 +445,29 @@
     .pf-docrow .nm{word-break:break-all;line-height:1.5;}
     .pf-docrow .meta{gap:2px 10px;}
     .pf-docrow .ic{padding:8px;}
+    /* 案件画面のファイル管理：スマホでは短く表示する */
+    .pf-card{padding:12px 14px !important;}
+    .pf-card h3{font-size:13px !important;}
+    .pf-card .pf-actions{margin-bottom:10px !important;}
+    .pf-card .pf-actions .btn{padding:6px 16px !important;font-size:12.5px;}
+    .pf-recent{display:flex;gap:8px;overflow-x:auto;margin:8px 0 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+    .pf-recent::-webkit-scrollbar{display:none}
+    .pf-recent a{flex:none;width:84px}
+    .pf-recent img{aspect-ratio:1/1;border-radius:8px}
+    .pf-recent .d{font-size:10px;margin:3px 0 0}
+    .pf-recent .pf-up{display:none}
+    .pf-card .pf-docrow{flex-wrap:nowrap;align-items:center;gap:8px;padding:7px 2px}
+    .pf-card .pf-docrow > div[style*="flex:1"]{min-width:0}
+    .pf-card .pf-docrow .nm{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;word-break:normal;font-size:12.5px}
+    .pf-card .pf-docrow .meta{margin-top:1px;font-size:10.5px;flex-wrap:nowrap;overflow:hidden}
+    .pf-card .pf-docrow .meta .pf-up{display:none}
+    .pf-card .pf-docrow .ic{padding:4px}
+    .pf-card .pf-docrow > a.ic[download]{display:none}
+    .pf-card .pf-docrow > span:first-child{display:none}
+    .pf-card .pf-docrow svg{width:24px;height:24px}
+    .pf-card .pf-docrow .ic svg{width:18px;height:18px}
+    .pf-recent a{width:72px !important}
+    .pf-recent .d{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   }
 
   .pf-grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(172px,1fr));border-top:1px solid var(--border);border-left:1px solid var(--border);background:var(--surface)}
@@ -1686,6 +1709,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-13-1", title:"11月13日の更新", items:[
+      {t:"スマホの案件画面の「ファイル管理」を短くしました", d:"写真は小さなサムネイルを横に並べ、資料は1行ずつ（最新の3件）の表示にしました。くわしくは「すべて見る」から確認できます。"},
       {t:"スマホの案件画面の「連携アプリ」を小さくしました", d:"大きなタイルをやめ、1行の小さなボタンにしました。アプリが多いときは横にスライドできます。"},
       {t:"freeeから実績を取り込むときに、絞り込みができます（管理者）", d:"取引先・タグ・事業部（freeeの部門）・勘定科目・内容の一部で絞り込めます。絞り込みを変えても、チェックした取引は残り、表示中の分をまとめてチェックすることもできます。", admin:true},
       {t:"予算管理で、取引先を元にfreeeの書類を呼び出せます（管理者）", d:"予算管理の案件画面の「freeeの書類を呼び出す」で取引先を選ぶと、その取引先あての見積書・請求書・発注書・納品書・領収書が一覧で出ます。見積書・請求書は金額を契約金額に、発注書は予算の明細と実績に取り込めます（freeeの書類は変更しません）。", admin:true},
@@ -8010,10 +8034,10 @@
 
     html += '<div class="form-section-title" style="padding-top:0"><span>ファイル管理</span></div>';
     var recentImgs = pfiles.filter(isImageFile).slice().reverse().slice(0,5);
-    var recentDocs = pfiles.filter(function(f){return !isImageFile(f);}).slice().reverse().slice(0,5);
+    var recentDocs = pfiles.filter(function(f){return !isImageFile(f);}).slice().reverse().slice(0, (window.matchMedia && window.matchMedia("(max-width:640px)").matches) ? 3 : 5);
     seedStdFolders(p);
     var pfFolders = foldersForProject(p.id);
-    html += '<div class="card" style="padding:20px 22px">';
+    html += '<div class="card pf-card" style="padding:20px 22px">';
     html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><h3 style="font-size:14px;margin:0">最近追加された写真</h3><a href="#" data-open-files="'+p.id+'" data-files-kind="photo" style="font-size:12.5px">写真をすべて見る</a></div>';
     if(recentImgs.length){
       html += '<div class="pf-recent">'+recentImgs.map(function(f){
@@ -8022,7 +8046,7 @@
     }else{
       html += '<div style="font-size:12px;color:var(--ink-faint);margin:10px 0 14px">写真はまだありません</div>';
     }
-    html += '<div style="text-align:center;margin-bottom:22px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn primary" style="border-radius:999px;padding:9px 26px" data-open-files="'+p.id+'">'+iUpload()+' ファイル</button><button class="btn outline" style="border-radius:999px;padding:9px 20px" data-files-reload="'+p.id+'">写真・ファイルを読み込む</button></div>';
+    html += '<div class="pf-actions" style="text-align:center;margin-bottom:22px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn primary" style="border-radius:999px;padding:9px 26px" data-open-files="'+p.id+'">'+iUpload()+' ファイル</button><button class="btn outline" style="border-radius:999px;padding:9px 20px" data-files-reload="'+p.id+'">写真・ファイルを読み込む</button></div>';
     html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px"><h3 style="font-size:14px;margin:0">最近追加された資料</h3><a href="#" data-open-files="'+p.id+'" data-files-kind="doc" style="font-size:12.5px">書類をすべて見る</a></div>';
     if(recentDocs.length){
       html += recentDocs.map(function(f){
