@@ -2337,6 +2337,9 @@
   /* ---- 案件が数千件ある場合に備え、通常は「進行中の案件」と「最近更新した案件」だけを読み込む ----
      （清算済・失注の古い案件は、案件一覧の「過去の案件を読み込む」を押したときに全件を読み込む） */
   var PROJ_ARCHIVED = ["清算済","失注"], PROJ_RECENT_DAYS = 14;
+  // チャットが見えなくなる進捗（設定で変更可。未設定は清算済・失注）
+  function chatHideList(){ var a = state && state.access && state.access.chatHide; return Array.isArray(a) ? a : PROJ_ARCHIVED; }
+  function chatHiddenStatus(st){ return chatHideList().indexOf(st)!==-1; }
   var projUnsub = [], projSets = {A:{}, B:{}, X:{}}, projFullWaiters = [];
   state.projMode = "partial";
   function projMerge(){
@@ -6821,7 +6824,7 @@
   function loadAccess(){
     if(!db) return; _accessAt = Date.now();
     db.doc("settings/access").get().then(function(snap){
-      var d = snap.exists ? snap.data() : null, next = d ? {general:d.general||{}, external:d.external||{}} : null;
+      var d = snap.exists ? snap.data() : null, next = d ? {general:d.general||{}, external:d.external||{}, chatHide:Array.isArray(d.chatHide)?d.chatHide:undefined} : null;
       if(JSON.stringify(next)!==JSON.stringify(state.access||null)){ state.access = next; bgRender(); }
     }).catch(function(){});
   }
@@ -6900,6 +6903,11 @@
       '<tr style="border-top:1px solid var(--border)"><td style="padding:7px 10px;font-size:13px"><b>設定（個人情報）</b></td><td style="padding:7px 10px;font-size:12px;color:var(--ink-soft)">使える</td><td colspan="2" style="padding:7px 10px;font-size:12px;color:var(--ink-faint)">全員が自分の個人情報を変更できます（変更できません）</td></tr>'+
       '</tbody></table></div>'+
       '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn primary" id="acc-save">'+iAdmin()+'保存する</button><button class="btn" id="acc-reset">初期設定に戻す</button></div></div>';
+    var hid = chatHideList();
+    html += '<div class="card" style="padding:18px 20px;max-width:760px;margin-top:16px"><h2 style="font-size:13.5px;margin-bottom:6px">チャットが見えなくなるタイミング</h2>'+
+      '<div style="font-size:12px;color:var(--ink-soft);line-height:1.7;margin-bottom:10px">案件の進捗がチェックを付けたものになると、その案件のチャットは一覧に表示されず、未読のお知らせも出なくなります（進捗を戻せばまた表示されます）。初期設定は「清算済」「失注」です。<br>※「清算済」「失注」のチェックを外した場合、それらの案件は一覧で「過去の案件も読み込む」を押すとチャットが表示されます。</div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:8px 16px">'+STATUS_LIST.map(function(st){ return '<label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" data-chathide="'+esc(st)+'"'+(hid.indexOf(st)!==-1?' checked':'')+'>'+esc(st)+'</label>'; }).join("")+'</div>'+
+      '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn primary" id="chat-hide-save">'+iAdmin()+'保存する</button><button class="btn" id="chat-hide-reset">初期設定に戻す</button></div></div>';
     return html;
   }
   function tabAllowedForRole(role, id){
@@ -6920,10 +6928,14 @@
     var sv = document.getElementById("acc-save"), rs = document.getElementById("acc-reset");
     var put = function(v, msg){
       if(!state.isAdmin){ toast("機能制限の変更は管理者のみ行えます"); return; }
+      if(v.chatHide===undefined && state.access && state.access.chatHide) v.chatHide = state.access.chatHide;
       var done = function(){ state.access = v; toast(msg); render(); };
-      if(db) db.doc("settings/access").set({general:v.general, external:v.external, updatedAt:new Date().toISOString(), updatedBy:state.myName||""}).then(done).catch(function(){ toast("保存に失敗しました"); });
+      if(db) db.doc("settings/access").set(Object.assign({general:v.general, external:v.external}, v.chatHide?{chatHide:v.chatHide}:{}, {updatedAt:new Date().toISOString(), updatedBy:state.myName||""})).then(done).catch(function(){ toast("保存に失敗しました"); });
       else done();
     };
+    var cs = document.getElementById("chat-hide-save"), cr = document.getElementById("chat-hide-reset");
+    if(cs) cs.addEventListener("click", function(){ var a = state.access||{}; put({general:a.general||{}, external:a.external||{}, chatHide:Array.prototype.slice.call(document.querySelectorAll("input[data-chathide]")).filter(function(b){ return b.checked; }).map(function(b){ return b.getAttribute("data-chathide"); })}, "チャットの表示設定を保存しました"); });
+    if(cr) cr.addEventListener("click", function(){ var a = state.access||{}; put({general:a.general||{}, external:a.external||{}, chatHide:PROJ_ARCHIVED.slice()}, "初期設定（清算済・失注）に戻しました"); });
     if(sv) sv.addEventListener("click", function(){ put(accessSaveFromForm(), "機能制限を保存しました"); });
     if(rs) rs.addEventListener("click", function(){ if(confirm("機能制限を初期設定に戻します。よろしいですか？")) put({general:{}, external:{}}, "初期設定に戻しました"); });
   }
@@ -7609,7 +7621,7 @@
     if(!state.canWrite){ toast("この操作を行う権限がありません"); return; }
     var p = state.projects.find(function(q){ return q.id===f.projectId; }); if(!p){ toast("この写真の案件が見つかりません"); return; }
     if(!seesAllProjects() && !isMyProject(p)){ toast("この案件の担当者ではないため、チャットに送れません"); return; }
-    if(PROJ_ARCHIVED.indexOf(p.status)!==-1){ toast("清算済・失注の案件のチャットは非表示です。ステータスを戻すと送れます"); return; }
+    if(chatHiddenStatus(p.status)){ toast("この進捗の案件のチャットは非表示です。ステータスを戻すと送れます"); return; }
     var chat = state.chats.find(function(c){ return c.projectId===p.id; }), ed = photoEdited(f);
     if(!noAsk && !confirm((ed?"加工した写真":"この写真")+"を、案件のチャット「"+(chat?chat.name:p.name)+"」に送ります。チャットのメンバー全員に見えます。\n\nよろしいですか？")) return;
     toast("チャットに送る準備をしています…");
@@ -7794,7 +7806,7 @@
     var p = state.projects.find(function(q){ return q.id===pid; }); if(!p) return;
     var x = projInstr(p).find(function(i){ return i.id===id; }); if(!x) return;
     if(!seesAllProjects() && !isMyProject(p)){ toast("この案件の担当者ではないため、チャットに投稿できません"); return; }
-    if(PROJ_ARCHIVED.indexOf(p.status)!==-1){ toast("清算済・失注の案件のチャットは非表示です。ステータスを戻すと投稿できます"); return; }
+    if(chatHiddenStatus(p.status)){ toast("この進捗の案件のチャットは非表示です。ステータスを戻すと投稿できます"); return; }
     var chat = state.chats.find(function(c){ return c.projectId===pid; });
     if(!confirm("この指示書を、案件のチャット「"+(chat?chat.name:p.name)+"」に投稿します。チャットのメンバー全員に見えます。"+(x.status==="下書き"?"\n\n※状態が「下書き」のままです。":"")+"\n\nよろしいですか？")) return;
     ensureProjectChat(p, function(cid){
@@ -9435,7 +9447,7 @@
     if(!c || c.kind!=="project") return false;
     var p = c.projectId ? rawStore.projects.find(function(x){ return x.id===c.projectId; }) : null;
     if(!p && c.name) p = rawStore.projects.find(function(x){ return x.name===c.name; });
-    if(p) return PROJ_ARCHIVED.indexOf(p.status)!==-1;
+    if(p) return chatHiddenStatus(p.status);
     return state.projMode!=="full" && !!state.loaded.projects && !!(c.projectId || c.name);
   }
   function chatJoined(c){
@@ -13920,7 +13932,7 @@
       ev.preventDefault(); ev.stopPropagation();
       var pr = state.projects.find(function(x){ return x.id===el.getAttribute("data-chat-open-proj"); }); if(!pr) return;
       if(!seesAllProjects() && !isMyProject(pr)){ toast("この案件の担当者ではないため、チャットは表示されません"); return; }
-      if(PROJ_ARCHIVED.indexOf(pr.status)!==-1){ toast("清算済・失注の案件のチャットは非表示です。ステータスを戻すと表示されます"); return; }
+      if(chatHiddenStatus(pr.status)){ toast("この進捗の案件のチャットは非表示です。ステータスを戻すと表示されます"); return; }
       ensureProjectChat(pr, function(chatId){ state.activeChat = chatId; setTab("chat"); });
     }); });
     c.querySelectorAll("[data-sched-proj]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); ev.stopPropagation(); openSchedulePrint(el.getAttribute("data-sched-proj")); }); });
@@ -14112,7 +14124,7 @@
         var p = state.projects.find(function(x){return x.id===el.getAttribute("data-chat-project");});
         if(!p) return;
         if(!seesAllProjects() && !isMyProject(p)){ toast("この案件の担当者ではないため、チャットは表示されません"); return; }
-        if(PROJ_ARCHIVED.indexOf(p.status)!==-1){ toast("清算済・失注の案件のチャットは非表示です。ステータスを戻すと表示されます"); return; }
+        if(chatHiddenStatus(p.status)){ toast("この進捗の案件のチャットは非表示です。ステータスを戻すと表示されます"); return; }
         ensureProjectChat(p, function(chatId){ state.activeChat=chatId; setTab("chat"); });
       });
     });
@@ -14121,7 +14133,7 @@
         var p = state.projects.find(function(x){return x.id===state.viewingProjectId;});
         if(!p) return;
         if(!seesAllProjects() && !isMyProject(p)){ toast("この案件の担当者ではないため、チャットは表示されません"); return; }
-        if(PROJ_ARCHIVED.indexOf(p.status)!==-1){ toast("清算済・失注の案件のチャットは非表示です。ステータスを戻すと表示されます"); return; }
+        if(chatHiddenStatus(p.status)){ toast("この進捗の案件のチャットは非表示です。ステータスを戻すと表示されます"); return; }
         ensureProjectChat(p, function(chatId){ state.activeChat=chatId; setTab("chat"); });
       });
     });
