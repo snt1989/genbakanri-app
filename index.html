@@ -465,6 +465,15 @@
     .pf-card .pf-docrow > a.ic[download]{display:none}
     .pf-card .pf-docrow > span:first-child{display:none}
     .pf-card .pf-docrow svg{width:24px;height:24px}
+    /* 案件画面の工程表：スマホでは短く表示する */
+    .pd-work{padding:4px 12px !important;}
+    .pd-work .pf-docrow{flex-wrap:nowrap;align-items:center !important;gap:6px;padding:6px 0;}
+    .pd-work .pf-docrow > div[style*="flex:1"]{min-width:0;}
+    .pd-work .pf-docrow .nm{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;word-break:normal;font-size:12.5px;}
+    .pd-work .pf-docrow .d{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10.5px !important;}
+    .pd-work .pf-docrow .badge{flex:none;font-size:10px;padding:1px 6px;}
+    .pd-work .pf-docrow .btn.sm{flex:none;padding:2px 8px;font-size:11px;min-height:26px;height:26px;}
+    .pd-work .pf-docrow .btn.sm svg{width:12px;height:12px;}
     .pf-card .pf-docrow .ic svg{width:18px;height:18px}
     .pf-recent a{width:72px !important}
     .pf-recent .d{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1709,6 +1718,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-13-1", title:"11月13日の更新", items:[
+      {t:"スマホの案件画面の「工程表」を短くしました", d:"工程表の図は高さを抑え（中は縦にスクロールできます）、工程・予定の一覧は1行ずつ最新の4件にしました。続きは「すべて見る」から確認できます。"},
       {t:"スマホの案件画面の「ファイル管理」を短くしました", d:"写真は小さなサムネイルを横に並べ、資料は1行ずつ（最新の3件）の表示にしました。くわしくは「すべて見る」から確認できます。"},
       {t:"スマホの案件画面の「連携アプリ」を小さくしました", d:"大きなタイルをやめ、1行の小さなボタンにしました。アプリが多いときは横にスライドできます。"},
       {t:"freeeから実績を取り込むときに、絞り込みができます（管理者）", d:"取引先・タグ・事業部（freeeの部門）・勘定科目・内容の一部で絞り込めます。絞り込みを変えても、チェックした取引は残り、表示中の分をまとめてチェックすることもできます。", admin:true},
@@ -5554,7 +5564,7 @@
     all.sort(function(a,b){ return a.d.localeCompare(b.d); });
     var rows = all.map(function(x){ return x.html; });
     var gantt = "";
-    var narrow = window.innerWidth<600;
+    var narrow = window.innerWidth<600, rowMax = narrow ? 4 : 10;
     var ginc = {proj:false, step:true, ev:true, task:false};
     var gr = scheduleRowsFor(p.id, ginc);
     if(gr.length){
@@ -5564,14 +5574,14 @@
       if(gms.indexOf(cur)===-1) cur = gms.indexOf(tm)!==-1 ? tm : gms[0];
       var ci = gms.indexOf(cur);
       gantt = (gms.length>1 ? '<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 0 2px"><button class="btn sm" data-pd-gm="'+esc(p.id)+'" data-ym="'+(ci>0?gms[ci-1]:"")+'"'+(ci>0?'':' disabled')+'>◀</button><b style="font-size:13px">'+esc(cur.slice(0,4))+'年'+(+cur.slice(5,7))+'月</b><button class="btn sm" data-pd-gm="'+esc(p.id)+'" data-ym="'+(ci<gms.length-1?gms[ci+1]:"")+'"'+(ci<gms.length-1?'':' disabled')+'>▶</button></div>' : '')+
-        '<div style="'+(narrow?'':'overflow-x:auto')+'"><div style="position:relative;'+(narrow?'':'min-width:560px')+'"><iframe class="pd-gantt" style="width:100%;height:200px;border:0;display:block;background:#fff" srcdoc="'+esc(scheduleFormDoc({project:p.id, months:[cur], compact:true, narrow:narrow, inc:ginc, info:formInfoDefaults(p.id)}))+'"></iframe>'+
+        '<div style="'+(narrow?'':'overflow-x:auto')+'"><div style="position:relative;'+(narrow?'':'min-width:560px')+'"><iframe class="pd-gantt" style="width:100%;height:'+(narrow?150:200)+'px;border:0;display:block;background:#fff" srcdoc="'+esc(scheduleFormDoc({project:p.id, months:[cur], compact:true, narrow:narrow, inc:ginc, info:formInfoDefaults(p.id)}))+'"></iframe>'+
         (narrow?'':'<a href="#" data-pd-print="'+esc(p.id)+'" title="クリックで大きく表示・印刷 / PDF" style="position:absolute;inset:0;cursor:zoom-in"></a>')+'</div></div>'+
         (narrow?'<div style="padding:6px 0 2px;display:flex;align-items:center;gap:8px"><a href="#" data-pd-print="'+esc(p.id)+'" class="btn sm">大きく表示・印刷</a><span style="font-size:11px;color:var(--ink-faint)">横にスワイプで日付を移動</span></div>':'<div style="font-size:11px;color:var(--ink-faint);padding:4px 2px 0">工程表をクリックすると、大きく表示して印刷・PDFにできます</div>')+
         '<div style="border-top:1px solid var(--border);margin:6px 0 0"></div>';
     }
     return '<div class="form-section-title" style="flex-wrap:wrap;gap:8px"><span style="white-space:nowrap">工程表</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">'+
         '<button class="btn sm primary" data-pd-add="step" data-pid="'+esc(p.id)+'">'+iPlus()+' 工程・予定を追加</button></span></div>'+
-      '<div class="card" style="padding:6px 18px">'+gantt+(rows.length ? rows.slice(0,10).join("")+(rows.length>10?'<div style="font-size:12px;padding:8px 0"><a href="#" data-pd-goto="schedule">すべて見る（'+rows.length+'件）</a></div>':'') : '<div style="font-size:12px;color:var(--ink-faint);padding:12px 0">この案件の工程・予定はまだありません</div>')+'</div>';
+      '<div class="card pd-work" style="padding:6px 18px">'+gantt+(rows.length ? rows.slice(0,rowMax).join("")+(rows.length>rowMax?'<div style="font-size:12px;padding:8px 0"><a href="#" data-pd-goto="schedule">すべて見る（'+rows.length+'件）</a></div>':'') : '<div style="font-size:12px;color:var(--ink-faint);padding:12px 0">この案件の工程・予定はまだありません</div>')+'</div>';
   }
   // 新規追加の画面で「工程 / 予定」を切り替える（どちらも同じ入口から追加できるように）
   function kindSwitchHtml(cur){
@@ -14074,7 +14084,7 @@
     });
     c.querySelectorAll("[data-pd-goto]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.preventDefault(); state.tab = el.getAttribute("data-pd-goto"); render(); }); });
     c.querySelectorAll("[data-pd-gm]").forEach(function(el){ el.addEventListener("click", function(){ var ym = el.getAttribute("data-ym"); if(!ym) return; state.pdGM = state.pdGM || {}; state.pdGM[el.getAttribute("data-pd-gm")] = ym; render(); }); });
-    c.querySelectorAll("iframe.pd-gantt").forEach(function(f){ f.addEventListener("load", function(){ try{ f.style.height = (f.contentDocument.documentElement.scrollHeight+6)+"px"; }catch(e){} }); });
+    c.querySelectorAll("iframe.pd-gantt").forEach(function(f){ f.addEventListener("load", function(){ try{ var hh = f.contentDocument.documentElement.scrollHeight+6; if(window.innerWidth<600) hh = Math.min(hh, 190); f.style.height = hh+"px"; }catch(e){} }); });
     c.querySelectorAll("[data-chat-open-proj]").forEach(function(el){ el.addEventListener("click", function(ev){
       ev.preventDefault(); ev.stopPropagation();
       var pr = state.projects.find(function(x){ return x.id===el.getAttribute("data-chat-open-proj"); }); if(!pr) return;
