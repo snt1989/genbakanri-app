@@ -79,6 +79,19 @@
   .navbtn .role-tag.all{background:rgba(120,220,160,.2);color:#9be8bb}
   .navbtn .role-tag.mine{background:rgba(130,170,255,.22);color:#b9ccff}
   .navbtn .role-tag.view{background:rgba(255,200,87,.18);color:#ffd27a}
+  .note-strip{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface-2,#f1f4f2);border-radius:12px;padding:8px 12px;margin:0 0 10px;font-size:12.5px;color:var(--ink-soft);line-height:1.5}
+  .note-strip.acc{background:var(--accent-soft,#e6f4ec);color:var(--ink)}
+  .note-strip.warn{background:#fff6e5;color:#8a5a00}
+  .note-strip .ns-t{flex:1;min-width:0}
+  .note-strip .btn{flex:none;white-space:nowrap}
+  .tools-more{position:relative}
+  .tools-more>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+  .tools-more>summary::-webkit-details-marker{display:none}
+  .tools-more>summary::after{content:"▾";font-size:11px;margin-left:2px}
+  .tools-more[open]>summary::after{content:"▴"}
+  .tools-body{display:flex;gap:8px;flex-wrap:wrap}
+  .mypref-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);font-size:11.5px;color:var(--ink-soft)}
+  @media (min-width:641px){ .tools-more{display:contents} .tools-more>summary{display:none} .tools-more .tools-body{display:contents} }
   .rolestrip{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:11.5px;color:var(--ink-soft);margin:0 0 12px}
   .rolestrip .rc{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-weight:700}
   #bottomnav .bn{position:relative;}
@@ -844,6 +857,15 @@
     .app-nm{font-size:13.5px}
     .app-ds{font-size:11.5px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
     .app-url{display:none}
+    .rolestrip{flex-wrap:nowrap;overflow-x:auto;gap:6px;margin:0 0 10px;padding-bottom:2px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .rolestrip::-webkit-scrollbar{display:none}
+    .rolestrip>*{flex:none;white-space:nowrap}
+    .rolestrip b{font-size:11px;color:var(--ink-faint)}
+    .rolestrip .rc{padding:2px 8px;font-size:11px}
+    .rolestrip>span:last-child{display:none}
+    .tools-more[open]{flex-basis:100%}
+    .tools-more[open] .tools-body{margin-top:8px;padding:10px;background:var(--surface-2,#f1f4f2);border-radius:12px}
+    .tools-more[open] .tools-body .btn{flex:1 1 calc(50% - 4px);justify-content:center}
     .chat-shell.show-pane .chat-list{display:none;}
     .chat-shell.show-pane .chat-pane{display:flex;min-height:calc(100dvh - 120px);}
     .chat-backbar{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--surface-2);font-weight:700;font-size:14px;position:sticky;top:calc(env(safe-area-inset-top,0px) + var(--topbar-h,56px));z-index:4;}
@@ -4481,9 +4503,7 @@
 
     var banner = "";
     if(state.loadTimedOut && state.tab!=="chat"){
-      banner = '<div class="card" style="padding:12px 16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:10px;border-color:var(--warning)">'+
-        '<span style="font-size:12.5px;color:var(--ink-soft)">データの同期に時間がかかっています。空の状態で表示している可能性があります。</span>'+
-        '<button class="btn sm" id="retry-sync-btn">再読み込み</button></div>';
+      banner = '<div class="note-strip warn"><span class="ns-t">データの同期に時間がかかっています。空の状態で表示している可能性があります。</span><button class="btn sm" id="retry-sync-btn">再読み込み</button></div>';
     }
     if(TAB_ROLE[state.tab] && state.tab!=="chat") banner = roleStripHtml(state.tab) + banner;
     if(state.tab==="home") banner += snsHomeBanner();
@@ -6610,7 +6630,7 @@
       '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
         '<button class="btn primary" data-newproject="'+mode+'">'+iPlus()+' 案件登録</button>'+
         '<button class="btn" id="proj-dup-scan">重複チェック</button>'+
-        csvToolbar("projects")+
+        (state.isAdmin ? '<details class="tools-more"'+((!window.matchMedia||!window.matchMedia("(max-width:640px)").matches||state.toolsMoreOpen)?' open':'')+'><summary class="btn">'+iAdmin()+'管理者ツール</summary><div class="tools-body">'+csvToolbar("projects")+'</div></details>' : '')+
       '</div></div><div style="height:14px"></div>';
 
     html += '<div class="card filter-card" data-filter-mode="'+mode+'">';
@@ -6630,12 +6650,12 @@
         (ad.length?'<button type="button" class="btn sm" data-assignee-grp="admin">管理者をまとめて選択</button>':'')+(ot.length?'<button type="button" class="btn sm" data-assignee-grp="other">その他をまとめて選択</button>':'')+'</div>';
       return ddPage("asgList-"+state.tab, "担当者で絞り込み", ad.concat(ot).map(function(m){ return m.name; }), f.assignees, "data-assignee-chip", extra);
     })();
+    html += '<div class="mypref-line"><span>最初に開いたときの絞り込み：'+(myListPref(mode)?'<b>自分用の設定</b>':'共通の設定')+'</span><button type="button" class="btn sm" data-mypref-save="'+mode+'">いまの絞り込みを初期にする</button>'+(myListPref(mode)?'<button type="button" class="btn sm" data-mypref-reset="'+mode+'">共通に戻す</button>':'')+'</div>';
     html += '</div></details>';
     html += '</div>';
 
-    html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px;font-size:12px;color:var(--ink-soft)"><span>最初に開いたときのチェック：'+(myListPref(mode)?'<b>自分用の設定</b>':'共通の設定')+'</span><button type="button" class="btn sm" data-mypref-save="'+mode+'">いまの絞り込みを自分の初期にする</button>'+(myListPref(mode)?'<button type="button" class="btn sm" data-mypref-reset="'+mode+'">共通の設定に戻す</button>':'')+'</div>';
-    if(f.assignees.length) html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:var(--accent-soft);border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:12.5px"><span>担当者：<b>'+esc(f.assignees.join("、"))+'</b> の案件を表示中</span><button type="button" class="btn sm" data-assignee-all>全員を表示</button></div>';
-    if(state.projMode!=="full") html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:var(--surface-2,#f1f4f2);border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:12.5px"><span>表示を速くするため、<b>進行中の案件と、最近更新した案件</b>だけを読み込んでいます（清算済・失注の古い案件は含まれません）。</span><button class="btn sm" data-proj-loadall="1">過去の案件も読み込む</button></div>';
+    if(f.assignees.length) html += '<div class="note-strip acc"><span class="ns-t">担当者：<b>'+esc(f.assignees.join("、"))+'</b> を表示中</span><button type="button" class="btn sm" data-assignee-all>全員を表示</button></div>';
+    if(state.projMode!=="full") html += '<div class="note-strip"><span class="ns-t">表示を速くするため、<b>進行中・最近更新した案件</b>だけを読み込んでいます</span><button class="btn sm" data-proj-loadall="1">過去分も読み込む</button></div>';
     html += '<div class="summary-line">'+
       '<span><b>'+filtered.length+'</b>件 / 全'+state.projects.length+'件'+(state.projMode!=="full"?'（読み込み済み）':'')+'</span>'+
       STATUS_LIST.slice(0,4).map(function(s){return '<span>'+s+' <b style="font-size:13px">'+counts[s]+'</b></span>';}).join("")+
@@ -14250,6 +14270,7 @@
       openInstrView(k[0], k[1]);
     }); });
     c.querySelectorAll("[data-chat-back]").forEach(function(el){ el.addEventListener("click", function(){ state.chatPaneOpen = false; render(); }); });
+    c.querySelectorAll("details.tools-more").forEach(function(el){ el.addEventListener("toggle", function(){ if(window.matchMedia && window.matchMedia("(max-width:640px)").matches) state.toolsMoreOpen = el.open; }); });
     c.querySelectorAll("details.flt-more").forEach(function(el){ el.addEventListener("toggle", function(){ if(window.matchMedia && window.matchMedia("(max-width:640px)").matches) state.fltMoreOpen = el.open; }); });
     var sendBtn = document.getElementById("chat-send");
     if(sendBtn){
