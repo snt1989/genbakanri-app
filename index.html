@@ -11602,6 +11602,7 @@
     if(st.secret && Array.isArray(st.secret.defaults)){ state.secretDefaults = st.secret.defaults; if(db) ps.push(db.doc("settings/secret").set({defaults:st.secret.defaults, updatedAt:stamp})); }
     if(st.master){ applyMasters(st.master); if(db) ps.push(db.doc("settings/master").set(Object.assign({}, st.master, {updatedAt:stamp}))); }
     state.backupPreview = null;
+    auditLog("復元", "backup", "", "バックアップから復元", "バックアップファイルの内容を書き戻した（同じIDのデータは上書き、削除済みのデータは復活します）");
     return runBatch(ps, "復元");
   }
   function dataStateCardHtml(){
@@ -12431,7 +12432,7 @@
       state.trash = state.trash.filter(function(x){ return x.id!==entry.id; });
       toast("「"+(entry.name||TRASH_TYPES[col])+"」を元に戻しました（プレビューのみ）"); render(); return;
     }
-    db.collection(col).doc(id).set(data).then(function(){ return db.collection("trash").doc(entry.id).delete(); })
+    db.collection(col).doc(id).set(data).then(function(){ auditLog("復元", col, id, entry.name||"", "ゴミ箱から元に戻した（削除:"+(entry.deletedAt||"")+" "+(entry.deletedBy||"")+"）"); return db.collection("trash").doc(entry.id).delete(); })
       .then(function(){ toast("「"+(entry.name||TRASH_TYPES[col])+"」を元に戻しました"); }).catch(function(){ toast("元に戻せませんでした"); });
   }
   function restoreTrashMany(entries){
@@ -12442,7 +12443,7 @@
       var data = Object.assign({}, entry.data);
       if(col==="files" && data.folderId && state.loaded.folders && !state.folders.some(function(g){ return g.id===data.folderId; })) data.folderId = null;
       if(!db){ rawOf(col).unshift(Object.assign({id:id}, data)); state.trash = state.trash.filter(function(x){ return x.id!==entry.id; }); ok++; return Promise.resolve(); }
-      return db.collection(col).doc(id).set(data).then(function(){ return db.collection("trash").doc(entry.id).delete(); }).then(function(){ ok++; }, function(){ ng++; });
+      return db.collection(col).doc(id).set(data).then(function(){ auditLog("復元", col, id, entry.name||"", "ゴミ箱から元に戻した（削除:"+(entry.deletedAt||"")+" "+(entry.deletedBy||"")+"）"); return db.collection("trash").doc(entry.id).delete(); }).then(function(){ ok++; }, function(){ ng++; });
     };
     var chain = Promise.resolve();
     entries.forEach(function(e,i){ chain = chain.then(function(){ if(i%10===0) toast("元に戻しています… "+i+" / "+entries.length); return one(e); }); });
