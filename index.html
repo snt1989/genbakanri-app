@@ -1686,6 +1686,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-13-1", title:"11月13日の更新", items:[
+      {t:"freeeから実績を取り込むときに、絞り込みができます（管理者）", d:"取引先・タグ・事業部（freeeの部門）・勘定科目・内容の一部で絞り込めます。絞り込みを変えても、チェックした取引は残り、表示中の分をまとめてチェックすることもできます。", admin:true},
       {t:"予算管理で、取引先を元にfreeeの書類を呼び出せます（管理者）", d:"予算管理の案件画面の「freeeの書類を呼び出す」で取引先を選ぶと、その取引先あての見積書・請求書・発注書・納品書・領収書が一覧で出ます。見積書・請求書は金額を契約金額に、発注書は予算の明細と実績に取り込めます（freeeの書類は変更しません）。", admin:true},
       {t:"施工案件一覧の上の部分をスマホ向けに整理しました", d:"管理者のCSV入力・出力などは「管理者ツール」にまとめ、通知や担当者の表示は細い1行の帯にしました。「最初に開いたときの絞り込み」は「検索・絞り込み」の中に移動しました。"},
       {t:"チャットが見えなくなる進捗を設定できます（管理者）", d:"設定 → 機能制限の下の「チャットが見えなくなるタイミング」で、どの進捗になった案件のチャットを非表示にするか選べます。初めは「清算済」「失注」です。", admin:true},
@@ -3996,26 +3997,54 @@
     var mb = document.getElementById("modal-box"); if(mb) mb.style.maxWidth = "820px";
     document.getElementById("bf-back").addEventListener("click", back);
     var items = [];
-    var cnt = function(){ var n = document.querySelectorAll("#bf-res [data-bf-pick]:checked:not(:disabled)").length; var b = document.getElementById("bf-add"); b.disabled = !n; b.textContent = n ? n+"件を取り込む" : "チェックした取引を取り込む"; };
+    var picked = {}, bfF = {partner:"", tag:"", section:"", acct:"", q:""};
+    var cnt = function(){ var n = Object.keys(picked).length; var b = document.getElementById("bf-add"); b.disabled = !n; b.textContent = n ? n+"件を取り込む" : "チェックした取引を取り込む"; };
     document.getElementById("bf-go").addEventListener("click", function(){
       var s0 = document.getElementById("bf-s").value, e0 = document.getElementById("bf-e").value, res = document.getElementById("bf-res");
       if(!s0 || !e0 || s0>e0){ toast("期間を正しく入力してください"); return; }
       res.innerHTML = '<div style="color:var(--ink-faint);padding:12px 2px">freeeから取得中…</div>';
       freeeCall("deals.expenses", {start:s0, end:e0}).then(function(j){
-        items = j.items||[];
+        items = j.items||[]; picked = {}; bfF = {partner:"", tag:"", section:"", acct:"", q:""};
         var have = {}; ((bgDoc(pid)||{}).costs||[]).forEach(function(x){ if(x.freeeDetailId) have[x.freeeDetailId] = 1; });
-        var pn = bgNormName(p.name), toks = String(p.name||"").split(/[\s\u3000【】\[\]()（）]+/).map(bgNormName).filter(function(t){ return t.length>=3; });
+        var toks = String(p.name||"").split(/[\s　【】\[\]()（）]+/).map(bgNormName).filter(function(t){ return t.length>=3; });
         if(!items.length){ res.innerHTML = '<div style="color:var(--ink-faint);padding:12px 2px">この期間の経費の取引はありません</div>'; cnt(); return; }
-        var rows = items.map(function(x,i){
-          var done = !!have[x.detailId], hay = [x.description].concat(x.tags).map(bgNormName), hit = !done && toks.length && hay.some(function(h){ return h && toks.some(function(t){ return h.indexOf(t)!==-1 || (h.length>=3 && t.indexOf(h)!==-1); }); });
-          return '<tr><td><input type="checkbox" data-bf-pick="'+i+'"'+(done?' disabled':(hit?' checked':''))+'></td><td class="num">'+esc(fmtDate(x.date))+'</td><td>'+esc(x.accountName||"")+'</td><td>'+esc(x.partner||"")+(x.description?'<div style="font-size:11px;color:var(--ink-faint)">'+esc(x.description)+'</div>':'')+(x.tags.length?'<div style="font-size:11px;color:var(--accent)">'+esc(x.tags.join("・"))+'</div>':'')+'</td><td class="num" style="text-align:right">'+bgYen(x.amount)+(done?'<div style="font-size:11px;color:var(--ink-faint)">取込済</div>':'')+'</td></tr>';
-        }).join("");
-        res.innerHTML = '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px">'+items.length+'件'+(j.truncated?'（上限のため一部のみ。期間を狭めてください）':'')+'</div><label style="font-size:12px;display:flex;gap:6px;align-items:center;margin-bottom:8px"><input type="checkbox" id="bf-addacct" checked>マスタにない勘定科目は、勘定科目マスタにも追加する</label><div style="max-height:40vh;overflow:auto;flex:none"><table class="tbl" style="font-size:12.5px"><thead><tr><th></th><th>日付</th><th>勘定科目</th><th>取引先・内容</th><th style="text-align:right">金額</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
-        res.querySelectorAll("[data-bf-pick]").forEach(function(el){ el.addEventListener("change", cnt); }); cnt();
+        items.forEach(function(x,i){   // 案件名がタグ・内容に入っている取引は、最初からチェックする
+          var hay = [x.description].concat(x.tags).map(bgNormName);
+          if(!have[x.detailId] && toks.length && hay.some(function(h){ return h && toks.some(function(t){ return h.indexOf(t)!==-1 || (h.length>=3 && t.indexOf(h)!==-1); }); })) picked[i] = 1;
+        });
+        var uniq = function(f){ var o = {}; items.forEach(function(x){ f(x).forEach(function(v){ if(v) o[v] = 1; }); }); return Object.keys(o).sort(function(a,b){ return a.localeCompare(b,"ja"); }); };
+        var lists = {partner:uniq(function(x){ return [x.partner]; }), tag:uniq(function(x){ return x.tags||[]; }), section:uniq(function(x){ return [x.section]; }), acct:uniq(function(x){ return [x.accountName]; })};
+        var sel = function(k,label){ return lists[k].length ? '<label class="field" style="margin:0;min-width:130px">'+label+'<select data-bf-f="'+k+'"><option value="">すべて</option>'+lists[k].map(function(v){ return '<option value="'+esc(v)+'">'+esc(v)+'</option>'; }).join("")+'</select></label>' : ""; };
+        res.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:8px">'+sel("partner","取引先")+sel("tag","タグ")+sel("section","事業部（freeeの部門）")+sel("acct","勘定科目")+
+          '<label class="field" style="margin:0;flex:1;min-width:140px">内容で検索<input type="text" data-bf-f="q" placeholder="内容・取引先の一部"></label></div>'+
+          '<div id="bf-list"></div>';
+        var drawList = function(){
+          var f = bfF, q = bgNormName(f.q);
+          var vis = []; items.forEach(function(x,i){
+            if(f.partner && x.partner!==f.partner) return; if(f.tag && (x.tags||[]).indexOf(f.tag)===-1) return; if(f.section && x.section!==f.section) return; if(f.acct && x.accountName!==f.acct) return;
+            if(q && bgNormName((x.description||"")+(x.partner||"")+(x.accountName||"")+(x.tags||[]).join("")).indexOf(q)===-1) return;
+            vis.push(i);
+          });
+          var rows = vis.map(function(i){ var x = items[i], done = !!have[x.detailId];
+            return '<tr><td><input type="checkbox" data-bf-pick="'+i+'"'+(done?' disabled':(picked[i]?' checked':''))+'></td><td class="num">'+esc(fmtDate(x.date))+'</td><td>'+esc(x.accountName||"")+'</td><td>'+esc(x.partner||"")+(x.description?'<div style="font-size:11px;color:var(--ink-faint)">'+esc(x.description)+'</div>':'')+((x.tags||[]).length?'<div style="font-size:11px;color:var(--accent)">'+esc(x.tags.join("・"))+'</div>':'')+(x.section?'<div style="font-size:11px;color:var(--ink-faint)">'+esc(x.section)+'</div>':'')+'</td><td class="num" style="text-align:right">'+bgYen(x.amount)+(done?'<div style="font-size:11px;color:var(--ink-faint)">取込済</div>':'')+'</td></tr>';
+          }).join("");
+          var nOn = vis.filter(function(i){ return !have[items[i].detailId]; }).length;
+          document.getElementById("bf-list").innerHTML = '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">'+vis.length+'件を表示（全'+items.length+'件）'+(j.truncated?'（上限のため一部のみ。期間を狭めてください）':'')+
+            (nOn?'<button class="btn sm" id="bf-all">表示中の'+nOn+'件をすべてチェック</button><button class="btn sm" id="bf-none">表示中のチェックを外す</button>':'')+'</div>'+
+            '<label style="font-size:12px;display:flex;gap:6px;align-items:center;margin-bottom:8px"><input type="checkbox" id="bf-addacct" checked>マスタにない勘定科目は、勘定科目マスタにも追加する</label>'+
+            (vis.length?'<div style="max-height:40vh;overflow:auto;flex:none"><table class="tbl" style="font-size:12.5px"><thead><tr><th></th><th>日付</th><th>勘定科目</th><th>取引先・内容</th><th style="text-align:right">金額</th></tr></thead><tbody>'+rows+'</tbody></table></div>':'<div style="color:var(--ink-faint);padding:12px 2px">条件に合う取引はありません</div>');
+          var L = document.getElementById("bf-list");
+          L.querySelectorAll("[data-bf-pick]").forEach(function(el){ el.addEventListener("change", function(){ var i = el.getAttribute("data-bf-pick"); if(el.checked) picked[i] = 1; else delete picked[i]; cnt(); }); });
+          var ba = document.getElementById("bf-all"); if(ba) ba.addEventListener("click", function(){ vis.forEach(function(i){ if(!have[items[i].detailId]) picked[i] = 1; }); drawList(); });
+          var bn = document.getElementById("bf-none"); if(bn) bn.addEventListener("click", function(){ vis.forEach(function(i){ delete picked[i]; }); drawList(); });
+          cnt();
+        };
+        res.querySelectorAll("[data-bf-f]").forEach(function(el){ el.addEventListener(el.tagName==="SELECT"?"change":"input", function(){ bfF[el.getAttribute("data-bf-f")] = el.value; drawList(); }); });
+        drawList();
       }, function(e){ res.innerHTML = '<div style="color:var(--danger);padding:12px 2px">取得できませんでした：'+esc(e.message||"")+'</div>'; });
     });
     document.getElementById("bf-add").addEventListener("click", function(){
-      var picks = []; document.querySelectorAll("#bf-res [data-bf-pick]:checked:not(:disabled)").forEach(function(el){ picks.push(items[+el.getAttribute("data-bf-pick")]); });
+      var picks = Object.keys(picked).map(function(i){ return items[+i]; }).filter(Boolean);
       if(!picks.length) return;
       var cur = (bgDoc(pid)||{}).costs || [], seen = {}; cur.forEach(function(x){ if(x.freeeDetailId) seen[x.freeeDetailId] = 1; });
       var add = picks.filter(function(x){ return !seen[x.detailId]; }).map(function(x){
