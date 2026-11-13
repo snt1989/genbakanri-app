@@ -253,13 +253,13 @@
   .pa-ico{display:inline-flex;}
   .pa-name{display:inline-flex;}
   @media(max-width:700px){
-    .pa-card{display:block;padding:12px;}
-    .pa-title{margin-bottom:8px;font-size:12.5px;}
-    .pa-list{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
-    .pa-btn{flex-direction:column;justify-content:center;gap:4px;padding:10px 4px;min-height:68px;border-radius:12px;text-align:center;line-height:1.25;font-size:11.5px;white-space:normal;}
-    .pa-ico svg{width:22px;height:22px;}
-    .pa-name{flex-direction:column;align-items:center;}
-    .pa-sfx{font-size:10px;font-weight:500;opacity:.75;}
+    .pa-card{display:flex;align-items:center;gap:8px;padding:6px 10px;margin:0 0 10px;flex-wrap:nowrap;}
+    .pa-title{margin:0;font-size:11px;white-space:nowrap;flex:none;}
+    .pa-list{flex:1;min-width:0;display:flex;flex-wrap:nowrap;overflow-x:auto;gap:6px;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
+    .pa-list::-webkit-scrollbar{display:none;}
+    .pa-btn{flex:none;gap:4px;padding:4px 9px;min-height:0;border-radius:999px;font-size:11.5px;line-height:1.2;white-space:nowrap;}
+    .pa-ico svg{width:14px;height:14px;}
+    .pa-sfx{display:none;}
   }
   /* 管理画面の中のタブ */
   .admtabs{display:flex;gap:2px;border-bottom:2px solid var(--border);margin:2px 0 14px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;position:sticky;top:0;background:var(--bg);z-index:6;padding-top:4px;}
@@ -1686,6 +1686,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-13-1", title:"11月13日の更新", items:[
+      {t:"スマホの案件画面の「連携アプリ」を小さくしました", d:"大きなタイルをやめ、1行の小さなボタンにしました。アプリが多いときは横にスライドできます。"},
       {t:"freeeから実績を取り込むときに、絞り込みができます（管理者）", d:"取引先・タグ・事業部（freeeの部門）・勘定科目・内容の一部で絞り込めます。絞り込みを変えても、チェックした取引は残り、表示中の分をまとめてチェックすることもできます。", admin:true},
       {t:"予算管理で、取引先を元にfreeeの書類を呼び出せます（管理者）", d:"予算管理の案件画面の「freeeの書類を呼び出す」で取引先を選ぶと、その取引先あての見積書・請求書・発注書・納品書・領収書が一覧で出ます。見積書・請求書は金額を契約金額に、発注書は予算の明細と実績に取り込めます（freeeの書類は変更しません）。", admin:true},
       {t:"施工案件一覧の上の部分をスマホ向けに整理しました", d:"管理者のCSV入力・出力などは「管理者ツール」にまとめ、通知や担当者の表示は細い1行の帯にしました。「最初に開いたときの絞り込み」は「検索・絞り込み」の中に移動しました。"},
