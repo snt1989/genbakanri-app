@@ -1727,6 +1727,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-14-1", title:"11月14日の更新", items:[
+      {t:"工程表にも、工程の休みの日が反映されます", d:"日付マス目の工程表・案件画面の工程表・印刷／PDFで、休みの曜日・休みの日を設定した工程は、休みの日を除いて色が付き、休みの日は斜線で表示されます。あわせて、今日の日付のマスに色が付かない表示も直しました。"}
+    ]},
     {id:"2026-11-13-1", title:"11月13日の更新", items:[
       {t:"左のメニューを並び替えられます", d:"メニューの一番下の「メニューを並び替える」を押すと、各項目に▲▼が出ます。押して好きな順番にして、「並び替えを終わる」で確定します。順番は自分の端末だけに保存され、他の人には影響しません。「初期の順番に戻す」でいつでも元に戻せます。"},
       {t:"スマホの案件画面の「工程表」を短くしました", d:"工程表の図は高さを抑え（中は縦にスクロールできます）、工程・予定の一覧は1行ずつ最新の4件にしました。続きは「すべて見る」から確認できます。"},
@@ -6252,7 +6255,7 @@
       if(P.handoverDate && !hiddenFor(P,"p_handover")) rows.push({k:"handover", label:"引渡し", s:P.handoverDate, e:P.handoverDate});
     }
     if(inc.step) state.steps.filter(secretVisible).filter(function(x){ return (x.projectId||"")===pid && x.startDate; }).sort(function(a,b){ return (a.startDate||"").localeCompare(b.startDate||""); }).forEach(function(x){
-      rows.push({k:"step", grp:x.group||"", note:x.note||"", label:x.name||"工程", sub:[x.assignee, (x.progress!=null&&x.progress!==""?x.progress+"%":"")].filter(Boolean).join(" ／ "), s:x.startDate, e:(x.endDate&&x.endDate>=x.startDate)?x.endDate:x.startDate, prog:+x.progress||0});
+      rows.push({k:"step", stp:x, grp:x.group||"", note:x.note||"", label:x.name||"工程", sub:[x.assignee, (x.progress!=null&&x.progress!==""?x.progress+"%":"")].filter(Boolean).join(" ／ "), s:x.startDate, e:(x.endDate&&x.endDate>=x.startDate)?x.endDate:x.startDate, prog:+x.progress||0});
     });
     if(inc.ev) state.events.filter(secretVisible).filter(function(x){ return (x.projectId||"")===pid && x.date; }).sort(function(a,b){ return (a.date||"").localeCompare(b.date||""); }).forEach(function(x){
       rows.push({k:"event", grp:"予定", note:x.note||"", label:eventLabel(x), s:x.date, e:(x.endDate&&x.endDate>=x.date)?x.endDate:x.date});
@@ -6299,8 +6302,9 @@
       var t = "";
       for(var d=1; d<=dim; d++){
         var iso = ym+"-"+String(d).padStart(2,"0"), dow = new Date(y,m-1,d).getDay();
-        var inb = r && iso>=r.s && iso<=r.e, cl = "dc"+(inb?" on"+(iso===r.s?" bs":"")+(iso===r.e?" be":""):"")+(iso===localToday()?" tdy":"")+(dow===0?" su":(dow===6?" sa":""));
-        t += '<td class="'+cl+'"'+(inb ? ' style="background:'+COL[r.k]+';--c:'+COL[r.k]+'"' : (dow===0||dow===6?' style="background:#f4f4f4"':''))+'></td>';
+        var inr = r && iso>=r.s && iso<=r.e, off = !!(inr && r.stp && stepOffOn(r.stp, iso)), inb = inr && !off;
+        var cl = "dc"+(inb?" on"+(iso===r.s?" bs":"")+(iso===r.e?" be":""):"")+(off?" off":"")+(iso===localToday()?" tdy":"")+(dow===0?" su":(dow===6?" sa":""));
+        t += '<td class="'+cl+'"'+(inb ? ' style="background:'+COL[r.k]+';--c:'+COL[r.k]+'"' : (off ? ' style="background:repeating-linear-gradient(135deg,#fff 0 2px,#d9dedb 2px 3px)" title="休み"' : (dow===0||dow===6?' style="background:#f4f4f4"':'')))+'></td>';
       }
       return t;
     };
@@ -6334,7 +6338,7 @@
       'table.g{border:1px solid #d5ddd9;border-radius:8px;border-collapse:separate;border-spacing:0;overflow:hidden}table.g col.c1{width:130px}table.g col.c2{width:42px}table.g col.cn{width:70px}'+
       'table.g th{background:#eef4f1;border:0;border-bottom:1px solid #d5ddd9;color:#40564c;font-weight:600;font-size:11px;padding:3px 0}table.g th.dy{border:0;border-left:1px solid #e6ece9;font-weight:500;font-size:10.5px}table.g th.w{font-size:9.5px;color:#6b7f75}'+
       'table.g th.sa{background:#dcebf6;color:#2c6a99}table.g th.su{background:#f9dfe7;color:#b0405f}table.g th.tdy{background:#1f7a4d;color:#fff}'+
-      'table.g td{height:34px;border:0;border-bottom:1px solid #edf1ef;font-size:12px}table.g td.dc{position:relative;border-left:1px solid #f0f3f1}table.g td.dc.sa,table.g td.dc.su{background:#f7f9f8!important}table.g td.dc.tdy{background:#f0f8f3!important}'+
+      'table.g td{height:34px;border:0;border-bottom:1px solid #edf1ef;font-size:12px}table.g td.dc{position:relative;border-left:1px solid #f0f3f1}table.g td.dc.sa,table.g td.dc.su{background:#f7f9f8!important}table.g td.dc.tdy{background:#f0f8f3!important}td.dc.on.tdy{background:var(--c)!important}td.dc.off.tdy{background:repeating-linear-gradient(135deg,#f0f8f3 0 2px,#d9dedb 2px 3px)!important}'+
       'table.g td.nm{border:0;border-bottom:1px solid #edf1ef;font-weight:600;padding-left:10px}table.g td.dt{border:0;border-bottom:1px solid #edf1ef;color:#5d7167;font-size:11px}table.g td.nt{border:0;border-bottom:1px solid #edf1ef;border-left:1px solid #f0f3f1;color:#5d7167;font-size:11px}'+
       'table.g td.on{background:transparent!important}table.g td.on{border-left-color:transparent!important}table.g td.on::after{content:"";position:absolute;left:-1px;right:0;top:8px;bottom:8px;background:var(--c)}table.g td.on.bs::after{left:1px;border-radius:6px 0 0 6px}table.g td.on.be::after{right:2px;border-radius:0 6px 6px 0}table.g td.on.bs.be::after{border-radius:6px}'+
       'table.g tr.gr td.nm{background:#f7faf8;color:#1f4d3a}table.g tr:last-child td{border-bottom:0}';
@@ -6363,8 +6367,11 @@
       rows.forEach(function(r){
         total++;
         var cs = r.s<o.from?o.from:r.s, ce = r.e>o.to?o.to:r.e, left = diffDays(o.from,cs), wd = diffDays(cs,ce)+1;
-        var bar = r.k==="handover" ? '<u class="dia" style="left:'+pct(left+0.5)+'"></u>' :
-          '<span class="bar'+(r.s<o.from?' cl':'')+(r.e>o.to?' cr':'')+'" style="left:'+pct(left)+';width:'+pct(wd)+';background:'+COL[r.k]+'">'+(r.k==="step"&&r.prog?'<span style="width:'+Math.min(100,r.prog)+'%"></span>':'')+'</span>';
+        var segs = (r.k==="step" && r.stp && stepHasOff(r.stp)) ? stepRuns(r.stp).filter(function(g){ return g[1]>=o.from && g[0]<=o.to; }) : [[r.s, r.e]];
+        var bar = r.k==="handover" ? '<u class="dia" style="left:'+pct(left+0.5)+'"></u>' : segs.map(function(g){
+          var gs = g[0]<o.from?o.from:g[0], ge = g[1]>o.to?o.to:g[1];
+          return '<span class="bar'+(g[0]<o.from?' cl':'')+(g[1]>o.to?' cr':'')+'" style="left:'+pct(diffDays(o.from,gs))+';width:'+pct(diffDays(gs,ge)+1)+';background:'+COL[r.k]+'">'+(r.k==="step"&&r.prog?'<span style="width:'+Math.min(100,r.prog)+'%"></span>':'')+'</span>';
+        }).join("");
         body += '<div class="row"><div class="lb"><i style="background:'+COL[r.k]+'"></i><span class="t">'+esc(r.label)+'</span><span class="s">'+esc(o.compact ? (r.s.slice(5).replace("-","/")+(r.e!==r.s?"〜"+r.e.slice(5).replace("-","/"):"")) : (KIND[r.k]+(r.sub?"：":"")+(r.sub||"")))+'</span></div><div class="ch">'+bar+'</div></div>';
       });
     });
