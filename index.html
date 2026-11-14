@@ -1728,6 +1728,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-14-1", title:"11月14日の更新", items:[
+      {t:"連携アプリに「365カメラ」を追加しました", d:"メニューの「連携アプリ」から開けます。名前・説明・アイコン・使える人は、設定の「連携アプリ」で変えられます。"},
       {t:"AIロボに案件の登録を頼めます", d:"「山田様邸の除草作業を登録して。住所は…、12/1〜12/3」のように話しかけるか、依頼のメール・メモをそのまま貼り付けると、AIロボが案件の登録案を作ります。内容を確認して「実行する」を押すと登録されます（押すまでは登録されません）。書かれていない項目は空のままになり、似た案件があるときは注意が出ます。"},
       {t:"工程表にも、工程の休みの日が反映されます", d:"日付マス目の工程表・案件画面の工程表・印刷／PDFで、休みの曜日・休みの日を設定した工程は、休みの日を除いて色が付き、休みの日は斜線で表示されます。あわせて、今日の日付のマスに色が付かない表示も直しました。"}
     ]},
@@ -4521,7 +4522,8 @@
     {key:"zaimu", name:"財務現場アプリ", url:"https://zaimu-genba.vercel.app/", icon:iDoc, desc:"財務・現場の管理。"},
     {key:"legalsmooth", name:"リーガルスムーズアプリ", url:"https://legalsmooth-app.vercel.app/", icon:iBriefcase2, desc:"リーガルスムーズ関連の管理。"},
     {key:"villagehouse", name:"ヴィレッジハウスアプリ", url:"https://sanoh-villagehouse.vercel.app/", icon:iHome, desc:"ヴィレッジハウス関連の管理。"},
-    {key:"alphapurchase", name:"アルファ購買アプリ", url:"https://alpha-purchase.vercel.app/", icon:iBox, desc:"アルファの購買の管理。"}
+    {key:"alphapurchase", name:"アルファ購買アプリ", url:"https://alpha-purchase.vercel.app/", icon:iBox, desc:"アルファの購買の管理。"},
+    {key:"camera365", name:"365カメラ", url:"https://365camera-sanoh.vercel.app/", icon:iImage, desc:"365カメラ（撮影・写真）のアプリ。"}
   ];
   // 連携アプリの一覧：初期の一覧に、管理者が設定で変えた内容（名前・URL・説明・アイコン・並び順・非表示・追加）を重ねる
   var APP_ICONS = [["box","箱（備品）",iBox],["image","画像",iImage],["calendar","カレンダー",iCalendar],["briefcase","カバン",iBriefcase2],["users","人",iUsers],["doc","書類",iDoc],["chat","チャット",iChat],["home","家",iHome]];
