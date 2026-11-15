@@ -79,6 +79,12 @@
   .navedit-foot .btn{background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.35)}
   .navedit-foot .btn.primary{background:#fff;color:var(--accent,#1f7a4d)}
   nav.mainnav{display:flex;flex-direction:column;gap:1px;flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:4px 10px;}
+  nav.mainnav{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.28) transparent;}
+  nav.mainnav::-webkit-scrollbar{width:6px;}
+  nav.mainnav::-webkit-scrollbar-track{background:transparent;}
+  nav.mainnav::-webkit-scrollbar-thumb{background:rgba(255,255,255,.22);border-radius:999px;}
+  nav.mainnav::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.4);}
+  nav.mainnav::-webkit-scrollbar-button{display:none;width:0;height:0;}
   .navbtn{flex:none;}
   .side-foot{flex:none;}
   .navbtn{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:8px;border:none;background:transparent;color:var(--sidebar-ink-dim);font-size:13px;font-weight:500;cursor:pointer;text-align:left;width:100%;}
@@ -1727,6 +1733,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-15-1", title:"11月15日の更新", items:[
+      {t:"メニューのスクロールバーを、画面になじむデザインにしました", d:"左のメニューが長いときに出るスクロールバーを、細くて目立たない、緑の背景になじむ色に変えました。"}
+    ]},
     {id:"2026-11-14-1", title:"11月14日の更新", items:[
       {t:"連携アプリに「365カメラ」を追加しました", d:"メニューの「連携アプリ」から開けます。名前・説明・アイコン・使える人は、設定の「連携アプリ」で変えられます。"},
       {t:"AIロボに案件の登録を頼めます", d:"「山田様邸の除草作業を登録して。住所は…、12/1〜12/3」のように話しかけるか、依頼のメール・メモをそのまま貼り付けると、AIロボが案件の登録案を作ります。内容を確認して「実行する」を押すと登録されます（押すまでは登録されません）。書かれていない項目は空のままになり、似た案件があるときは注意が出ます。"},
