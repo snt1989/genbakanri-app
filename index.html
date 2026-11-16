@@ -1831,6 +1831,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-17-1", title:"11月17日の更新", items:[
+      {t:"案件の画面から黒板アプリを開くと、案件の情報が渡るようになりました", d:"「連携アプリ」の黒板ボタンで、工事名・施工者・工種・場所などを黒板アプリに渡します。黒板アプリで、どの欄に入れるかを選んで入力できます。"},
+    ]},
     {id:"2026-11-16-2", title:"11月16日の更新（2）", items:[
       {t:"案件の詳細で、未入力の項目を表示しないようにしました", d:"案件情報・物件情報・顧客情報のうち、入力されていない項目（「—」だけの行）は非表示になり、入力済みの項目だけが並びます。案件情報の右上の「未入力も表示」を押すと、空欄も含めて確認できます。入力は「編集」から今までどおり行えます。"},
       {t:"案件に「支払日」を追加", d:"案件の登録・編集画面と詳細画面に支払日が入力できます。変更履歴にも記録され、案件一覧の表示項目（列）やCSVの入出力・一括編集でも使えます。社外秘の設定対象にもなっています。"}
@@ -8219,7 +8222,13 @@
       var short = a.name.replace(/アプリ$/,"");
       var inner = '<span class="pa-ico">'+a.icon()+'</span><span class="pa-name"><span>'+esc(short)+'</span><span class="pa-sfx">アプリ</span></span>';
       if(a.key==="houkoku") return '<button type="button" class="btn sm outline pa-btn" data-report-project="'+esc(p.id)+'" title="この案件を指定して報告写真アプリを開きます（作ったPDFはこの案件のファイルに保存できます）">'+inner+'</button>';
-      return '<a class="btn sm outline pa-btn" '+(a.sso?'data-bihin-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を指定して備品管理アプリを開きます（持出時の現場名が自動で入ります）" ':'')+(a.site?'data-shayosha-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を行先に入れて運行管理アプリを開きます（ログインも引き継ぎます）" ':'')+(a.daito?'data-daito-link="1" title="大東アプリのアカウントがある人だけ入れます" ':'')+(a.jyosetsu?'data-jyosetsu-link="1" ':'')+'href="'+esc(a.url+((a.sso||a.site)?"?site="+encodeURIComponent(p.name||"")+(a.site&&p.division?"&division="+encodeURIComponent(p.division):""):""))+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>';
+      var kurl = a.url;
+      if(a.key==="kokuban"){   // 黒板アプリには、この案件の情報を付けて開く（黒板アプリ側で、どの欄に入れるかを確認してから入力される）
+        var kq = [["from","現場管理アプリ"],["工事名",p.name],["施工者",(state.orgSettings&&state.orgSettings.companyName)||""],["工種",p.type],["場所",p.address],["顧客名",p.customerName],["案件の状況",p.status]]
+          .filter(function(x){ return x[1]; }).map(function(x){ return encodeURIComponent(x[0])+"="+encodeURIComponent(x[1]); }).join("&");
+        kurl = a.url + (a.url.indexOf("?")>=0 ? "&" : "?") + kq;
+      }
+      return '<a class="btn sm outline pa-btn" '+(a.sso?'data-bihin-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を指定して備品管理アプリを開きます（持出時の現場名が自動で入ります）" ':'')+(a.site?'data-shayosha-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を行先に入れて運行管理アプリを開きます（ログインも引き継ぎます）" ':'')+(a.daito?'data-daito-link="1" title="大東アプリのアカウントがある人だけ入れます" ':'')+(a.jyosetsu?'data-jyosetsu-link="1" ':'')+'href="'+esc(kurl+((a.sso||a.site)?"?site="+encodeURIComponent(p.name||"")+(a.site&&p.division?"&division="+encodeURIComponent(p.division):""):""))+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>';
     };
     return '<div class="card pa-card"><div class="pa-title">連携アプリ</div><div class="pa-list">'+appLinks().map(btn).join("")+'</div></div>';
   }
