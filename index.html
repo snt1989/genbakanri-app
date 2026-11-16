@@ -99,6 +99,7 @@
   .note-strip.acc{background:var(--accent-soft,#e6f4ec);color:var(--ink)}
   .note-strip.warn{background:#fff6e5;color:#8a5a00}
   .note-strip .ns-t{flex:1;min-width:0}
+  .note-strip .ns-short{display:none}
   .note-strip .btn{flex:none;white-space:nowrap}
   .tools-more{position:relative}
   .tools-more>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:4px}
@@ -1012,6 +1013,33 @@
     /* login */
     .login-card{padding:24px 20px;}
   }
+
+  @media (max-width:640px){
+    .proj-head{gap:6px !important;}
+    .proj-head .pagetitle{font-size:24px;}
+    .proj-acts{display:grid !important;grid-template-columns:1fr 1fr;gap:8px !important;width:100%;}
+    .proj-acts .btn,.proj-acts summary.btn{width:100%;justify-content:center;min-height:44px;font-size:13.5px;padding:8px 10px;box-sizing:border-box;}
+    .proj-acts .btn.primary{grid-column:1/-1;font-size:15px;min-height:48px;}
+    .proj-acts .tools-more{display:block;}
+    .proj-acts .tools-more[open]{grid-column:1/-1;}
+    .proj-acts .tools-more[open] .tools-body{margin-top:8px;}
+    .note-strip{padding:9px 12px;font-size:12px;margin-bottom:8px;border-radius:14px;gap:8px;}
+    .note-strip .btn{min-height:36px;padding:6px 12px;font-size:12px;}
+    .ns-long{display:none;}
+    .note-strip .ns-short{display:inline;}
+    .proj-sum{display:grid !important;grid-template-columns:minmax(0,1fr) auto;gap:10px 8px !important;align-items:center;padding:6px 2px 12px;}
+    .proj-sum > span:first-child{grid-column:1;grid-row:1;font-size:12.5px;color:var(--ink-soft);}
+    .proj-sum > span:first-child b{font-size:17px;color:var(--ink);}
+    .proj-sum label.summary-pager{grid-column:2;grid-row:1;margin:0 !important;font-size:11.5px;gap:6px;}
+    .proj-sum label.summary-pager select{min-height:36px !important;padding:2px 6px !important;border-radius:10px;}
+    .proj-sum .ps-t{font-size:0;}
+    .proj-sum .ps-t::after{content:"表示";font-size:11.5px;color:var(--ink-faint);}
+    .proj-sum .sum-sort{grid-column:1;grid-row:2;display:flex !important;min-width:0;}
+    .proj-sum .sum-sort .ss-t{display:none;}
+    .proj-sum .sum-sort select{flex:1;min-width:0;width:100%;min-height:42px !important;border-radius:12px;font-size:13px !important;}
+    .proj-sum #proj-cols{grid-column:2;grid-row:2;display:block !important;}
+    .proj-sum #proj-cols>summary{min-height:42px;display:flex;align-items:center;justify-content:center;padding:0 12px;font-size:12.5px;border-radius:12px;white-space:nowrap;}
+  }
 </style>
 
 <div id="app">
@@ -1804,6 +1832,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-16-1", title:"11月16日の更新", items:[
+      {t:"スマホの案件一覧の上の部分を見やすく整えました", d:"「案件登録」を大きく1番上に、「重複チェック」「管理者ツール」を横2列にしました。読み込みのお知らせは短い文にし、件数・並び替え・表示項目・表示件数は2行にすっきりまとめました。"},
       {t:"案件情報・物件情報・顧客情報を、スマホで見やすく整えました", d:"一番上に「進捗・金額」をまとめ、「報告書を作成」「編集」は横2列のボタンにしました。項目は左に名前・右に内容の読みやすい並びにして、行の余白と文字の大きさをそろえました。"},
       {t:"案件メンバーの表示を、スマホで見やすく整えました", d:"メンバーを1人2行の一覧にし、名前・会社を左、「案件確認済／未確認」と「チャットする」を右にそろえました。アイコンの中のイニシャルが見えなかった不具合も直しました。チャットのボタンは横2列で押しやすくしています。"},
       {t:"案件画面の並びを変えました（メンバー・案件情報・物件情報を上へ）", d:"ファイル管理のすぐ下に、案件メンバー・案件情報・物件情報が並ぶようになりました。工程表・予算・メモ・指示書・報告書などはその下です。PCは左に「ファイル管理→案件情報→物件情報→…」、右に「案件メンバー・タスク」の2列、スマホは1列で上から順に表示されます。"},
@@ -6946,9 +6975,9 @@
     var counts = {}; STATUS_LIST.forEach(function(s){counts[s]=state.projects.filter(function(p){return p.status===s;}).length;});
     var totalAmount = filtered.reduce(function(s,p){return s+(hiddenFor(p,"p_amount")?0:(p.amount||0));},0);
 
-    var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">'+
+    var html = '<div class="proj-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">'+
       '<h1 class="pagetitle">'+title+'</h1>'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+      '<div class="proj-acts" style="display:flex;gap:8px;flex-wrap:wrap">'+
         '<button class="btn primary" data-newproject="'+mode+'">'+iPlus()+' 案件登録</button>'+
         '<button class="btn" id="proj-dup-scan">重複チェック</button>'+
         (state.isAdmin ? '<details class="tools-more"'+((!window.matchMedia||!window.matchMedia("(max-width:640px)").matches||state.toolsMoreOpen)?' open':'')+'><summary class="btn">'+iAdmin()+'管理者ツール</summary><div class="tools-body">'+csvToolbar("projects")+'</div></details>' : '')+
@@ -6976,13 +7005,13 @@
     html += '</div>';
 
     if(f.assignees.length) html += '<div class="note-strip acc"><span class="ns-t">担当者：<b>'+esc(f.assignees.join("、"))+'</b> を表示中</span><button type="button" class="btn sm" data-assignee-all>全員を表示</button></div>';
-    if(state.projMode!=="full") html += '<div class="note-strip"><span class="ns-t">表示を速くするため、<b>進行中・最近更新した案件</b>だけを読み込んでいます</span><button class="btn sm" data-proj-loadall="1">過去分も読み込む</button></div>';
-    html += '<div class="summary-line">'+
+    if(state.projMode!=="full") html += '<div class="note-strip"><span class="ns-t"><span class="ns-long">表示を速くするため、<b>進行中・最近更新した案件</b>だけを読み込んでいます</span><span class="ns-short"><b>進行中・最近更新</b>の案件だけを表示中</span></span><button class="btn sm" data-proj-loadall="1">過去分も読み込む</button></div>';
+    html += '<div class="summary-line proj-sum">'+
       '<span><b>'+filtered.length+'</b>件 / 全'+state.projects.length+'件'+(state.projMode!=="full"?'（読み込み済み）':'')+'</span>'+
       STATUS_LIST.slice(0,4).map(function(s){return '<span>'+s+' <b style="font-size:13px">'+counts[s]+'</b></span>';}).join("")+
       '<span>合計金額 <b class="num" style="font-size:14px">'+fmtYen(totalAmount)+'</b></span>'+
       projColsPicker()+
-      '<label style="display:inline-flex;align-items:center;gap:6px;font-weight:700;color:var(--accent);white-space:nowrap">⇅ 並び替え <select id="flt-sort" style="padding:4px 8px;font-size:12.5px">'+PROJ_SORTS.map(function(x){ return '<option value="'+x[0]+'"'+(projSortKey()===x[0]?" selected":"")+'>'+x[1]+'</option>'; }).join("")+'</select></label>'+
+      '<label class="sum-sort" style="display:inline-flex;align-items:center;gap:6px;font-weight:700;color:var(--accent);white-space:nowrap">⇅ <span class="ss-t">並び替え</span> <select id="flt-sort" style="padding:4px 8px;font-size:12.5px">'+PROJ_SORTS.map(function(x){ return '<option value="'+x[0]+'"'+(projSortKey()===x[0]?" selected":"")+'>'+x[1]+'</option>'; }).join("")+'</select></label>'+
       '<span class="summary-pager">'+(filtered.length?((f.page-1)*perPage+1):0)+'-'+Math.min(filtered.length,f.page*perPage)+' / '+filtered.length+'件</span>'+pageSizeSelect("proj")+
     '</div>';
 
@@ -7018,7 +7047,7 @@
   }
   function pageSizeSelect(kind){
     var cur = pageSizeFor(kind);
-    return '<label class="summary-pager" style="display:inline-flex;align-items:center;gap:6px">1ページの表示件数 <select data-pagesize="'+kind+'" style="padding:3px 6px;font-size:12px">'+
+    return '<label class="summary-pager" style="display:inline-flex;align-items:center;gap:6px"><span class="ps-t">1ページの表示件数</span> <select data-pagesize="'+kind+'" style="padding:3px 6px;font-size:12px">'+
       PAGE_SIZES.map(function(n){ return '<option value="'+n+'"'+(n===cur?' selected':'')+'>'+n+'件</option>'; }).join("")+'</select></label>';
   }
   function renderPager(page,total,mode){
