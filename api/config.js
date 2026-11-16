@@ -243,19 +243,27 @@ async function kokubanHandler(req, res, b){
     var okFile = function(f){ return f && f.id && f.projectId === t.p && !f.deleted && (t.a || !f.secret); };
     if(b.action === "kokuban-list"){   // 案件の写真の一覧（本体は含めない）
       var q = {structuredQuery: {from: [{collectionId: "files"}], where: {fieldFilter: {field: {fieldPath: "projectId"}, op: "EQUAL", value: {stringValue: t.p}}}, limit: 300,
-        select: {fields: ["filename", "contentType", "size", "uploadedAt", "uploadedBy", "chunked", "folderId", "deleted", "secret", "source"].map(function(x){ return {fieldPath: x}; })}}};
+        select: {fields: ["filename", "contentType", "size", "uploadedAt", "uploadedBy", "chunked", "chunks", "folderId", "deleted", "secret", "source"].map(function(x){ return {fieldPath: x}; })}}};
       var r = await fetch(W.fsBase() + ":runQuery?" + W.keyQ(), {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(q)});
       if(!r.ok) throw W.httpErr(502, r.status === 429 ? "Firestoreの無料枠（1日の読み取り上限）を超えています" : "firestore " + r.status);
       var j = await r.json();
-      var list = (Array.isArray(j) ? j : []).filter(function(x){ return x && x.document; }).map(function(x){ return W.decDoc(x.document); })
-        .filter(function(f){ return okFile(f) && !f.chunked && String(f.contentType || "").indexOf("image/") === 0 && f.contentType !== "image/svg+xml"; })
-        .sort(function(x, y){ return String(y.uploadedAt || "").localeCompare(String(x.uploadedAt || "")); }).slice(0, 120)
-        .map(function(f){ return {id: f.id, name: f.filename || "写真", at: f.uploadedAt || "", by: f.uploadedBy || "", folderId: f.folderId || null, source: f.source || ""}; });
-      return res.status(200).json({ok: true, project: {id: pj.id, name: pj.name || "", customer: pj.customerName || "", address: pj.address || "", type: pj.type || ""}, files: list});
+      var all = (Array.isArray(j) ? j : []).filter(function(x){ return x && x.document; }).map(function(x){ return W.decDoc(x.document); }).filter(okFile);
+      var imgs = all.filter(function(f){ return String(f.contentType || "").indexOf("image/") === 0 && f.contentType !== "image/svg+xml"; });
+      var list = imgs.sort(function(x, y){ return String(y.uploadedAt || "").localeCompare(String(x.uploadedAt || "")); }).slice(0, 120)
+        .map(function(f){ return {id: f.id, name: f.filename || "写真", at: f.uploadedAt || "", by: f.uploadedBy || "", folderId: f.folderId || null, source: f.source || "", chunks: f.chunked ? (Number(f.chunks) || 0) : 0}; });
+      return res.status(200).json({ok: true, project: {id: pj.id, name: pj.name || "", customer: pj.customerName || "", address: pj.address || "", type: pj.type || ""}, files: list, total: all.length});
     }
-    if(b.action === "kokuban-file"){   // 写真1枚の中身（データURL）
+    if(b.action === "kokuban-file"){   // 写真1枚の中身（データURL。大きい写真は分割されているので i 番目の部分）
       var f = await W.getDoc("files/" + encodeURIComponent(String(b.id || "")));
-      if(!okFile(f) || f.chunked || String(f.url || "").indexOf("data:image/") !== 0) return res.status(404).json({error: "写真が見つかりません"});
+      if(!okFile(f)) return res.status(404).json({error: "写真が見つかりません"});
+      if(f.chunked){
+        var ci = Number(b.i) || 0, n = Number(f.chunks) || 0;
+        if(!(ci >= 0 && ci < n)) return res.status(400).json({error: "bad index"});
+        var ch = await W.getDoc("fileChunks/" + encodeURIComponent(f.id) + "_" + ci);
+        if(!ch || !ch.data) return res.status(404).json({error: "写真のデータが見つかりません"});
+        return res.status(200).json({ok: true, chunks: n, data: ch.data, contentType: f.contentType || "image/jpeg", name: f.filename || "写真", folderId: f.folderId || null});
+      }
+      if(String(f.url || "").indexOf("data:image/") !== 0) return res.status(404).json({error: "この写真は読み込めない形式で保存されています"});
       return res.status(200).json({ok: true, url: f.url, name: f.filename || "写真", folderId: f.folderId || null});
     }
     if(b.action === "kokuban-save"){   // 黒板を付けた写真を、案件の「写真・ファイル」に追加
