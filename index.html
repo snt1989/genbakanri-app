@@ -513,7 +513,33 @@
   .pf-kind button.on{background:var(--accent);border-color:var(--accent);color:#fff}
   .pf-bar{display:flex;gap:16px;align-items:center;justify-content:flex-end;flex-wrap:wrap;margin:16px 0 12px;font-size:12.5px}
   .pf-bar label{display:flex;align-items:center;gap:6px;cursor:pointer}
+  .pf-bar .pf-chks{display:contents}
   .pf-bar select{width:auto;min-width:170px}
+  .pf-acts{display:flex;gap:10px;flex-wrap:wrap}
+  .pf-b{border-radius:999px;padding:10px 22px}
+  @media (max-width:640px){
+    .pf-acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .pf-acts .pf-b{padding:11px 8px;font-size:12.5px;justify-content:center;text-align:center;line-height:1.35;min-height:44px;white-space:normal}
+    .pf-acts .pf-upl{grid-column:1/-1;font-size:14px;padding:13px 10px}
+    .pf-acts .pf-wide{grid-column:1/-1}
+    .pf-adm{margin-top:10px;border:1.5px dashed var(--border);border-radius:14px;padding:0 10px;background:var(--surface)}
+    .pf-adm summary{cursor:pointer;list-style:none;padding:11px 2px;font-size:12.5px;font-weight:700;color:var(--ink-soft);display:flex;align-items:center;gap:6px}
+    .pf-adm summary::-webkit-details-marker{display:none}
+    .pf-adm summary::after{content:"▾";margin-left:auto;font-size:11px;opacity:.7}
+    .pf-adm[open] summary::after{content:"▴"}
+    .pf-adm .pf-acts{padding:0 0 10px}
+    .pf-kind{gap:6px;margin:14px 0 0;flex-wrap:nowrap}
+    .pf-kind button{flex:1 1 0;min-width:0;padding:9px 4px;font-size:13px;white-space:nowrap;text-align:center}
+    .pf-kind button i{margin-left:4px;font-size:11.5px}
+    .pf-bar{display:grid;grid-template-columns:1fr 1fr;gap:10px 8px;justify-content:stretch;align-items:center;margin:12px 0 10px;font-size:12px}
+    .pf-bar label{grid-column:1/-1;gap:8px;line-height:1.3}
+    .pf-bar label input{width:18px;height:18px;flex:none}
+    .pf-bar select{min-width:0;width:100%;grid-column:1/-1;font-size:13px;padding:9px 10px}
+    .pf-acts .pf-b[data-files-reload]{grid-column:1/-1}
+    .pf-bar .pf-chks{display:flex;flex-wrap:wrap;gap:8px 16px;grid-column:1/-1}
+    .pf-bar .pf-chks label{grid-column:auto}
+  }
+
   .pf-bulk{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--accent-soft);border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:12.5px}
   @media(max-width:700px){.pf-recent{grid-template-columns:repeat(2,minmax(0,1fr))}}
   .cal-scroll{overflow-x:auto}
@@ -1733,6 +1759,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-16-1", title:"11月16日の更新", items:[
+      {t:"スマホのファイル画面を見やすく整えました", d:"ボタンを2列にそろえ、「ファイルをアップロード」を大きく1番上に出しました。軽量化・Googleフォト保存・バックアップは「管理者メニュー」にまとめ、タップで開閉できます（管理者のみ）。「すべて／写真・動画／書類」は横いっぱいに均等に並び、絞り込みのチェックと並び替えも1画面に収まるようにしました。"}
+    ]},
     {id:"2026-11-15-1", title:"11月15日の更新", items:[
       {t:"メニューのスクロールバーを、画面になじむデザインにしました", d:"左のメニューが長いときに出るスクロールバーを、細くて目立たない、緑の背景になじむ色に変えました。"}
     ]},
@@ -9230,21 +9259,24 @@
     var html = back;
     if(cur) html += '<div style="margin-top:6px;font-size:12px"><a href="#" class="crumb" data-pf-folder="" style="display:inline">ファイル</a> ／ '+esc(cur.name)+'</div>';
     html += '<h1 class="pagetitle" style="margin:10px 0 16px;font-size:24px;font-weight:500">'+esc(cur?cur.name:"ファイル")+(cur&&cur.secret?' <span style="font-size:12px;color:var(--lock);font-weight:600">'+iLock()+' 社外秘</span>':'')+'</h1>';
-    html += '<div style="display:flex;gap:10px;flex-wrap:wrap">'+
-      '<label class="btn primary" style="cursor:pointer;border-radius:999px;padding:10px 22px">'+iUpload()+' ファイルをアップロード<input type="file" id="pf-input" multiple style="display:none"></label>'+
-      (cur ? '' : '<button class="btn outline" id="pf-newfolder" style="border-radius:999px;padding:10px 22px">新規フォルダ作成</button>')+
-      (cur ? '<button class="btn outline" data-pf-edit-folder="'+esc(cur.id)+'" style="border-radius:999px;padding:10px 22px">'+iEdit()+' フォルダを編集</button>' : '')+
-      '<button class="btn outline" id="pf-dl-all" style="border-radius:999px;padding:10px 22px">'+iDownload()+' '+(cur?'このフォルダをダウンロード':'すべてダウンロード')+'</button>'+
-      '<button class="btn outline" data-files-reload="'+esc(p.id)+'" style="border-radius:999px;padding:10px 22px">写真・ファイルを読み込む</button>'+
-      (state.isAdmin ? '<button class="btn outline" id="pf-lighten" style="border-radius:999px;padding:10px 22px">'+iAdmin()+' 写真を軽量化</button>' : '')+
-      (state.isAdmin && worksAvailable() ? '<button class="btn outline" id="pf-gphoto" style="border-radius:999px;padding:10px 22px">'+iAdmin()+' Googleフォトに保存</button>' : '')+
-      (state.isAdmin ? '<button class="btn outline" id="pf-backup" style="border-radius:999px;padding:10px 22px">'+iAdmin()+' この案件のファイルをバックアップ</button>' : '')+
+    var pfPh = window.matchMedia("(max-width:640px)").matches;
+    var pfAdm = (state.isAdmin ? '<button class="btn outline pf-b" id="pf-lighten">'+iAdmin()+' 写真を軽量化</button>' : '')+
+      (state.isAdmin && worksAvailable() ? '<button class="btn outline pf-b" id="pf-gphoto">'+iAdmin()+' Googleフォトに保存</button>' : '')+
+      (state.isAdmin ? '<button class="btn outline pf-b pf-wide" id="pf-backup">'+iAdmin()+' この案件のファイルをバックアップ</button>' : '');
+    html += '<div class="pf-acts">'+
+      '<label class="btn primary pf-b pf-upl" style="cursor:pointer">'+iUpload()+' ファイルをアップロード<input type="file" id="pf-input" multiple style="display:none"></label>'+
+      (cur ? '' : '<button class="btn outline pf-b" id="pf-newfolder">新規フォルダ作成</button>')+
+      (cur ? '<button class="btn outline pf-b" data-pf-edit-folder="'+esc(cur.id)+'">'+iEdit()+' フォルダを編集</button>' : '')+
+      '<button class="btn outline pf-b" id="pf-dl-all">'+iDownload()+' '+(cur?'このフォルダをダウンロード':'すべてダウンロード')+'</button>'+
+      '<button class="btn outline pf-b" data-files-reload="'+esc(p.id)+'">写真・ファイルを読み込む</button>'+
+      (pfPh ? '' : pfAdm)+
     '</div>';
+    if(pfPh && pfAdm) html += '<details class="pf-adm"><summary>'+iAdmin()+' 管理者メニュー</summary><div class="pf-acts">'+pfAdm+'</div></details>';
     html += '<div class="pf-kind" role="tablist">'+[["all","すべて",all.length],["photo","写真・動画",nPhoto],["doc","書類",nDoc]].map(function(k){ return '<button type="button" data-pf-kind="'+k[0]+'" class="'+(kind===k[0]?'on':'')+'">'+k[1]+'<i>'+k[2]+'</i></button>'; }).join("")+'</div>';
-    html += '<div class="pf-bar">'+
+    html += '<div class="pf-bar"><div class="pf-chks">'+
       '<label><input type="checkbox" id="pf-selall"'+(list.length && list.every(function(x){return state.pfSel[x.id];})?" checked":"")+'> ファイル一括選択</label>'+
       '<label><input type="checkbox" id="pf-unlight"'+(state.pfUnlight?" checked":"")+'> 軽量化していない写真のみ表示</label>'+
-      '<label><input type="checkbox" id="pf-mine"'+(state.pfMine?" checked":"")+'> 自分のファイルのみ表示</label>'+
+      '<label><input type="checkbox" id="pf-mine"'+(state.pfMine?" checked":"")+'> 自分のファイルのみ表示</label></div>'+
       '<select id="pf-sort"><option value="date_desc"'+(sort==="date_desc"?" selected":"")+'>アップロード日（新しい順）</option><option value="date_asc"'+(sort==="date_asc"?" selected":"")+'>アップロード日（古い順）</option><option value="name"'+(sort==="name"?" selected":"")+'>ファイル名順</option><option value="size_desc"'+(sort==="size_desc"?" selected":"")+'>サイズ（大きい順）</option><option value="size_asc"'+(sort==="size_asc"?" selected":"")+'>サイズ（小さい順）</option></select>'+
       '<select id="pf-view"><option value="thumb"'+(state.pfView==="thumb"?" selected":"")+'>サムネイル表示</option><option value="list"'+(state.pfView==="list"?" selected":"")+'>リスト表示</option></select>'+
     '</div>';
