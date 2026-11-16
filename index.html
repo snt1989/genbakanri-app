@@ -1774,6 +1774,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-16-1", title:"11月16日の更新", items:[
+      {t:"案件画面の並びを変えました（メンバー・案件情報・物件情報を上へ）", d:"ファイル管理のすぐ下に、案件メンバー・案件情報・物件情報が並ぶようになりました。工程表・予算・メモ・指示書・報告書などはその下です。PCは左に「ファイル管理→案件情報→物件情報→…」、右に「案件メンバー・タスク」の2列、スマホは1列で上から順に表示されます。"},
       {t:"スマホのホーム画面（稼働状況・施工開始予定）を見やすくしました", d:"「本日の稼働状況」は数字を大きくしたタイル表示に、「今後の施工開始予定」は案件名を1行・日付を右に寄せたすっきりした一覧にしました。"},
       {t:"スマホのファイル画面を見やすく整えました", d:"ボタンを2列にそろえ、「ファイルをアップロード」を大きく1番上に出しました。軽量化・Googleフォト保存・バックアップは「管理者メニュー」にまとめ、タップで開閉できます（管理者のみ）。「すべて／写真・動画／書類」は横いっぱいに均等に並び、絞り込みのチェックと並び替えも1画面に収まるようにしました。"}
     ]},
@@ -8199,6 +8200,7 @@
       html += '<div style="font-size:12px;color:var(--ink-faint);padding:10px 0;border-top:1px solid var(--border)">資料はまだありません。「ファイル」ページからアップロードできます</div>';
     }
     html += '</div>';
+    var hPre = html; html = "";
 
     html += projectWorkSection(p);
 
@@ -8222,6 +8224,7 @@
         '<span class="badge '+((r.status||"下書き")==="提出済"?"line-green":"line-gray")+'">'+esc(r.status||"下書き")+'</span> <button class="btn sm" data-report-edit="'+esc(r.id)+'">'+iEdit()+' 編集</button></div>';
     }).join("")+(prReports.length>8?'<div style="font-size:12px;padding:8px 0"><a href="#" data-goto-reports="'+esc(p.id)+'">すべて見る（'+prReports.length+'件）</a></div>':'') : '<div style="font-size:12px;color:var(--ink-faint);padding:12px 0">この案件の報告書はまだありません</div>')+'</div>';
 
+    var hRest = html; html = "";
     var ext = isExternalViewer();
     var lockTag = function(key){ return (!ext && secretSet(p).indexOf(key)!==-1) ? ' '+iLock() : ''; };
     var hint = ext ? '' : '<span class="lockhint">'+iLock()+' ＝ 社外秘（社外メンバーには非表示）</span>';
@@ -8245,6 +8248,7 @@
     rows += kvRow("請求日", fmtDate(p.invoiceDate), "p_invoice", p);
     rows += kvRow("引渡し日", fmtDate(p.handoverDate), "p_handover", p);
     html += section("案件情報", rows, null);
+    var hInfo = html; html = "";
 
     var prows = '';
     prows += kvRow("物件種類", esc(p.propertyType||"—")+'　<b>構造</b> '+esc(p.propertyStructure||"—"), "pr_type", p);
@@ -8265,6 +8269,7 @@
         '<a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination='+mq2+'">経路を調べる</a></div></div>';
     }
     html += section("物件情報", prows, "property");
+    var hProp = html; html = "";
 
     var cs = projectCustomerSrc(p);
     var crows = '';
@@ -8281,9 +8286,8 @@
       '作成：'+(p.createdAt?fmtDateTime(p.createdAt):"—")+' ／ <b style="color:var(--ink)">'+esc(p.createdBy||"不明（記録機能の追加前）")+'</b>'+(p.source?'（'+esc(p.source)+'から登録）':'')+'<br>'+
       '最終編集：'+((p.updatedAt||p.createdAt)?fmtDateTime(p.updatedAt||p.createdAt):"—")+' ／ <b style="color:var(--ink)">'+esc(p.updatedBy||"不明（記録機能の追加前）")+'</b>'+projHistoryHtml(p)+'</div>';
 
-    html += '</div>'; // end left col
+    var hCust = html; html = "";
 
-    html += '<div>';
     html += '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h3 style="font-size:13px">案件メンバー</h3><span style="display:flex;align-items:center;gap:8px"><span class="badge line-gray">'+assignees.length+'</span><button class="btn sm" data-edit-section="members">'+iEdit()+' 編集</button></span></div>';
     if(assignees.length===0){ html += '<div style="font-size:11.5px;color:var(--ink-faint)">メンバーが未設定です</div>'; }
     else{
@@ -8303,7 +8307,7 @@
       ? '<span class="badge soft-success">チャット開設済み</span><span style="color:var(--ink-soft)">メンバー'+chatMembers(pch).length+'名'+(pch.updatedAt?' ／ 最終 '+esc(fmtDateTime(pch.updatedAt)):'')+'</span>'+(pchUnread?'<span class="chat-unread">未読あり</span>':'')
       : '<span class="badge line-gray">チャット未開設</span><span style="color:var(--ink-faint)">「チャットを開始」で、この案件のチャットを作ります</span>')+'</div>';
     html += '<div style="display:flex;gap:8px;margin-top:8px"><button class="btn sm outline" data-chat-project="'+p.id+'">'+(pch?'チャットを開く':'チャットを開始')+'</button><button class="btn sm primary" data-edit-section="members">'+iPlus()+' メンバー追加</button></div>';
-    html += '</div>';
+    var hMember = html + '</div>'; html = "";
     // この案件のタスク（一覧＋追加）
     var ptasks = state.tasks.filter(function(t){ return t.projectId===p.id; }).sort(function(a,b){ return (a.done?1:0)-(b.done?1:0) || String(a.dueDate||"").localeCompare(String(b.dueDate||"")); });
     html += '<div class="card" style="margin-top:14px;padding:12px 14px"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><b style="font-size:14px">この案件のタスク'+(ptasks.length?'（'+ptasks.filter(function(t){ return !t.done; }).length+'件 未完了）':'')+'</b><button class="btn sm primary" data-pt-add="'+p.id+'">＋ タスクを追加</button></div>'+
@@ -8314,8 +8318,14 @@
     html += '<div style="margin-top:8px"><button class="btn outline" style="width:100%;justify-content:center" data-copy-new="'+p.id+'">この案件をコピーして新規作成</button></div>';
     if(state.isAdmin) html += '<div style="margin-top:8px"><button class="btn outline" style="width:100%;justify-content:center" data-sns-post="'+p.id+'">'+iShare()+' SNS投稿を作る（Instagram）</button></div>';
     if(worksAvailable() && !isExternalViewer()) html += '<div style="margin-top:10px"><button class="btn outline" style="width:100%;justify-content:center" data-mail-project="'+esc(p.id)+'">'+iMail()+' メール（履歴・送信）</button></div>';
-    html += '</div>';
-    html += '</div>'; // end grid
+    var hRight = html; html = "";
+    // 並び順：ファイル管理 → 案件メンバー → 案件情報 → 物件情報 → 工程・予算など。
+    // スマホは1列に並べ、PCは左列（ファイル・案件情報・物件情報…）と右列（メンバー・タスク…）に分ける
+    if(window.matchMedia && window.matchMedia("(max-width:960px)").matches){
+      html = hPre + '<div style="margin:14px 0 6px">' + hMember.replace('<div class="card" style="padding:16px 18px">','<div class="card" style="padding:16px 18px;margin:0">') + '</div>' + hInfo + hProp + hRest + hCust + hRight + '</div></div>';
+    }else{
+      html = hPre + hInfo + hProp + hRest + hCust + '</div><div>' + hMember + hRight + '</div></div>';
+    }
 
     html += '<div style="text-align:center;margin-top:26px"><button class="btn ghost" style="color:var(--danger)" data-del-project="'+p.id+'">'+iTrash()+' 案件情報を削除する</button></div>';
     return html;
