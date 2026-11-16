@@ -1832,6 +1832,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-16-2", title:"11月16日の更新（2）", items:[
+      {t:"案件の詳細で、未入力の項目を表示しないようにしました", d:"案件情報・物件情報・顧客情報のうち、入力されていない項目（「—」だけの行）は非表示になり、入力済みの項目だけが並びます。案件情報の右上の「未入力も表示」を押すと、空欄も含めて確認できます。入力は「編集」から今までどおり行えます。"},
       {t:"案件に「支払日」を追加", d:"案件の登録・編集画面と詳細画面に支払日が入力できます。変更履歴にも記録され、案件一覧の表示項目（列）やCSVの入出力・一括編集でも使えます。社外秘の設定対象にもなっています。"}
     ]},
     {id:"2026-11-16-1", title:"11月16日の更新", items:[
@@ -8296,8 +8297,8 @@
     var hint = ext ? '' : '<span class="lockhint">'+iLock()+' ＝ 社外秘（社外メンバーには非表示）</span>';
     var section = function(title, rows, editKind){
       if(ext && !rows) return "";
-      return '<div class="form-section-title"><span>'+title+'</span><span style="display:flex;align-items:center;gap:10px">'+hint+(editKind?'<button class="btn sm" data-edit-section="'+editKind+'">'+iEdit()+' 編集</button>':'')+'</span></div>'+
-        '<div class="form-card">'+(rows||'<div class="kv"><dd style="color:var(--ink-faint)">表示できる項目がありません</dd></div>')+'</div>';
+      return '<div class="form-section-title"><span>'+title+'</span><span style="display:flex;align-items:center;gap:10px">'+hint+(title==="案件情報"&&!ext?'<a href="#" class="empty-toggle" data-toggle-empty style="font-size:11.5px;font-weight:700;white-space:nowrap">'+(state.showEmptyKv?'未入力を隠す':'未入力も表示')+'</a>':'')+(editKind?'<button class="btn sm" data-edit-section="'+editKind+'">'+iEdit()+' 編集</button>':'')+'</span></div>'+
+        '<div class="form-card">'+(rows||'<div class="kv"><dd style="color:var(--ink-faint)">'+(ext?'表示できる項目がありません':'未入力です。「編集」から入力できます')+'</dd></div>')+'</div>';
     };
 
     var rows = '';
@@ -8397,8 +8398,14 @@
     html += '<div style="text-align:center;margin-top:26px"><button class="btn ghost" style="color:var(--danger)" data-del-project="'+p.id+'">'+iTrash()+' 案件情報を削除する</button></div>';
     return html;
   }
+  // 未入力（空・「—」「-」だけ）の行は表示しない。「未入力も表示」で一時的に出せる
+  function kvIsEmpty(val){
+    var t = String(val==null?"":val).replace(/<[^>]*>/g,"").replace(/&nbsp;|&#12288;|\u3000|構造/g," ").replace(/[\s—–\-ー－]+/g,"");
+    return t==="";
+  }
   function kvRow(label, val, key, p){
     if(key && p && hiddenFor(p,key)) return "";
+    if(!state.showEmptyKv && kvIsEmpty(val)) return "";
     var lock = (key && p && secretSet(p).indexOf(key)!==-1) ? ' '+iLock() : '';
     return '<div class="kv"><dt>'+esc(label)+lock+'</dt><dd>'+val+'</dd></div>';
   }
@@ -14426,6 +14433,7 @@
       confirmDelete(ids.length+"件のファイルを削除しますか？", function(){ state.pfSel={}; ids.forEach(function(id){ deleteDoc("files", id, "削除しました"); }); });
     });
     c.querySelectorAll("[data-list-cust]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.stopPropagation(); openProjectSectionEdit("customer", el.getAttribute("data-list-cust")); }); });
+    c.querySelectorAll("[data-toggle-empty]").forEach(function(el){ el.addEventListener("click", function(e){ e.preventDefault(); state.showEmptyKv = !state.showEmptyKv; render(); }); });
     c.querySelectorAll("[data-edit-section]").forEach(function(el){ el.addEventListener("click", function(){ openProjectSectionEdit(el.getAttribute("data-edit-section"), state.viewingProjectId); }); });
     c.querySelectorAll("[data-edit-project]").forEach(function(el){ el.addEventListener("click", function(){ var p=state.projects.find(function(x){return x.id===el.getAttribute("data-edit-project");}); goProjectForm(state.returnTab, p); }); });
     c.querySelectorAll("[data-newproject]").forEach(function(el){ el.addEventListener("click", function(){ goProjectForm(el.getAttribute("data-newproject"), null); }); });
