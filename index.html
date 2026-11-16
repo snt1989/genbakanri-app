@@ -259,6 +259,20 @@
   .side-stat{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--ink-soft);padding:8px 0;border-bottom:1px dashed var(--border);}
   .side-stat:last-child{border-bottom:none;}
   .side-stat b{font-family:"JetBrains Mono",monospace;font-size:16px;color:var(--ink);}
+  @media (max-width:640px){
+    .side-card{padding:14px 14px;gap:10px;border-radius:16px;}
+    .side-card h3{font-size:14px;}
+    .side-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
+    .side-stats .side-stat{flex-direction:column;align-items:flex-start;gap:4px;padding:10px 12px;border:none;background:var(--surface-2);border-radius:12px;font-size:11.5px;line-height:1.3;}
+    .side-stats .side-stat.wide{grid-column:1/-1;order:-1;}
+    .side-stats .side-stat{padding:10px 10px;}
+    .side-stats .side-stat b{font-size:20px;line-height:1.2;}
+    .side-stats .side-stat.wide b{font-size:19px;}
+    .side-up.side-stat{display:flex !important;flex-direction:row;align-items:center;justify-content:space-between;gap:10px;padding:11px 2px;}
+    .side-up .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px !important;}
+    .side-up .dt{flex:none;margin:0 !important;font-size:11.5px !important;background:var(--accent-soft);color:var(--accent) !important;border-radius:999px;padding:3px 9px;font-weight:700;}
+  }
+
 
   /* ---- Members ---- */
   /* 案件の画面の「連携アプリ」ボタン */
@@ -1760,6 +1774,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-16-1", title:"11月16日の更新", items:[
+      {t:"スマホのホーム画面（稼働状況・施工開始予定）を見やすくしました", d:"「本日の稼働状況」は数字を大きくしたタイル表示に、「今後の施工開始予定」は案件名を1行・日付を右に寄せたすっきりした一覧にしました。"},
       {t:"スマホのファイル画面を見やすく整えました", d:"ボタンを2列にそろえ、「ファイルをアップロード」を大きく1番上に出しました。軽量化・Googleフォト保存・バックアップは「管理者メニュー」にまとめ、タップで開閉できます（管理者のみ）。「すべて／写真・動画／書類」は横いっぱいに均等に並び、絞り込みのチェックと並び替えも1画面に収まるようにしました。"}
     ]},
     {id:"2026-11-15-1", title:"11月15日の更新", items:[
@@ -6809,18 +6824,18 @@
     html += '</div>';
 
     html += '<div style="display:flex;flex-direction:column;gap:16px">';
-    html += '<div class="card side-card"><h3>本日の稼働状況</h3>'+
+    html += '<div class="card side-card"><h3>本日の稼働状況</h3><div class="side-stats">'+
       '<div class="side-stat">施工中の現場<b>'+activeProjects.length+'</b></div>'+
-      (state.isAdmin ? '<div class="side-stat">今月の契約金額合計<b class="num">'+fmtYen(thisMonthAmount)+'</b></div>' : '')+
+      (state.isAdmin ? '<div class="side-stat wide">今月の契約金額合計<b class="num">'+fmtYen(thisMonthAmount)+'</b></div>' : '')+
       '<div class="side-stat">未完了タスク<b>'+todo.length+'</b></div>'+
       '<div class="side-stat">登録メンバー<b>'+state.members.length+'</b></div>'+
-    '</div>';
+    '</div></div>';
     var upcoming = state.projects.filter(function(p){return p.startDate>=todayISO();}).sort(function(a,b){return (a.startDate||"").localeCompare(b.startDate||"");}).slice(0,4);
     html += '<div class="card side-card"><h3>今後の施工開始予定</h3>';
     if(upcoming.length===0){ html+='<div style="font-size:12px;color:var(--ink-faint)">予定はありません</div>'; }
     else{
       html += upcoming.map(function(p){
-        return '<a href="#" class="side-stat" data-open-project="'+esc(p.id)+'" style="display:block;text-decoration:none;color:inherit;cursor:pointer"><div style="font-weight:700;font-size:12px;color:var(--accent)">'+esc(p.name)+'</div><div style="color:var(--ink-faint);font-size:11px;margin-top:2px" class="num">'+fmtDate(p.startDate)+'〜</div></a>';
+        return '<a href="#" class="side-stat side-up" data-open-project="'+esc(p.id)+'" style="display:block;text-decoration:none;color:inherit;cursor:pointer"><div class="nm" style="font-weight:700;font-size:12px;color:var(--accent)">'+esc(p.name)+'</div><div class="dt num" style="color:var(--ink-faint);font-size:11px;margin-top:2px">'+fmtDate(p.startDate)+'〜</div></a>';
       }).join("");
     }
     html += '</div></div>';
