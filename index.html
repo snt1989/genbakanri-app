@@ -702,6 +702,19 @@
   .kv:last-child{border-bottom:none;}
   .kv dt{font-size:11.5px;color:var(--ink-faint);font-weight:700;grid-column:1;}
   .kv dd{margin:0;font-size:12.5px;grid-column:2;white-space:pre-wrap;}
+  @media (max-width:640px){
+    .form-section-title{padding:16px 2px 8px;gap:6px 10px;flex-wrap:wrap;font-size:14px;}
+    .form-section-title .lockhint{font-size:10px;}
+    .form-card{border-radius:16px;}
+    .kv{grid-template-columns:88px minmax(0,1fr);gap:4px 12px;padding:11px 14px;align-items:baseline;}
+    .kv dt{font-size:12px;line-height:1.5;}
+    .kv dd{font-size:13.5px;line-height:1.55;word-break:break-word;overflow-wrap:anywhere;}
+    .kv.kv-head{display:flex !important;flex-direction:column;align-items:stretch !important;gap:10px !important;padding:13px 14px;background:var(--surface-2);}
+    .kv-head .kv-badges{font-size:15px;}
+    .kv-head .kv-btns{margin-left:0 !important;display:grid !important;grid-template-columns:1fr 1fr;gap:8px !important;width:100%;}
+    .kv-head .kv-btns .btn{justify-content:center;min-height:40px;font-size:13px;background:var(--surface);}
+  }
+
   .maplink{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;}
   .member-side-item{display:flex;gap:9px;padding:10px 0;border-bottom:1px solid var(--border);align-items:flex-start;}
   .member-side-item:last-child{border-bottom:none;}
@@ -1791,6 +1804,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-16-1", title:"11月16日の更新", items:[
+      {t:"案件情報・物件情報・顧客情報を、スマホで見やすく整えました", d:"一番上に「進捗・金額」をまとめ、「報告書を作成」「編集」は横2列のボタンにしました。項目は左に名前・右に内容の読みやすい並びにして、行の余白と文字の大きさをそろえました。"},
       {t:"案件メンバーの表示を、スマホで見やすく整えました", d:"メンバーを1人2行の一覧にし、名前・会社を左、「案件確認済／未確認」と「チャットする」を右にそろえました。アイコンの中のイニシャルが見えなかった不具合も直しました。チャットのボタンは横2列で押しやすくしています。"},
       {t:"案件画面の並びを変えました（メンバー・案件情報・物件情報を上へ）", d:"ファイル管理のすぐ下に、案件メンバー・案件情報・物件情報が並ぶようになりました。工程表・予算・メモ・指示書・報告書などはその下です。PCは左に「ファイル管理→案件情報→物件情報→…」、右に「案件メンバー・タスク」の2列、スマホは1列で上から順に表示されます。"},
       {t:"スマホのホーム画面（稼働状況・施工開始予定）を見やすくしました", d:"「本日の稼働状況」は数字を大きくしたタイル表示に、「今後の施工開始予定」は案件名を1行・日付を右に寄せたすっきりした一覧にしました。"},
@@ -8255,7 +8269,7 @@
     var rows = '';
     var badges = (hiddenFor(p,"p_status") ? '' : statusBadge(p)+lockTag("p_status")) + freeeBadge(p) +
       (hiddenFor(p,"p_amount") ? '' : '<span class="num" style="font-weight:700">'+fmtYen(p.amount)+'</span>'+lockTag("p_amount"));
-    rows += '<div class="kv" style="display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap">'+badges+'<span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-report-project="'+p.id+'" title="報告写真アプリで報告書を作り、この案件の写真・ファイルに保存します">'+iImage()+' 報告書を作成</button><button class="btn sm" data-edit-project="'+p.id+'">編集</button></span></div>';
+    rows += '<div class="kv kv-head" style="display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap"><span class="kv-badges" style="display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap">'+badges+'</span><span class="kv-btns" style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-report-project="'+p.id+'" title="報告写真アプリで報告書を作り、この案件の写真・ファイルに保存します">'+iImage()+' 報告書を作成</button><button class="btn sm" data-edit-project="'+p.id+'">編集</button></span></div>';
     rows += kvRow("案件名", esc(p.name));
     rows += kvRow("事業部", esc(p.division||"—"), "p_type", p);
     rows += kvRow("問合日", fmtDate(p.inquiryDate), "p_inquiry", p);
