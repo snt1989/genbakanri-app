@@ -102,8 +102,11 @@ async function usageHandler(req, res, b){
 // 2) 報告写真アプリがPDFを約600KBずつ送り(report-chunk)、最後に report-finish で案件の「写真・ファイル」に登録
 // 環境変数: SSO_SECRET（共通）／任意: REPORT_URL（既定 https://houkokusho-two.vercel.app）
 function reportOrigin(){ return (F.env("REPORT_URL") || "https://houkokusho-two.vercel.app").replace(/\/+$/, ""); }
-function setCors(res){
-  res.setHeader("Access-Control-Allow-Origin", reportOrigin());
+function kokubanOrigin(){ return (F.env("KOKUBAN_URL") || "https://kokubanapp.vercel.app").replace(/\/+$/, ""); }
+function setCors(res, req){
+  var allow = [reportOrigin(), kokubanOrigin(), "capacitor://localhost", "https://localhost", "http://localhost"];
+  var o = req && req.headers ? String(req.headers.origin || "") : "";
+  res.setHeader("Access-Control-Allow-Origin", allow.indexOf(o) >= 0 ? o : reportOrigin());
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   res.setHeader("Vary", "Origin");
@@ -139,7 +142,7 @@ async function activeProjects(){
 }
 function projectBrief(p){ return {id: p.id, name: p.name || "", customer: p.customerName || "", address: p.address || "", status: p.status || ""}; }
 async function reportHandler(req, res, b){
-  setCors(res);
+  setCors(res, req);
   try{
     var secret = F.env("SSO_SECRET");
     if(!secret || secret.length < 16) return res.status(200).json({error: "notconfigured"});
@@ -192,6 +195,81 @@ async function reportHandler(req, res, b){
       var fn = String(b.filename || "報告書.pdf").replace(/[\\/:*?"<>|]/g, "").slice(0, 120) || "報告書.pdf";
       await W.patchDoc("files/" + up, {projectId: t.p, projectName: t.pn || "", folderId: null, assetId: null, url: null, chunked: true, chunks: total,
         filename: fn, contentType: "application/pdf", size: Math.max(0, Number(b.size) || 0), uploadedAt: new Date().toISOString(), uploadedBy: t.n, source: "報告写真アプリ"});
+      return res.status(200).json({ok: true, id: up});
+    }
+    return res.status(400).json({error: "unknown action"});
+  }catch(e){
+    return res.status(e.status || 500).json({error: "server", detail: String(e.message || e).slice(0, 200)});
+  }
+}
+
+// ---- 黒板アプリ ⇄ 案件：案件の写真を読み込み、黒板を付けた写真を案件の「写真・ファイル」に保存する ----
+// 1) 現場管理が「kokuban-ticket」で案件つきの署名付きチケット(12時間)を発行し、黒板アプリを開く
+// 2) 黒板アプリがチケットで kokuban-list（写真の一覧）／kokuban-file（写真の中身）／kokuban-save（保存）を呼ぶ
+function makeKokubanTicket(me, project, secret){
+  var payload = b64u(JSON.stringify({k: "k", n: me.name, a: F.isAdminMember(me) ? 1 : 0, p: project.id, pn: project.name || "", exp: Date.now() + 12 * 3600000, j: crypto.randomBytes(6).toString("hex")}));
+  return payload + "." + b64u(crypto.createHmac("sha256", secret).update(payload).digest());
+}
+function readKokubanTicket(t, secret){
+  try{
+    var parts = String(t || "").split(".");
+    if(parts.length !== 2) return null;
+    var want = b64u(crypto.createHmac("sha256", secret).update(parts[0]).digest());
+    var a = Buffer.from(parts[1]), b = Buffer.from(want);
+    if(a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    var p = JSON.parse(Buffer.from(parts[0].replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
+    if(!p || p.k !== "k" || !p.p || !p.exp || Date.now() > p.exp) return null;
+    return p;
+  }catch(e){ return null; }
+}
+async function kokubanHandler(req, res, b){
+  setCors(res, req);
+  try{
+    var secret = F.env("SSO_SECRET");
+    if(!secret || secret.length < 16) return res.status(200).json({error: "notconfigured"});
+    if(b.action === "kokuban-ticket"){
+      var a = b.auth || {};
+      var me = await F.verifyMember(a.name, a.password);
+      if(!me) return res.status(403).json({error: "認証に失敗しました"});
+      var p = await W.getDoc("projects/" + encodeURIComponent(String(b.projectId || "")));
+      if(!p || !p.id || !W.visibleProjects([p], me).length) return res.status(403).json({error: "この案件は利用できません"});
+      return res.status(200).json({ticket: makeKokubanTicket(me, p, secret), origin: String(req.headers && req.headers.origin || "")});
+    }
+    var t = readKokubanTicket(b.ticket, secret);
+    if(!t) return res.status(403).json({error: "有効期限が切れました。現場管理アプリの案件から開き直してください"});
+    var who = {name: t.n, permission: t.a ? "admin" : "member"};
+    var pj = await W.getDoc("projects/" + encodeURIComponent(t.p));
+    if(!pj || !pj.id || !W.visibleProjects([pj], who).length) return res.status(403).json({error: "この案件は利用できません"});
+    var okFile = function(f){ return f && f.id && f.projectId === t.p && !f.deleted && (t.a || !f.secret); };
+    if(b.action === "kokuban-list"){   // 案件の写真の一覧（本体は含めない）
+      var q = {structuredQuery: {from: [{collectionId: "files"}], where: {fieldFilter: {field: {fieldPath: "projectId"}, op: "EQUAL", value: {stringValue: t.p}}}, limit: 300,
+        select: {fields: ["filename", "contentType", "size", "uploadedAt", "uploadedBy", "chunked", "folderId", "deleted", "secret", "source"].map(function(x){ return {fieldPath: x}; })}}};
+      var r = await fetch(W.fsBase() + ":runQuery?" + W.keyQ(), {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(q)});
+      if(!r.ok) throw W.httpErr(502, r.status === 429 ? "Firestoreの無料枠（1日の読み取り上限）を超えています" : "firestore " + r.status);
+      var j = await r.json();
+      var list = (Array.isArray(j) ? j : []).filter(function(x){ return x && x.document; }).map(function(x){ return W.decDoc(x.document); })
+        .filter(function(f){ return okFile(f) && !f.chunked && String(f.contentType || "").indexOf("image/") === 0 && f.contentType !== "image/svg+xml"; })
+        .sort(function(x, y){ return String(y.uploadedAt || "").localeCompare(String(x.uploadedAt || "")); }).slice(0, 120)
+        .map(function(f){ return {id: f.id, name: f.filename || "写真", at: f.uploadedAt || "", by: f.uploadedBy || "", folderId: f.folderId || null, source: f.source || ""}; });
+      return res.status(200).json({ok: true, project: {id: pj.id, name: pj.name || "", customer: pj.customerName || "", address: pj.address || "", type: pj.type || ""}, files: list});
+    }
+    if(b.action === "kokuban-file"){   // 写真1枚の中身（データURL）
+      var f = await W.getDoc("files/" + encodeURIComponent(String(b.id || "")));
+      if(!okFile(f) || f.chunked || String(f.url || "").indexOf("data:image/") !== 0) return res.status(404).json({error: "写真が見つかりません"});
+      return res.status(200).json({ok: true, url: f.url, name: f.filename || "写真", folderId: f.folderId || null});
+    }
+    if(b.action === "kokuban-save"){   // 黒板を付けた写真を、案件の「写真・ファイル」に追加
+      var url = String(b.url || "");
+      if(!/^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(url) || url.length > 1000000) return res.status(400).json({error: "写真が大きすぎます"});
+      var up = String(b.uploadId || "");
+      if(!/^[A-Za-z0-9]{10,40}$/.test(up)) return res.status(400).json({error: "bad uploadId"});
+      var exist = await W.getDoc("files/" + up);
+      if(exist && exist.id) return res.status(200).json({ok: true, id: up, again: true});   // 同じ保存の再送は、二重に作らない
+      var fn = String(b.filename || "黒板付き.jpg").replace(/[\\/:*?"<>|]/g, "").slice(0, 120) || "黒板付き.jpg";
+      var folder = null;
+      if(b.folderId){ var fo = await W.getDoc("folders/" + encodeURIComponent(String(b.folderId))); if(fo && fo.id && fo.projectId === t.p) folder = fo.id; }
+      await W.patchDoc("files/" + up, {projectId: t.p, projectName: t.pn || "", folderId: folder, assetId: null, url: url, filename: fn, contentType: "image/jpeg",
+        size: Math.round(url.length * 0.75), uploadedAt: new Date().toISOString(), uploadedBy: t.n, source: "黒板アプリ"});
       return res.status(200).json({ok: true, id: up});
     }
     return res.status(400).json({error: "unknown action"});
@@ -522,6 +600,7 @@ async function ssoHandler(req, res){
   var b = readBody(req);
   if(b.action === "usage") return usageHandler(req, res, b);
   if(String(b.action || "").indexOf("report-") === 0) return reportHandler(req, res, b);
+  if(String(b.action || "").indexOf("kokuban-") === 0) return kokubanHandler(req, res, b);
   if(b.action === "sns-ai") return snsAiHandler(req, res, b);
   if(b.action === "assistant") return assistantHandler(req, res, b);
   if(b.action === "sns-ig") return igHandler(req, res, b);
@@ -627,7 +706,7 @@ async function snsCronHandler(req, res){
 }
 
 module.exports = async function handler(req, res) {
-  if(req.method === "OPTIONS"){ setCors(res); res.statusCode = 204; return res.end(); }
+  if(req.method === "OPTIONS"){ setCors(res, req); res.statusCode = 204; return res.end(); }
   if(req.method === "POST") return ssoHandler(req, res);
   if(req.method === "GET" && req.query && req.query.snscron) return snsCronHandler(req, res);
   if(req.method === "GET" && req.query && String(req.query.state || "").indexOf("ig.") === 0 && (req.query.code || req.query.error)) return igOauthCallback(req, res);

@@ -1832,6 +1832,7 @@
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
     {id:"2026-11-17-1", title:"11月17日の更新", items:[
+      {t:"黒板アプリで案件の写真を読み込み、黒板を付けた写真を案件に保存できます", d:"案件の「連携アプリ」の黒板ボタンから開くと、その案件の写真を選んで黒板アプリに読み込めます。黒板を付けた写真は「案件に保存」で、その案件の「写真・ファイル」に追加されます（元の写真は残ります）。"},
       {t:"案件の画面から黒板アプリを開くと、案件の情報が渡るようになりました", d:"「連携アプリ」の黒板ボタンで、工事名・施工者・工種・場所などを黒板アプリに渡します。黒板アプリで、どの欄に入れるかを選んで入力できます。"},
     ]},
     {id:"2026-11-16-2", title:"11月16日の更新（2）", items:[
@@ -4615,6 +4616,20 @@
         toast(j && j.error==="notconfigured" ? "管理者の設定が必要です（Vercelの環境変数 SSO_SECRET）" : ((j && j.error) || "開けませんでした"));
       }, function(){ if(w) w.close(); if(plainUrl){ window.open(plainUrl, "_blank", "noopener"); return; } toast("通信に失敗しました"); });
   }
+  // 案件から黒板アプリを開く（案件の情報をリンクに付け、署名付きチケットで案件の写真の読み込み・保存を許可する）
+  function openKokubanApp(ev, a){
+    var me = myMember(), href = a.getAttribute("href"), pid = a.getAttribute("data-kokuban-project");
+    if(!db || window.claude || !me || !pid) return;   // ログインしていないときは、案件情報だけ付けた通常のリンクとして開く
+    ev.preventDefault();
+    var w = window.open("", "_blank");
+    var go = function(u){ if(w){ try{ w.opener = null; }catch(e){} w.location.href = u; } else location.href = u; };
+    fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({action:"kokuban-ticket", projectId:pid, auth:{name:me.name, password:me.password||""}})})
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if(j && j.ticket) go(href + (href.indexOf("?")>=0?"&":"?") + "gk=" + encodeURIComponent(j.ticket) + "&api=" + encodeURIComponent(location.origin) + "&pid=" + encodeURIComponent(pid));
+        else go(href);
+      }, function(){ go(href); });
+  }
   function openBihinApp(ev){
     var toShayosha = !!(ev && ev.currentTarget && ev.currentTarget.hasAttribute && ev.currentTarget.hasAttribute("data-shayosha-link"));
     var toDaito = !!(ev && ev.currentTarget && ev.currentTarget.hasAttribute && ev.currentTarget.hasAttribute("data-daito-link"));
@@ -4889,6 +4904,7 @@
     c.querySelectorAll("[data-report-open]").forEach(function(a){ a.addEventListener("click", function(ev){ if(!db || window.claude || !myMember()) return; ev.preventDefault(); openReportApp("", a.getAttribute("href")); }); });   // 連携アプリのページから開くときも、ログイン情報つきで開く（アプリの中で案件を選べる）
     c.querySelectorAll("[data-report-project]").forEach(function(el){ el.addEventListener("click", function(){ openReportApp(el.getAttribute("data-report-project")); }); });
     var ur = document.getElementById("usage-refresh"); if(ur) ur.addEventListener("click", function(){ usageLoad(); });
+    c.querySelectorAll("[data-kokuban-project]").forEach(function(a){ a.addEventListener("click", function(ev){ openKokubanApp(ev, a); }); });
     c.querySelectorAll("[data-bihin-link],[data-shayosha-link],[data-daito-link],[data-jyosetsu-link]").forEach(function(a){ a.addEventListener("click", function(ev){ openBihinApp(ev); }); });
     applyBulkUi();
     mobileSimplify();
@@ -8228,7 +8244,7 @@
           .filter(function(x){ return x[1]; }).map(function(x){ return encodeURIComponent(x[0])+"="+encodeURIComponent(x[1]); }).join("&");
         kurl = a.url + (a.url.indexOf("?")>=0 ? "&" : "?") + kq;
       }
-      return '<a class="btn sm outline pa-btn" '+(a.sso?'data-bihin-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を指定して備品管理アプリを開きます（持出時の現場名が自動で入ります）" ':'')+(a.site?'data-shayosha-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を行先に入れて運行管理アプリを開きます（ログインも引き継ぎます）" ':'')+(a.daito?'data-daito-link="1" title="大東アプリのアカウントがある人だけ入れます" ':'')+(a.jyosetsu?'data-jyosetsu-link="1" ':'')+'href="'+esc(kurl+((a.sso||a.site)?"?site="+encodeURIComponent(p.name||"")+(a.site&&p.division?"&division="+encodeURIComponent(p.division):""):""))+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>';
+      return '<a class="btn sm outline pa-btn" '+(a.key==="kokuban"?'data-kokuban-project="'+esc(p.id)+'" title="この案件の情報と写真を黒板アプリに渡して開きます。黒板を付けた写真は案件に保存できます" ':'')+(a.sso?'data-bihin-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を指定して備品管理アプリを開きます（持出時の現場名が自動で入ります）" ':'')+(a.site?'data-shayosha-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を行先に入れて運行管理アプリを開きます（ログインも引き継ぎます）" ':'')+(a.daito?'data-daito-link="1" title="大東アプリのアカウントがある人だけ入れます" ':'')+(a.jyosetsu?'data-jyosetsu-link="1" ':'')+'href="'+esc(kurl+((a.sso||a.site)?"?site="+encodeURIComponent(p.name||"")+(a.site&&p.division?"&division="+encodeURIComponent(p.division):""):""))+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>';
     };
     return '<div class="card pa-card"><div class="pa-title">連携アプリ</div><div class="pa-list">'+appLinks().map(btn).join("")+'</div></div>';
   }
