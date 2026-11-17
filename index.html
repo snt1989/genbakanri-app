@@ -1834,6 +1834,7 @@
     {id:"2026-11-17-1", title:"11月17日の更新", items:[
       {t:"黒板アプリで案件の写真を読み込み、黒板を付けた写真を案件に保存できます", d:"案件の「連携アプリ」の黒板ボタンから開くと、その案件の写真を選んで黒板アプリに読み込めます。黒板を付けた写真は「案件に保存」で、その案件の「写真・ファイル」に追加されます（元の写真は残ります）。"},
       {t:"案件の画面から黒板アプリを開くと、案件の情報が渡るようになりました", d:"「連携アプリ」の黒板ボタンで、工事名・施工者・工種・場所などを黒板アプリに渡します。黒板アプリで、どの欄に入れるかを選んで入力できます。"},
+      {t:"メンバー登録で、携帯番号を空欄にできるようにしました", d:"本社管理用のアカウントなど、電話番号がないメンバーも登録できます。その場合は、氏名とパスワードでログインします。"}
     ]},
     {id:"2026-11-16-2", title:"11月16日の更新（2）", items:[
       {t:"案件の詳細で、未入力の項目を表示しないようにしました", d:"案件情報・物件情報・顧客情報のうち、入力されていない項目（「—」だけの行）は非表示になり、入力済みの項目だけが並びます。案件情報の右上の「未入力も表示」を押すと、空欄も含めて確認できます。入力は「編集」から今までどおり行えます。"},
@@ -8445,7 +8446,7 @@
     html += '<h1 class="pagetitle" style="margin-top:8px" id="f-mtitle">'+(m?"メンバー編集":(isExt?"社外メンバー登録":"自社メンバー登録"))+'</h1><div style="height:12px"></div>';
     html += '<div class="segmented" style="margin-bottom:14px;max-width:360px" id="f-mkind"><div class="segopt'+(isExt?"":" active")+'" data-mkind="internal">自社メンバー</div><div class="segopt'+(isExt?" active":"")+'" data-mkind="external">社外メンバー</div></div>';
     html += '<div class="form-shell"><div class="form-card">';
-    html += formRow("携帯番号 ※仕事用", true, false, '<input type="tel" id="f-mphone" placeholder="例：09012341234" value="'+v("phone")+'">');
+    html += formRow("携帯番号 ※仕事用", false, false, '<input type="tel" id="f-mphone" placeholder="例：09012341234（なくても登録できます）" value="'+v("phone")+'"><div style="font-size:11.5px;color:var(--ink-faint);margin-top:4px">電話番号がない場合は、氏名とパスワードでログインします（本社管理用アカウントなど）</div>');
     html += formRow("氏名", true, false, '<input type="text" id="f-mname" placeholder="例：山田 武史" value="'+v("name")+'">');
     html += formRow("氏名(カナ)", false, false, '<input type="text" id="f-mkana" placeholder="例：ヤマダ タケシ" value="'+v("kana")+'">');
     html += formRow("メールアドレス", false, false, '<input type="email" id="f-memail" placeholder="例：abcdeft@mail.com" value="'+v("email")+'">');
@@ -8471,7 +8472,7 @@
     var c = document.getElementById("content");
     var submit = document.getElementById("f-submit");
     function refreshEnabled(){
-      var ok = document.getElementById("f-mphone").value.trim() && document.getElementById("f-mname").value.trim() && document.getElementById("f-mpassword").value.trim() && picked.length>0;
+      var ok = document.getElementById("f-mname").value.trim() && document.getElementById("f-mpassword").value.trim() && picked.length>0;
       submit.disabled = !ok;
     }
     ["f-mphone","f-mname","f-mpassword"].forEach(function(id){ var el=document.getElementById(id); if(el) el.addEventListener("input", refreshEnabled); });
@@ -8504,7 +8505,7 @@
       var name = document.getElementById("f-mname").value.trim();
       var phone = document.getElementById("f-mphone").value.trim();
       var password = document.getElementById("f-mpassword").value.trim();
-      if(!name||!phone||!password||picked.length===0){ toast("携帯番号・氏名・職種・パスワードは必須です"); return; }
+      if(!name||!password||picked.length===0){ toast("氏名・職種・パスワードは必須です（携帯番号はなくても登録できます）"); return; }
       if(phoneTaken(phone, state.editingMember ? (state.editingMember.id||state.editingMember) : null)){ toast("この携帯番号は他のメンバーに登録されています（ログインに使うため重複できません）"); return; }
       var perm = mkind==="external" ? "external" : document.getElementById("f-mpermission").value;
       if(perm==="external" && mkind!=="external") perm = "general";
