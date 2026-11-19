@@ -59,6 +59,15 @@ button:focus-visible{outline:3px solid var(--sakura-400);outline-offset:2px}
 .summary b{color:var(--green-700);font-size:18px}
 #msg{margin-top:10px;font-size:13px;color:var(--muted);min-height:1.4em}
 .empty{color:var(--muted);font-size:14px;text-align:center;padding:10px}
+.target{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
+.chk{font-weight:600;cursor:pointer}
+.chk input{width:18px;height:18px;vertical-align:-3px;margin-right:6px;accent-color:var(--green-600)}
+.trow{display:flex;align-items:center;gap:8px;margin-top:10px}
+.trow input{width:110px;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:15px}
+.trow select{padding:8px;border:1px solid var(--line);border-radius:8px;font-size:15px;background:#fff}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.chips button{padding:4px 12px;font-size:13px;border-radius:999px}
+.hint{font-size:12.5px;color:var(--muted);margin:10px 0 0}
 @media(max-width:560px){.strengths{grid-template-columns:1fr}.adv{grid-template-columns:1fr}}
 </style>
 </head>
@@ -85,6 +94,14 @@ button:focus-visible{outline:3px solid var(--sakura-400);outline-offset:2px}
         <input type="number" id="maxEdge" min="400" max="6000" step="10" value="1920"></label>
     </div>
   </details>
+  <div class="target">
+    <label class="chk"><input type="checkbox" id="useTarget"> ファイルの大きさで指定する</label>
+    <div id="targetBox" hidden>
+      <div class="trow"><input type="number" id="target" min="1" step="any" value="1" aria-label="目標の大きさ"><select id="unit" aria-label="単位"><option>KB</option><option selected>MB</option></select><span>以下を目指す</span></div>
+      <div class="chips"><button type="button" data-v="500" data-u="KB">500KB</button><button type="button" data-v="1" data-u="MB">1MB</button><button type="button" data-v="2" data-u="MB">2MB</button><button type="button" data-v="5" data-u="MB">5MB</button><button type="button" data-v="10" data-u="MB">10MB</button></div>
+      <p class="hint">画質と大きさを自動で調整して、1つのファイルごとにこの大きさ以下を目指します。上の「どれくらい小さくしますか」は調整のスタート地点です(きれいさを残したいときは「軽く」がおすすめ)。すでに目標より小さいファイルは、そのまま返します。</p>
+    </div>
+  </div>
 </section>
 
 <section aria-labelledby="h-files">
@@ -191,6 +208,31 @@ function buildZip(entries) {
   for (const p of all) { out.set(p, pos); pos += p.length; }
   return out;
 }
+// 目標の大きさ(KB/MB)をバイトに。空欄や0以下は 0(=指定なし)
+function toBytes(value, unit) {
+  const v = Number(value);
+  if (!(v > 0)) return 0;
+  return Math.round(v * (unit === 'MB' ? 1048576 : 1024));
+}
+// 画質を下げながら、目標以下で一番きれいな結果を探す。encode(q) は {size} を持つ結果を返す
+async function searchQuality(encode, target, qHi, qLo, steps) {
+  qLo = Math.min(qLo, qHi);
+  const top = await encode(qHi);
+  if (top.size <= target) return { blob: top, q: qHi, ok: true };
+  if (qLo >= qHi) return { blob: top, q: qHi, ok: false };
+  const low = await encode(qLo);
+  if (low.size > target) return { blob: low, q: qLo, ok: false };
+  let lo = qLo, hi = qHi, found = { blob: low, q: qLo };
+  for (let i = 0; i < steps; i++) {
+    const mid = (lo + hi) / 2, b = await encode(mid);
+    if (b.size <= target) { found = { blob: b, q: mid }; lo = mid; } else hi = mid;
+  }
+  return { blob: found.blob, q: found.q, ok: true };
+}
+// PDF を作り直しても目標に届かなかったときの、次の設定(画像の大きさはサイズの平方根に比例する)
+function nextPdfOpts(opts, size, target) {
+  return { quality: Math.max(0.45, +(opts.quality - 0.1).toFixed(2)), maxEdge: Math.max(500, Math.round(opts.maxEdge * Math.sqrt(target / size) * 0.92)) };
+}
 </script>
 
 <script>
@@ -206,7 +248,8 @@ function buildZip(entries) {
 
   // ---- 設定 ----
   function settings() {
-    return { quality: Number($('quality').value) / 100, maxEdge: Math.max(400, Number($('maxEdge').value) || 1920) };
+    const opts = { quality: Number($('quality').value) / 100, maxEdge: Math.max(400, Number($('maxEdge').value) || 1920) };
+    return { opts, target: $('useTarget').checked ? toBytes($('target').value, $('unit').value) : 0 };
   }
   function markPreset(k) {
     document.querySelectorAll('#strengths label').forEach((l) => l.classList.toggle('on', l.dataset.k === k));
@@ -234,17 +277,30 @@ function buildZip(entries) {
   }
 
   // ---- 圧縮 ----
-  async function compressJpeg(file, opts) {
+  // 戻り値: { blob, small?:すでに目標より小さい, miss?:目標まで届かなかった }
+  async function compressJpeg(file, opts, target) {
+    if (target && file.size <= target) return { blob: file, small: true };
     const bmp = await createImageBitmap(file);
-    const { w, h } = fitSize(bmp.width, bmp.height, opts.maxEdge);
-    const c = document.createElement('canvas'); c.width = w; c.height = h;
-    const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
-    ctx.drawImage(bmp, 0, 0, w, h); bmp.close && bmp.close();
-    const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', opts.quality));
-    if (!blob) throw new Error('ENCODE');
-    return blob;
+    const c = document.createElement('canvas');
+    const encodeAt = (edge) => (q) => {
+      const { w, h } = fitSize(bmp.width, bmp.height, edge);
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(bmp, 0, 0, w, h);
+      return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('ENCODE'))), 'image/jpeg', q));
+    };
+    try {
+      if (!target) return { blob: await encodeAt(opts.maxEdge)(opts.quality) };
+      let edge = opts.maxEdge, last;
+      for (let i = 0; i < 6; i++) {
+        last = await searchQuality(encodeAt(edge), target, opts.quality, 0.3, 6);
+        if (last.ok) return { blob: last.blob };
+        if (edge <= 400) break;
+        edge = Math.max(400, Math.round(Math.min(edge, Math.max(bmp.width, bmp.height)) * 0.75));
+      }
+      return { blob: last.blob, miss: true };
+    } finally { bmp.close && bmp.close(); }
   }
-  async function compressPdf(file, opts, onProgress) {
+  async function renderPdf(file, opts, onProgress) {
     await loadPdfLibs();
     const data = new Uint8Array(await file.arrayBuffer());
     const pdf = await pdfjsLib.getDocument({ data }).promise;
@@ -272,6 +328,17 @@ function buildZip(entries) {
     } finally { pdf.destroy && pdf.destroy(); }
     return doc.output('blob');
   }
+  async function compressPdf(file, opts, onProgress, target) {
+    if (target && file.size <= target) return { blob: file, small: true };
+    let cur = opts, best = null;
+    for (let attempt = 1; attempt <= (target ? 4 : 1); attempt++) {
+      const blob = await renderPdf(file, cur, (d, t) => onProgress(d, t, attempt));
+      if (!best || blob.size < best.size) best = blob;
+      if (!target || blob.size <= target) return { blob };
+      cur = nextPdfOpts(cur, blob.size, target);
+    }
+    return { blob: best, miss: true };
+  }
   function kindOf(f) {
     const n = f.name.toLowerCase();
     if (f.type === 'image/jpeg' || /\.jpe?g$/.test(n)) return 'jpg';
@@ -290,13 +357,14 @@ function buildZip(entries) {
     if (running) return; running = true;
     for (;;) {
       const it = items.find((x) => x.state === 'wait'); if (!it) break;
-      it.state = 'work'; it.done = 0; render();
+      it.state = 'work'; it.done = 0; it.attempt = 1; render();
       try {
         const o = settings();
-        let out = it.kind === 'jpg' ? await compressJpeg(it.file, o)
-          : await compressPdf(it.file, o, (d, t) => { it.done = d; it.total = t; renderRow(it); });
-        it.same = out.size >= it.file.size;
-        it.blob = it.same ? it.file : out; it.state = 'ok';
+        const r = it.kind === 'jpg' ? await compressJpeg(it.file, o.opts, o.target)
+          : await compressPdf(it.file, o.opts, (d, t, a) => { it.done = d; it.total = t; it.attempt = a; renderRow(it); }, o.target);
+        it.target = o.target; it.small = !!r.small; it.miss = !!r.miss;
+        it.same = it.small || r.blob.size >= it.file.size;
+        it.blob = it.same ? it.file : r.blob; it.state = 'ok';
       } catch (e) { it.state = 'err'; it.error = explain(e, it.kind); }
       render();
     }
@@ -325,7 +393,7 @@ function buildZip(entries) {
     const meta = document.createElement('div'); meta.className = 'meta';
     if (it.state === 'wait') meta.textContent = '順番を待っています…';
     else if (it.state === 'work') {
-      meta.textContent = it.kind === 'pdf' && it.total ? `処理中… ${it.done} / ${it.total} ページ` : '処理中…';
+      meta.textContent = it.kind === 'pdf' && it.total ? `処理中… ${it.done} / ${it.total} ページ` + (it.attempt > 1 ? `(目標に合わせて${it.attempt}回目の調整)` : '') : '処理中…';
       if (it.total) { const b = document.createElement('div'); b.className = 'bar'; const i = document.createElement('i'); i.style.width = (it.done / it.total * 100) + '%'; b.appendChild(i); left.appendChild(b); }
     } else if (it.state === 'err') { meta.className = 'err'; meta.textContent = it.error; }
     else {
@@ -333,7 +401,7 @@ function buildZip(entries) {
       meta.innerHTML = '';
       meta.append(fmtBytes(it.file.size) + ' → ');
       const b = document.createElement('b'); b.textContent = fmtBytes(it.blob.size); meta.appendChild(b);
-      meta.append(it.same ? '(これ以上小さくなりません。元のまま返します)' : `(${pct}% 小さくなりました)`);
+      meta.append(it.small ? '(すでに目標より小さいので、そのまま返します)' : it.same ? '(これ以上小さくなりません。元のまま返します)' : it.miss ? `(${pct}% 小さくなりました。目標の ${fmtBytes(it.target)} までは届きませんでした)` : `(${pct}% 小さくなりました)`);
     }
     left.appendChild(meta); el.appendChild(left);
     const right = document.createElement('div');
@@ -381,6 +449,9 @@ function buildZip(entries) {
     for (const it of items) if (it.kind && it.file.size > 0) { it.state = 'wait'; it.blob = null; it.error = null; it.total = 0; it.name = uniqueName(it.file.name, usedNames); }
     setMsg(''); render(); runQueue();
   });
+
+  $('useTarget').addEventListener('change', () => { $('targetBox').hidden = !$('useTarget').checked; updateButtons(); });
+  document.querySelectorAll('.chips button').forEach((b) => b.addEventListener('click', () => { $('target').value = b.dataset.v; $('unit').value = b.dataset.u; }));
 
   // ---- 入力 ----
   const drop = $('drop');
