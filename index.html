@@ -189,7 +189,7 @@
   .tag.muted{border-color:var(--border);color:var(--ink-soft);background:var(--surface-2);}
   .tagrow{display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;}
 
-  select,input[type=text],input[type=date],input[type=time],input[type=number],input[type=tel],input[type=email],input[type=search],textarea{
+  select,input[type=text],input[type=password],input[type=url],input[type=date],input[type=time],input[type=number],input[type=tel],input[type=email],input[type=search],textarea{
     font-family:inherit;font-size:12.5px;color:var(--ink);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;width:100%;
   }
   select:focus,input:focus,textarea:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
@@ -248,9 +248,10 @@
   .empty svg{width:32px;height:32px;margin-bottom:10px;opacity:.5;}
 
   /* ---- Home ---- */
-  .home-grid{display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:flex-start;}
-  @media (max-width:920px){.home-grid{grid-template-columns:1fr;}}
-  .todo-row{display:grid;grid-template-columns:110px 1fr;gap:14px;padding:14px 4px;border-bottom:1px solid var(--border);}
+  .home-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px;align-items:flex-start;}
+  .home-grid>*{min-width:0;}
+  @media (max-width:920px){.home-grid{grid-template-columns:minmax(0,1fr);}}
+  .todo-row{display:grid;grid-template-columns:110px minmax(0,1fr);gap:14px;padding:14px 4px;border-bottom:1px solid var(--border);}
   .todo-row:last-child{border-bottom:none;}
   .todo-due{font-family:"JetBrains Mono",monospace;font-size:12px;}
   .todo-due .rel{font-size:11px;margin-top:2px;}
@@ -821,7 +822,8 @@
   .chat-back{display:none;border:none;background:transparent;color:var(--accent);font-weight:700;font-size:12.5px;padding:4px 8px 4px 0;margin-right:6px;cursor:pointer;align-items:center;gap:3px;}
   @media (max-width:640px){
     body{font-size:14px;}
-    select,input[type=text],input[type=date],input[type=time],input[type=number],input[type=tel],input[type=email],input[type=search],textarea,.login-field input{font-size:16px;padding:10px 12px;}
+    select,input[type=text],input[type=password],input[type=url],input[type=date],input[type=time],input[type=number],input[type=tel],input[type=email],input[type=search],textarea,.login-field input{font-size:16px;padding:10px 12px;}
+    .pw-wrap input{padding-right:40px;}
     .btn{padding:10px 16px;font-size:13px;min-height:40px;justify-content:center;}
     .btn.sm{padding:8px 14px;font-size:12.5px;min-height:36px;}
     .iconbtn{width:40px;height:40px;}
@@ -884,6 +886,16 @@
     .tablewrap td.bulk-cell{position:absolute;top:10px;right:10px;width:auto;padding:0;display:block;}
     .tablewrap td.bulk-cell input{width:22px;height:22px;}
     .tablewrap .perm-select{width:auto;min-width:110px;}
+    /* タスク管理: タスク名を先頭に、項目名つきで並べ、最後の行に「完了にする」と編集・削除を置く */
+    .tablewrap table.task-list tr{display:flex;flex-wrap:wrap;align-items:center;column-gap:8px;}
+    .task-list td{flex:0 0 100%;}
+    .proj-list td{min-width:0;}
+    .task-list td.cell-main{order:-1;padding-right:0;}
+    .task-list td.cell-main .cell-name{font-size:14.5px;line-height:1.45;}
+    .task-list td[data-label="案件"] a{padding:2px 0;font-size:13.5px;text-align:right;}
+    .task-list td.tk-done{order:8;flex:1 1 auto;width:auto;justify-content:flex-start;border-top:1px dashed var(--border);margin-top:6px;padding-top:10px;}
+    .task-list td.tk-acts{order:9;flex:0 0 auto;width:auto;border-top:1px dashed var(--border);margin-top:6px;padding-top:10px;align-items:center;gap:6px;}
+    .seg-tight .segopt{padding:11px 6px;font-size:12px;}
     /* メンバー管理: 1人を小さく（名前＋操作／会社・職種の1行／権限とアプリ状況の1行） */
     .tablewrap table.member-list tr{display:grid;grid-template-columns:1fr auto;column-gap:8px;row-gap:0;padding:7px 12px;margin-bottom:6px;align-items:center;}
     .member-list td{padding:0 !important;margin:0 !important;border:none !important;}
@@ -903,7 +915,7 @@
     .member-list td[data-label="ホーム画面アプリ"] .cell-sub{display:none;}
     .member-list td[data-label="ホーム画面アプリ"] .tag{font-size:10.5px;padding:1px 7px;}
     /* 案件一覧：1件を低く（コンパクトなカード）して、1画面に多く表示 */
-    .proj-list tr{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 8px;padding:8px 12px;margin-bottom:6px;align-items:center;}
+    .proj-list tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 8px;padding:8px 12px;margin-bottom:6px;align-items:center;}
     .proj-list td{padding:0;border:none;margin:0;text-align:left;}
     .proj-list td::before{display:none !important;}
     .proj-list td.cell-main{grid-column:1/3;grid-row:1;padding:0 0 2px;border:none;margin:0;}
@@ -935,14 +947,14 @@
     .proj-list td[data-label="施工開始日"]::after{content:"開始";}
     .proj-list td[data-label="施工完了予定日"]::after{content:"完了予定";}
     .proj-list td[data-label="施工開始日"]::after,.proj-list td[data-label="施工完了予定日"]::after{order:-1;font-size:10px;color:var(--ink-faint);font-weight:600;}
-    .proj-list td.cell-main .cell-name a{padding:2px 0 !important;line-height:1.35;}
+    .proj-list td.cell-main .cell-name a{display:block;padding:2px 0 !important;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     .proj-list td .num{font-size:11px;}
     .bulk-float{width:22px;height:22px;}
     .bulk-bar{padding:10px 12px;}
     .bulk-bar select,.bulk-bar input:not([type=checkbox]){flex:1 1 40%;min-width:0;font-size:16px;}
     .bulk-bar .btn{flex:1 1 auto;}
     /* home */
-    .todo-row{grid-template-columns:84px 1fr;gap:10px;}
+    .todo-row{grid-template-columns:84px minmax(0,1fr);gap:10px;}
     .card[style*="padding:6px 18px"]{padding:6px 12px 2px !important;}
     /* photos */
     .photo-grid{grid-template-columns:repeat(2,1fr);}
@@ -1729,7 +1741,7 @@
     }).join("");
     var hasProj = projUpdates().length>0;
     return '<div class="card" style="padding:12px 18px 6px;margin-bottom:16px;border-color:var(--accent);background:var(--accent-soft)">'+
-      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="font-size:14px;margin:0;flex:1">'+iBell()+' お知らせ（'+items.length+'件）</h2>'+'<button class="btn sm" id="notice-readall-home">すべて既読にする</button>'+'<button class="btn sm" id="hn-all">すべて見る</button></div>'+
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="font-size:14px;margin:0;flex:1 0 auto;white-space:nowrap">'+iBell()+' お知らせ（'+items.length+'件）</h2>'+'<span style="display:flex;gap:8px;margin-left:auto"><button class="btn sm" id="notice-readall-home">すべて既読にする</button><button class="btn sm" id="hn-all">すべて見る</button></span></div>'+
       '<div style="margin-top:6px">'+rows+'</div>'+(items.length>5?'<div style="font-size:11.5px;color:var(--ink-faint);padding:8px 0">ほか'+(items.length-5)+'件は「すべて見る」で確認できます</div>':'')+'</div>';
   }
   /* ---- お知らせ（ベルマーク） ---- */
@@ -1813,6 +1825,13 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-20-2", title:"11月20日の更新（スマホ画面の修正）", items:[
+      {t:"スマホでホームが横にはみ出すことがある不具合を直しました", d:"案件名やタスク名が長いと、ホーム全体が横に広がって文字が小さく見えたり、横にずれたりしていました。長い名前は「…」で省略して、画面の幅に収まるようにしました。"},
+      {t:"スマホのタスク管理を見やすくしました", d:"タスク名を一番上に大きく出し、「案件・担当者・期限」を項目名つきで並べ、一番下に「完了にする」「編集」「削除」をまとめました。"},
+      {t:"スマホで「アプリが新しくなりました」の案内が画面の題名に重ならないようにしました", d:"案内は画面の下（メニューの上）に出ます。"},
+      {t:"パスワードの入力欄の見た目を、ほかの入力欄とそろえました", d:"メンバー登録・パスワード変更の入力欄が小さく表示されていました。"},
+      {t:"そのほかのスマホ表示の調整", d:"案件一覧の長い案件名は「…」で省略、カレンダーの切り替え（案件別・担当別・工程一覧・月カレンダー・予定一覧）が1行に収まるように、ホームの「お知らせ」の見出しが途中で折り返さないようにしました。"}
+    ]},
     {id:"2026-11-20-1", title:"11月20日の更新（安全性の強化）", items:[
       {t:"ログインに続けて失敗すると、しばらく入力できなくなります", d:"パスワードの総当たりを防ぐため、5回続けて間違えると30秒、その後は間違えるたびに待ち時間がのびます（最長15分）。正しくログインできれば元に戻ります。"},
       {t:"アプリが開けないときに、案内が出るようになりました", d:"読み込みに失敗したときは、画面の下に「もう一度読み込む」「復旧ページを開く」の案内が出ます。"},
@@ -2053,7 +2072,7 @@
     var banner = function(msg, btns){
       var old = document.getElementById("app-banner"); if(old) old.remove();
       var b = document.createElement("div"); b.id = "app-banner";
-      b.style.cssText = "position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:2600;background:#1d3b34;color:#fff;border-radius:12px;box-shadow:0 6px 22px rgba(0,0,0,.35);padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;max-width:calc(100vw - 20px);font-size:13px;line-height:1.5";
+      b.style.cssText = "position:fixed;"+(window.innerWidth<=760 ? "bottom:calc(74px + env(safe-area-inset-bottom,0px));width:calc(100vw - 20px);box-sizing:border-box;" : "top:10px;")+"left:50%;transform:translateX(-50%);z-index:2600;background:#1d3b34;color:#fff;border-radius:12px;box-shadow:0 6px 22px rgba(0,0,0,.35);padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;max-width:calc(100vw - 20px);font-size:13px;line-height:1.5";
       b.innerHTML = '<span style="flex:1;min-width:180px">'+msg+'</span>'+btns.map(function(x,i){ return '<button type="button" class="btn sm'+(x.primary?' primary':'')+'" data-bn="'+i+'">'+x.label+'</button>'; }).join("");
       document.body.appendChild(b);
       b.querySelectorAll("[data-bn]").forEach(function(el){ el.addEventListener("click", function(){ var x = btns[+el.getAttribute("data-bn")]; b.remove(); if(x.fn) x.fn(); }); });
@@ -5639,7 +5658,7 @@
   }
   function schedSwitch(){
     var on = state.tab==="calendar" ? (state.calView==="list"?"events":"month") : (state.ganttView||"chart");
-    return '<div class="segmented" style="margin-bottom:14px">'+[["chart","横断工程表（案件別）"],["people","担当別"],["list","工程一覧"],["month","月カレンダー"],["events","予定一覧"]].map(function(x){ return '<div class="segopt'+(on===x[0]?' active':'')+'" data-sched-view="'+x[0]+'">'+x[1]+'</div>'; }).join("")+'</div>';
+    return '<div class="segmented seg-tight" style="margin-bottom:14px">'+[["chart",(window.matchMedia&&window.matchMedia("(max-width:640px)").matches)?"案件別":"横断工程表（案件別）"],["people","担当別"],["list","工程一覧"],["month","月カレンダー"],["events","予定一覧"]].map(function(x){ return '<div class="segopt'+(on===x[0]?' active':'')+'" data-sched-view="'+x[0]+'">'+x[1]+'</div>'; }).join("")+'</div>';
   }
   function renderCalendar(){
     if(!state.loaded.projects || !state.loaded.tasks || !state.loaded.steps || !state.loaded.events) return skeleton();
@@ -6867,18 +6886,18 @@
     '</div></div>';
     html += '<div class="summary-line"><span><b>'+list.length+'</b>件 / 全'+all.length+'件</span></div>';
     if(!list.length){ return html + emptyState(iTaskList,"タスクがありません","「タスクを追加」から登録できます"); }
-    html += '<div class="tablewrap"><table><thead><tr><th style="width:110px">完了</th><th>タスク</th><th>案件</th><th>担当者</th><th>期限</th><th></th></tr></thead><tbody>';
+    html += '<div class="tablewrap"><table class="task-list"><thead><tr><th style="width:110px">完了</th><th>タスク</th><th>案件</th><th>担当者</th><th>期限</th><th></th></tr></thead><tbody>';
     var tkLimit = state.tkLimit || 100;
     html += list.slice(0, tkLimit).map(function(t){
       var d = t.dueDate ? daysUntil(t.dueDate) : 0;
       var rel = t.done ? '<span style="color:var(--ink-faint)">完了</span>' : (d<0 ? '<span style="color:var(--danger);font-weight:700">'+Math.abs(d)+'日超過</span>' : (d===0 ? '<span style="color:var(--danger);font-weight:700">本日</span>' : '<span style="color:var(--ink-faint)">あと'+d+'日</span>'));
-      return '<tr class="rowhover" data-row-id="'+esc(t.id)+'"><td data-label="完了">'+(t.done
+      return '<tr class="rowhover" data-row-id="'+esc(t.id)+'"><td class="tk-done">'+(t.done
           ? '<button class="btn sm" data-task-done="'+esc(t.id)+'" data-to="0" title="未完了に戻す" style="white-space:nowrap">↩ 未完了に戻す</button>'
           : '<button class="btn sm primary" data-task-done="'+esc(t.id)+'" data-to="1" title="完了にする" style="white-space:nowrap">'+iCheckIcon()+' 完了にする</button>')+'</td>'+
-        '<td><div class="cell-name"'+(t.done?' style="text-decoration:line-through;color:var(--ink-faint)"':'')+'>'+esc(t.title||"")+'</div>'+(t.note?'<div class="cell-sub">'+esc(t.note)+'</div>':'')+(t.done&&t.doneAt?'<div class="cell-sub">完了：'+esc(fmtDateTime(t.doneAt))+(t.doneBy?'（'+esc(t.doneBy)+'）':'')+'</div>':'')+'</td>'+
-        '<td>'+(t.projectName?'<a href="#" data-open-project="'+esc(t.projectId||"")+'">'+esc(t.projectName)+'</a>':'—')+'</td>'+
-        '<td>'+esc(t.assignee||"—")+(taskRequestedByMe(t)?'<div class="cell-sub" style="'+(t.done?'color:var(--accent);font-weight:700':'')+'">'+(t.done?'✓ 相手が完了'+(t.doneAt?'（'+esc(fmtDateTime(t.doneAt))+'）':''):'未完了（相手の対応待ち）')+'</div>':(t.createdBy&&t.createdBy!==t.assignee?'<div class="cell-sub">依頼者：'+esc(t.createdBy)+'</div>':''))+'</td><td class="num">'+esc(fmtDate(t.dueDate))+'<div class="cell-sub">'+rel+'</div></td>'+
-        '<td style="white-space:nowrap"><button class="btn sm" data-task-edit="'+esc(t.id)+'">'+iEdit()+' 編集</button> <button class="iconbtn" data-task-del="'+esc(t.id)+'" title="削除">'+iTrash()+'</button></td></tr>';
+        '<td class="cell-main"><div class="cell-name"'+(t.done?' style="text-decoration:line-through;color:var(--ink-faint)"':'')+'>'+esc(t.title||"")+'</div>'+(t.note?'<div class="cell-sub">'+esc(t.note)+'</div>':'')+(t.done&&t.doneAt?'<div class="cell-sub">完了：'+esc(fmtDateTime(t.doneAt))+(t.doneBy?'（'+esc(t.doneBy)+'）':'')+'</div>':'')+'</td>'+
+        '<td data-label="案件">'+(t.projectName?'<a href="#" data-open-project="'+esc(t.projectId||"")+'">'+esc(t.projectName)+'</a>':'—')+'</td>'+
+        '<td data-label="担当者"><div>'+esc(t.assignee||"—")+(taskRequestedByMe(t)?'<div class="cell-sub" style="'+(t.done?'color:var(--accent);font-weight:700':'')+'">'+(t.done?'✓ 相手が完了'+(t.doneAt?'（'+esc(fmtDateTime(t.doneAt))+'）':''):'未完了（相手の対応待ち）')+'</div>':(t.createdBy&&t.createdBy!==t.assignee?'<div class="cell-sub">依頼者：'+esc(t.createdBy)+'</div>':''))+'</div></td><td class="num" data-label="期限"><div>'+esc(fmtDate(t.dueDate))+'<div class="cell-sub">'+rel+'</div></div></td>'+
+        '<td class="tk-acts" style="white-space:nowrap"><button class="btn sm" data-task-edit="'+esc(t.id)+'">'+iEdit()+' 編集</button> <button class="iconbtn" data-task-del="'+esc(t.id)+'" title="削除">'+iTrash()+'</button></td></tr>';
     }).join("");
     html += '</tbody></table></div>';
     if(list.length>tkLimit) html += '<div style="text-align:center;margin:12px 0"><button class="btn" id="tk-more">さらに表示する（残り'+(list.length-tkLimit)+'件）</button></div>';
