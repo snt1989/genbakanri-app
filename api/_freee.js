@@ -141,4 +141,4 @@ async function freee(method, path, opts){
 }
 
 module.exports = {configured: configured, redirectUri: redirectUri, AUTH_BASE: AUTH_BASE, env: env, makeState: makeState, checkState: checkState,
-  verifyAdmin: verifyAdmin, verifyMember: verifyMember, isAdminMember: isAdminMember, safeEq: safeEq, exchangeCode: exchangeCode, saveTokens: saveTokens, loadTokens: loadTokens, fsDelete: fsDelete, freee: freee, httpErr: httpErr};
+  verifyAdmin: verifyAdmin, verifyMember: verifyMember, isAdminMember: isAdminMember, safeEq: safeEq, exchangeCode: exchangeCode, saveTokens: saveTokens, loadTokens: loadTokens, fsDelete: fsDelete, fsGet: fsGet, fsSet: fsSet, freee: freee, httpErr: httpErr};

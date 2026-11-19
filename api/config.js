@@ -343,6 +343,17 @@ async function assistantHandler(req, res, b){
     if(!me) return res.status(403).json({error: "認証に失敗しました"});
     if(!key) return res.status(200).json({enabled: false});
     if(b.probe) return res.status(200).json({enabled: true});
+    // 1人あたりの1日の利用回数に上限を設ける（既定150回。環境変数 AI_DAILY_LIMIT で変更可）。数えられないときは止めずに通す
+    try{
+      var aiLim = Number(F.env("AI_DAILY_LIMIT")) || 150;
+      var aiDay = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
+      var aiKey = "m_" + crypto.createHash("sha1").update(String(me.name || "")).digest("hex").slice(0, 12);
+      var aiUse = (await F.fsGet("aiUsage/" + aiDay)) || {};
+      var aiN = Number(aiUse[aiKey]) || 0;
+      if(aiN >= aiLim) return res.status(200).json({enabled: true, text: "本日のAIアシスタントの利用回数が上限（" + aiLim + "回）に達しました。明日またご利用ください。", actions: []});
+      aiUse[aiKey] = aiN + 1;
+      await F.fsSet("aiUsage/" + aiDay, aiUse);
+    }catch(e){}
     var cut = function(x, n){ return String(x == null ? "" : x).slice(0, n); };
     var msgs = (Array.isArray(b.messages) ? b.messages : []).slice(-14).map(function(m){ return {role: m.role === "assistant" ? "assistant" : "user", content: cut(m.content, 4000)}; }).filter(function(m){ return m.content; });
     while(msgs.length && msgs[0].role !== "user") msgs.shift();

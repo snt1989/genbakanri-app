@@ -1088,23 +1088,32 @@
 </div>
 
 <script>
+  // エラーの記録と、起動に失敗したときの案内（アプリ本体より先に動かす）
+  (function(){
+    window.__errs = [];
+    function rec(m, src){ try{ m = String(m||""); if(!m || m==="Script error." || m.indexOf("ResizeObserver")>=0) return; if(window.__errs.length<20) window.__errs.push({m:m.slice(0,300), s:String(src||"").slice(0,200)}); if(window.__onAppErr) window.__onAppErr(); }catch(e){} }
+    window.addEventListener("error", function(e){ if(e && e.message) rec(e.message, String(e.filename||"").split("/").pop()+":"+(e.lineno||"")); });
+    window.addEventListener("unhandledrejection", function(e){ var r = e && e.reason; rec("Promise: "+((r && r.message) || r), r && r.stack ? String(r.stack).split("\n")[1] : ""); });
+    window.addEventListener("load", function(){ setTimeout(function(){
+      if(window.__appBooted || document.getElementById("boot-fail")) return;
+      var hosted = location.hostname.indexOf("claude")===-1 && /^https?:$/.test(location.protocol);
+      var d = document.createElement("div"); d.id = "boot-fail"; d.setAttribute("role","alert");
+      d.style.cssText = "position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:99999;background:#fff;color:#1d2a24;border:1px solid #c0392b;border-radius:14px;padding:14px 16px;font:14px/1.7 -apple-system,BlinkMacSystemFont,'Hiragino Sans',sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.18);max-width:520px;margin:0 auto";
+      d.innerHTML = '<b>アプリを正しく読み込めませんでした</b><div style="font-size:12.5px;color:#4b5a53;margin:4px 0 10px">通信の状態を確認して、もう一度読み込んでください。直らないときは復旧ページをお試しください。</div><button type="button" id="boot-fail-r" style="font:inherit;font-weight:700;padding:9px 16px;border-radius:10px;border:0;background:#175c40;color:#fff;margin-right:8px">もう一度読み込む</button>'+(hosted?'<a href="reset.html" style="font-weight:700;color:#175c40">復旧ページを開く</a>':'');
+      document.body.appendChild(d);
+      document.getElementById("boot-fail-r").addEventListener("click", function(){ location.reload(); });
+    }, 6000); });
+  })();
   // ホーム画面に追加して使うための準備（Vercel等の通常のURLでのみ有効。失敗しても動作に影響なし）
   try{ if("serviceWorker" in navigator && /^https?:$/.test(location.protocol) && location.hostname.indexOf("claude")===-1){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); } }catch(e){}
 </script>
 <script>
-  // Real current data, exported from the claude.ai version of this app,
-  // used to seed the standalone/Vercel deployment's Firestore database
+  // 初期メンバーだけを入れる（顧客・案件などの実データは、公開されるこのファイルには置かない）。
+  // Used to seed the standalone/Vercel deployment's Firestore database
   // the first time it connects (see the module script below). Only
   // applied when the "projects" collection is still empty, so it never
   // overwrites real data once any has been entered.
   window.__GENBA_SEED_DATA__ = {
-    customers: [
-      {id:"c1", data:{name:"福川 伸夫", phone:"090-3365-4901", address:"岩手県盛岡市箱清水1-7-16", registeredDate:"2026-09-10"}},
-      {id:"c2", data:{name:"(株)リーガルスムーズ", phone:"", address:"東京都", registeredDate:"2026-09-17"}},
-      {id:"c3", data:{name:"今増 真喜子", phone:"080-3321-0805", address:"岩手県盛岡市永井20地割5-68", registeredDate:"2026-09-10"}},
-      {id:"c4", data:{name:"紫波町役場 都市計画課", phone:"", address:"岩手県", registeredDate:"2026-09-18"}},
-      {id:"c5", data:{name:"亀田 幸宏", phone:"090-3364-6725", address:"岩手県盛岡市月が丘1丁目4-22", registeredDate:"2026-09-17"}}
-    ],
     members: [
       {id:"m1", data:{name:"阿部 晋太郎", phone:"09011110000", company:"株式会社三桜", roles:["営業"], kind:"internal", password:"1234", isAdmin:true, permission:"admin"}},
       {id:"m2", data:{name:"佐藤 裕之", phone:"09011110001", company:"株式会社三桜", roles:["営業"], kind:"internal", password:"1234", permission:"general"}},
@@ -1114,33 +1123,6 @@
       {id:"m6", data:{name:"因幡 隆", company:"株式会社三桜", roles:["現場監督"], kind:"internal", password:"1234", permission:"general"}},
       {id:"m7", data:{name:"小見 清志", company:"有限会社小見塗装", roles:["塗装"], kind:"external", password:"1234", permission:"external"}},
       {id:"m8", data:{name:"熊谷 義男", company:"株式会社三桜", roles:["解体"], kind:"external", password:"1234", permission:"external"}}
-    ],
-    projects: [
-      {id:"p1", data:{name:"福川伸夫様邸 除草作業", type:"除草・草刈作業", status:"施工中", customerId:"c1", customerName:"福川 伸夫", address:"岩手県盛岡市箱清水1-7-16", amount:178200, assignees:["阿部 晋太郎","鷹羽 悠希"], startDate:"2026-09-29", endDate:"2026-09-30", createdAt:"2026-09-10T09:00:00.000Z"}},
-      {id:"p2", data:{name:"【リーガル】桜井ビル3階 原状回復工事", type:"原状回復工事", status:"施工中", customerId:"c2", customerName:"(株)リーガルスムーズ", address:"岩手県花巻市吹張町9-16", amount:0, assignees:["因幡 隆","佐藤 裕之","瀬戸 美奈","鷹羽 悠希","松草 美佳子","小見 清志"], startDate:"", endDate:"", createdAt:"2026-09-09T09:00:00.000Z"}},
-      {id:"p3", data:{name:"【リーガル】ロイヤルコーポ青山101 原状回復工事", type:"原状回復工事", status:"施工中", customerId:"c2", customerName:"(株)リーガルスムーズ", address:"青森県青森県十和田市東二十三番町28-63", amount:0, assignees:["佐藤 裕之","瀬戸 美奈","松草 美佳子","小見 清志"], startDate:"2026-09-11", endDate:"", createdAt:"2026-09-01T09:00:00.000Z"}},
-      {id:"p4", data:{name:"多田宅（今増真喜子様）庭木剪定・伐採", type:"その他", status:"見積提出済", customerId:"c3", customerName:"今増 真喜子", address:"岩手県盛岡市永井20地割5-68", amount:500000, assignees:["阿部 晋太郎","鷹羽 悠希"], startDate:"", endDate:"2026-10-28", createdAt:"2026-09-10T09:00:00.000Z"}},
-      {id:"p5", data:{name:"R8【秋田仙北】千屋地区(4)林道除草作業", type:"除草・草刈作業", status:"施工中", customerId:"c4", customerName:"紫波町役場 都市計画課", address:"秋田県仙北市田沢湖生保内武蔵野1-1-7", amount:0, assignees:["阿部 晋太郎","佐藤 裕之","瀬戸 美奈"], startDate:"", endDate:"", createdAt:"2026-08-26T09:00:00.000Z"}},
-      {id:"p6", data:{name:"【大東・維持】10月分 ラッフィナート 建物・敷地清掃", type:"建物・敷地清掃", status:"現地調査済", customerId:"c5", customerName:"亀田 幸宏", address:"岩手県盛岡市中堤町2番地25", amount:0, assignees:["瀬戸 美奈","松草 美佳子"], startDate:"", endDate:"", createdAt:"2026-09-27T09:00:00.000Z"}},
-      {id:"p7", data:{name:"赤坂智仙様 遺品整理", type:"その他", status:"見積提出済", customerId:"c3", customerName:"今増 真喜子", address:"福島県いわき市平南白土字竹ノ下1-1-301", amount:0, assignees:["瀬戸 美奈","鷹羽 悠希","松草 美佳子","小見 清志"], startDate:"", endDate:"", createdAt:"2026-09-25T09:00:00.000Z"}},
-      {id:"p8", data:{name:"県南清掃(株) 排水管清掃", type:"排水管清掃", status:"失注", customerId:"c5", customerName:"亀田 幸宏", address:"青森県十和田市三本木字野崎40-370", amount:0, assignees:["佐藤 裕之"], startDate:"", endDate:"", createdAt:"2026-09-03T09:00:00.000Z"}}
-    ],
-    tasks: [
-      {id:"t1", data:{title:"報告書提出", projectId:"p1", projectName:"福川伸夫様邸 除草作業", dueDate:"2026-09-29", done:false}},
-      {id:"t2", data:{title:"現地確認（大蔵沢林道）", projectId:"p5", projectName:"R8【秋田仙北】千屋地区(4)林道除草作業", dueDate:"2026-09-30", done:false}},
-      {id:"t3", data:{title:"見積書送付", projectId:"p4", projectName:"多田宅（今増真喜子様）庭木剪定・伐採", dueDate:"2026-09-30", done:false}},
-      {id:"t4", data:{title:"契約書回収", projectId:"p2", projectName:"【リーガル】桜井ビル3階 原状回復工事", dueDate:"2026-10-02", done:false}},
-      {id:"t5", data:{title:"安全巡回", projectId:"p3", projectName:"【リーガル】ロイヤルコーポ青山101 原状回復工事", dueDate:"2026-10-01", done:false}}
-    ],
-    chats: [
-      {id:"ch1", data:{kind:"project", name:"福川伸夫様邸 除草作業", projectId:"p1", updatedAt:"2026-09-29T08:00:00.000Z"}},
-      {id:"ch2", data:{kind:"group", name:"【共有】秋田林道グループ", updatedAt:"2026-09-28T17:00:00.000Z"}},
-      {id:"ch3", data:{kind:"project", name:"【リーガル】桜井ビル3階 原状回復工事", projectId:"p2", updatedAt:"2026-09-27T12:00:00.000Z"}}
-    ],
-    messages: [
-      {id:"msg1", chatId:"ch1", data:{author:"瀬戸 美奈", text:"本日の除草作業、予定通り完了しました。写真は後ほど共有します。", ts:"2026-09-29T08:10:00.000Z"}},
-      {id:"msg2", chatId:"ch1", data:{author:"阿部 晋太郎", text:"お疲れ様です。報告書の提出も本日中にお願いします。", ts:"2026-09-29T08:15:00.000Z"}},
-      {id:"msg3", chatId:"ch2", data:{author:"佐藤 裕之", text:"千屋地区の林道除草、明日の現地確認よろしくお願いします。", ts:"2026-09-28T17:00:00.000Z"}}
     ]
   };
 </script>
@@ -1831,6 +1813,13 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-20-1", title:"11月20日の更新（安全性の強化）", items:[
+      {t:"ログインに続けて失敗すると、しばらく入力できなくなります", d:"パスワードの総当たりを防ぐため、5回続けて間違えると30秒、その後は間違えるたびに待ち時間がのびます（最長15分）。正しくログインできれば元に戻ります。"},
+      {t:"アプリが開けないときに、案内が出るようになりました", d:"読み込みに失敗したときは、画面の下に「もう一度読み込む」「復旧ページを開く」の案内が出ます。"},
+      {t:"端末で起きたエラーが操作ログに残ります（管理者）", d:"誰の端末の、どの画面で、どんなエラーが起きたかを、設定 → 操作ログで「エラー」として確認できます。不具合の原因を早く見つけられます。", admin:true},
+      {t:"AIアシスタントに1日の利用回数の上限を設けました", d:"使いすぎや不正な利用を防ぐため、1人あたり1日150回までにしました。"},
+      {t:"画面の読み上げに対応したボタンを増やしました", d:"アイコンだけのボタンにも、読み上げ用の名前が付きます。"}
+    ]},
     {id:"2026-11-19-2", title:"11月19日の更新（2）", items:[
       {t:"連携アプリに「ファイルを小さくするアプリ」を追加しました", d:"メニューの「連携アプリ」から開けます。JPEGとPDFをまとめて小さくでき、メールやLINE WORKSで送れないときに使えます。ファイルは外部に送られず、この端末の中だけで処理します（PDFは各ページを画像にして作り直すため、文字の選択や検索はできなくなります）。名前・説明・使える人は、設定の「連携アプリ」で変えられます。"},
       {t:"AIアシスタントから、案件や画面を呼び出して開けるようになりました", d:"「○○様の案件を開いて」「施工中で担当が△△の案件を探して」「ファイル画面を開いて」のように頼むと、該当の案件・画面へのボタンが出ます。押すとそのまま開きます。見える案件・画面は、ご自身の権限の範囲だけです。"}
@@ -2275,22 +2264,37 @@
     }catch(e){}
   }
   function maskLoginId(v){ var d = String(v||"").replace(/\D/g,""); return d.length>=8 ? "電話番号 …"+d.slice(-4) : String(v||""); }
+  function loginFailGet(){ try{ var o = JSON.parse(localStorage.getItem("gc_lfail")||"{}"); return {n:Number(o.n)||0, until:Number(o.until)||0}; }catch(e){ return {n:0, until:0}; } }
+  function loginFailSet(o){ try{ if(o) localStorage.setItem("gc_lfail", JSON.stringify(o)); else localStorage.removeItem("gc_lfail"); }catch(e){} }
+  function loginWaitText(ms){ var sec = Math.max(1, Math.ceil(ms/1000)); return sec>=60 ? Math.ceil(sec/60)+"分" : sec+"秒"; }
   function attemptLogin(){
     clearLoginError();
     var idv = document.getElementById("login-name").value.trim();
     var pass = document.getElementById("login-password").value;
     if(!idv || !pass){ showLoginError("電話番号（または氏名）とパスワードを入力してください"); return; }
+    var lf = loginFailGet();
+    if(lf.until > Date.now()){ showLoginError("ログインに続けて失敗したため、しばらく入力できません。あと"+loginWaitText(lf.until-Date.now())+"お待ちください"); return; }
     if(!state.loaded.members){ showLoginError("データを読み込み中です。少し待ってから再度お試しください"); return; }
     var n = normPhone(idv), nn = normName(idv);
     var okPw = function(x){ return x.password && x.password===pass; };
     // 電話番号 → 氏名（空白の有無・全角半角は区別しない）の順に照合する
     var m = (n.length>=8) ? state.members.find(function(x){ return normPhone(x.phone)===n && okPw(x); }) : null;
     if(!m && nn) m = state.members.find(function(x){ return normName(x.name)===nn && okPw(x); });
-    if(!m){ recordLogin("fail", maskLoginId(idv), ""); showLoginError("電話番号（氏名）またはパスワードが正しくありません"); return; }
+    if(!m){
+      recordLogin("fail", maskLoginId(idv), "");
+      lf.n = (lf.n||0)+1;
+      // 5回続けて失敗したら30秒、その後は失敗のたびに倍（最長15分）待ってもらう
+      if(lf.n>=5) lf.until = Date.now() + Math.min(15*60000, 30000*Math.pow(2, lf.n-5));
+      loginFailSet(lf);
+      showLoginError("電話番号（氏名）またはパスワードが正しくありません"+(lf.n>=5 ? "。続けて失敗したため、"+loginWaitText(lf.until-Date.now())+"入力できません" : (lf.n>=3 ? "（あと"+(5-lf.n)+"回失敗すると、しばらく入力できなくなります）" : "")));
+      return;
+    }
+    loginFailSet(null);
     completeLogin(m, document.getElementById("login-remember").checked, "login");
   }
   function completeLogin(m, remember, kind){
     state.authed = true;
+    setTimeout(function(){ try{ window.__onAppErr(); }catch(e){} }, 3000);
     try{ trackAppMode(m); }catch(e){}
     if(kind==="login") recordLogin("login", m.name, m.name);
     else if(kind==="auto"){ try{ var lastA = Number(localStorage.getItem("gc_lastauto_log")||0); if(Date.now()-lastA > 6*3600*1000){ recordLogin("auto", m.name, m.name); localStorage.setItem("gc_lastauto_log", String(Date.now())); } }catch(e){} }
@@ -10435,7 +10439,7 @@
       '<button class="btn" id="ad-reload">'+(L.loading?"更新中…":"最新の情報に更新")+'</button><button class="btn outline" id="ad-csv">'+iDownload()+' CSV出力</button></div></div>';
     html += '<div class="summary-line"><span>記録 <b>'+list.length+'</b>件'+(list.length>500?'（新しい500件を表示）':'')+' ／ 読み込み済み '+L.list.length+'件</span></div>';
     html += list.length ? '<div class="tablewrap"><table><thead><tr><th>日時</th><th>メンバー</th><th>操作</th><th>対象</th><th>内容</th></tr></thead><tbody>'+list.slice(0,500).map(function(x){
-      var cls = x.action==="削除" ? "danger" : (x.action==="登録" ? "" : "muted");
+      var cls = (x.action==="削除"||x.action==="エラー") ? "danger" : (x.action==="登録" ? "" : "muted");
       return '<tr><td class="num" data-label="日時">'+fmtDateTime(x.ts)+'</td><td class="cell-main">'+esc(x.by||"—")+'</td><td data-label="操作"><span class="tag '+cls+'">'+esc(x.action)+'</span></td><td data-label="対象"><div style="font-size:11.5px;color:var(--ink-faint)">'+esc(x.colLabel||x.col)+'</div><div style="font-size:12.5px">'+esc(x.label||"—")+'</div></td><td data-label="内容" style="font-size:12px;line-height:1.6">'+esc(x.detail||"")+'</td></tr>';
     }).join("")+'</tbody></table></div>' : emptyState(iBox,"該当する記録がありません","操作を行うとここに残ります");
     if(db && L.list.length>=(L.lim||300)) html += '<div style="text-align:center;margin:14px 0"><button class="btn outline" id="ad-more">さらに古い記録を読み込む</button></div>';
@@ -12811,7 +12815,7 @@
 
   /* ============ db writes ============ */
   /* ============ 操作ログ（誰が・いつ・何を入力／変更／削除したか。管理者が 設定→操作ログ で全件見られる） ============ */
-  var AUDIT_COLS = {projects:"案件", customers:"顧客", tasks:"タスク", steps:"工程", events:"予定", reports:"報告書", files:"写真・ファイル", folders:"フォルダ", members:"メンバー", budgets:"予算", shifts:"シフト", chats:"チャット", cards:"名刺", snsPosts:"SNS投稿", settings:"設定"};
+  var AUDIT_COLS = {app:"アプリ（エラー）", projects:"案件", customers:"顧客", tasks:"タスク", steps:"工程", events:"予定", reports:"報告書", files:"写真・ファイル", folders:"フォルダ", members:"メンバー", budgets:"予算", shifts:"シフト", chats:"チャット", cards:"名刺", snsPosts:"SNS投稿", settings:"設定"};
   var AUDIT_KEYS = {name:"名前", title:"件名", status:"進捗", amount:"金額", done:"完了", dueDate:"期限", assignee:"担当", note:"メモ", startDate:"開始日", endDate:"終了日", progress:"進捗率", filename:"ファイル名", folderId:"フォルダ", division:"事業部", type:"種類", customerName:"顧客", phone:"電話", email:"メール", company:"会社", date:"日付", category:"分類", text:"内容", instructions:"指示書", permission:"権限", workInstruction:"施工指示", address:"住所", assignees:"担当者"};
   var AUDIT_SKIP = {customerRegion:1, addressMode:1, region:1, updatedAt:1, updatedBy:1, createdAt:1, createdBy:1, history:1, id:1, url:1, marks:1, instrTrash:1, docDrafts:1, secretFields:1};
   function auditShort(v, n){
@@ -12841,6 +12845,20 @@
     return String(r[f] || r.projectName || r.name || r.title || "").slice(0,60);
   }
   var localAudit = [];
+  // 端末で起きたエラーを操作ログに残す（同じ内容は1回だけ・1回の起動で5件まで）
+  var errSent = {}, errCount = 0;
+  window.__onAppErr = function(){
+    try{
+      if(!state.myName) return;
+      var a = window.__errs || [];
+      while(a.length){
+        var x = a.shift(), k = x.m+"|"+x.s;
+        if(errSent[k] || errCount>=5) continue;
+        errSent[k] = 1; errCount++;
+        auditLog("エラー", "app", "", x.m, x.s+" ／ 画面:"+state.tab+" ／ "+deviceSummary()+" ／ 版:"+((RELEASES[0]||{}).id||""));
+      }
+    }catch(e){}
+  };
   function auditLog(action, col, id, label, detail){
     var rec = {ts:new Date().toISOString(), by:state.myName||"", action:action, col:col, colLabel:AUDIT_COLS[col]||col, docId:id||"", label:String(label||"").slice(0,80), detail:String(detail||"").slice(0,400)};
     if(!db){ localAudit.unshift(Object.assign({id:uid()}, rec)); return; }
@@ -15184,11 +15202,11 @@
     {id:"m4", name:"小見 清志", company:"有限会社小見塗装", roles:["塗装"], kind:"external", permission:"external"}
   ];
   var SAMPLE_CUSTOMERS = [
-    {id:"c1", name:"福川 伸夫", address:"岩手県盛岡市箱清水1-7-16", phone:"090-3365-4901", registeredDate:t0},
+    {id:"c1", name:"福川 伸夫", address:"岩手県盛岡市（サンプル）1-2-3", phone:"090-0000-0000", registeredDate:t0},
     {id:"c2", name:"(株)リーガルスムーズ", address:"東京都", phone:"", registeredDate:t0}
   ];
   var SAMPLE_PROJECTS = [
-    {id:"p1", name:"福川伸夫様邸 除草作業", address:"岩手県盛岡市箱清水1-7-16", customerId:"c1", customerName:"福川 伸夫", type:"除草・草刈作業", status:"施工中", startDate:t0, endDate:t0, amount:178200, assignees:[{name:"阿部 晋太郎",kind:"internal",status:"未確認"},{name:"鷹羽 悠希",kind:"internal",status:"確認済"}], createdAt:t0+"T09:00:00.000Z"},
+    {id:"p1", name:"福川伸夫様邸 除草作業", address:"岩手県盛岡市（サンプル）1-2-3", customerId:"c1", customerName:"福川 伸夫", type:"除草・草刈作業", status:"施工中", startDate:t0, endDate:t0, amount:178200, assignees:[{name:"阿部 晋太郎",kind:"internal",status:"未確認"},{name:"鷹羽 悠希",kind:"internal",status:"確認済"}], createdAt:t0+"T09:00:00.000Z"},
     {id:"p2", name:"【リーガル】桜井ビル3階 原状回復工事", address:"岩手県花巻市吹張町9-16", customerId:"c2", customerName:"(株)リーガルスムーズ", type:"原状回復工事", status:"施工中", startDate:t0, endDate:t0, amount:0, assignees:[{name:"因幡 隆",kind:"internal",status:"未確認"},{name:"佐藤 裕之",kind:"internal",status:"未確認"}], createdAt:t0+"T09:00:00.000Z"}
   ];
   var SAMPLE_TASKS = [
@@ -15200,7 +15218,13 @@
   ];
   var SAMPLE_MSGS = { ch1:[{author:"瀬戸 美奈", text:"本日の作業完了しました。写真は後ほど共有します。", ts:t0}] };
 
+  // 読み上げ対応：アイコンだけのボタンに、説明（title）を読み上げ用の名前として付ける
+  try{
+    var ariaT = 0, ariaFix = function(){ ariaT = 0; try{ document.querySelectorAll("button[title]:not([aria-label]),a[title]:not([aria-label])").forEach(function(b){ if(!String(b.textContent||"").trim()) b.setAttribute("aria-label", b.getAttribute("title")); }); }catch(e){} };
+    if(window.MutationObserver) new MutationObserver(function(){ if(!ariaT) ariaT = setTimeout(ariaFix, 400); }).observe(document.body, {childList:true, subtree:true});
+  }catch(e){}
   boot();
+  window.__appBooted = true;
 })();
 </script>
 
