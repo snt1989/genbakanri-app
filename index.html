@@ -1833,6 +1833,7 @@
   var RELEASES = [
     {id:"2026-11-19-2", title:"11月19日の更新（2）", items:[
       {t:"連携アプリに「ファイルを小さくするアプリ」を追加しました", d:"メニューの「連携アプリ」から開けます。JPEGとPDFをまとめて小さくでき、メールやLINE WORKSで送れないときに使えます。ファイルは外部に送られず、この端末の中だけで処理します（PDFは各ページを画像にして作り直すため、文字の選択や検索はできなくなります）。名前・説明・使える人は、設定の「連携アプリ」で変えられます。"}
+      {t:"AIアシスタントから、案件や画面を呼び出して開けるようになりました", d:"「○○様の案件を開いて」「施工中で担当が△△の案件を探して」「ファイル画面を開いて」のように頼むと、該当の案件・画面へのボタンが出ます。押すとそのまま開きます。見える案件・画面は、ご自身の権限の範囲だけです。"}
     ]},
     {id:"2026-11-19-1", title:"11月19日の更新", items:[
       {t:"AIアシスタントから案件を登録するとき、必要なら顧客も一緒に登録します", d:"依頼文に書かれた顧客名・ふりがな・電話・メール・住所・担当者を読み取り、まだ登録されていない顧客なら、案件と一緒に新しい顧客として登録します（確認画面に内容が出ます）。登録済みの顧客と同じ（表記ゆれ・電話番号が同じ）なら、新しく作らずその顧客を使います。"}
@@ -4435,6 +4436,7 @@
     var cl = function(x,n){ return String(x==null?"":x).replace(/[\r\n|]+/g," ").slice(0,n); };
     L.push("【進捗の選択肢】"+STATUS_LIST.join("、"));
     L.push("【メンバー】"+state.members.map(function(m){ return m.name; }).slice(0,80).join("、"));
+    L.push("【開ける画面】（画面ID＝名前）"+TABS.filter(tabVisible).map(function(t){ return t.id+"＝"+t.label+(t.id==="schedule"?"（工程表）":""); }).join("、"));
     L.push("【顧客】（登録済みの顧客名｜ふりがな）"+state.customers.filter(function(c){ return c.name; }).slice(0,400).map(function(c){ return cl(c.name,30)+(c.kana?"｜"+cl(c.kana,30):""); }).join("、"));
     L.push("【案件】（ID|案件名|進捗|種類|事業部|担当|開始～終了"+(adm?"|金額":"")+"|最新メモ）");
     ps.forEach(function(q){
@@ -4456,8 +4458,43 @@
     var msgs = state.ai.msgs.filter(function(m){ return m.text; }).map(function(m){ return {role:m.role, content:m.text}; });
     return fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({action:"assistant", auth:{name:me.name, password:me.password||""}, messages:msgs, context:aiContext(), help:aiHelpText(), today:localToday(), isAdmin:!!state.isAdmin})}).then(function(r){ return r.json(); });
   }
+  // AIの「案件を探す」：キーワード（案件名・顧客名・住所など）・進捗・事業部・担当で、この人に見える案件を絞る。全角半角・大文字小文字は区別しない
+  function aiSearchProjects(i){
+    var nz = function(v){ return String(v||"").normalize("NFKC").toLowerCase().replace(/[\s　]+/g,""); };
+    var toks = String(i.keyword||"").normalize("NFKC").toLowerCase().split(/[\s　,、]+/).filter(Boolean);
+    var lim = Math.max(1, Math.min(15, Math.round(Number(i.limit)||8)));
+    var res = state.projects.filter(function(q){
+      if(i.status && q.status!==i.status) return false;
+      if(i.division && q.division!==i.division) return false;
+      if(i.assignee && !normalizeAssignees(q.assignees).some(function(a){ return nz(a.name)===nz(i.assignee) || nz(a.name).indexOf(nz(i.assignee))!==-1; })) return false;
+      if(!toks.length) return true;
+      var hay = nz([q.name, q.customerName, q.customerKana, q.address, q.propertyAddress, q.prefecture, q.workInstruction].join(" "));
+      return toks.every(function(t){ return hay.indexOf(nz(t))!==-1; });
+    }).sort(function(a,b){ return String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")); });
+    return {total:res.length, items:res.slice(0,lim)};
+  }
+  function aiGoProject(id, page){
+    var pr = state.projects.find(function(x){ return x.id===id; }); if(!pr){ toast("案件が見つかりません"); return; }
+    if(window.innerWidth<=760) state.ai.open = false;
+    if(page==="files") goProjectFiles(id, "detail"); else goProjectDetail(id);
+    aiRender();
+  }
   function aiActionInfo(a){
     var i = a.input||{}, pr = state.projects.find(function(x){ return x.id===i.projectId; });
+    if(a.tool==="open_project"){
+      if(!pr) return {err:"案件が見つかりません"};
+      return {nav:true, label:"案件を開く", lines:[pr.name+(pr.customerName?"（"+pr.customerName+"）":"")], items:[{t:"「"+pr.name+"」を開く", id:pr.id, page:i.page==="files"?"files":"detail"}]};
+    }
+    if(a.tool==="search_projects"){
+      var r = aiSearchProjects(i);
+      if(!r.total) return {nav:true, label:"案件を探しました", lines:["該当する案件はありませんでした"], items:[]};
+      return {nav:true, label:"案件を探しました", lines:[r.total+"件見つかりました"+(r.total>r.items.length?"（上位"+r.items.length+"件を表示）":"")], items:r.items.map(function(q){ return {t:q.name+(q.customerName?"｜"+q.customerName:"")+(q.status?"｜"+q.status:""), id:q.id, page:"detail"}; })};
+    }
+    if(a.tool==="open_screen"){
+      var tb = TABS.filter(tabVisible).find(function(t){ return t.id===i.screen; });
+      if(!tb) return {err:"その画面は開けません（権限がないか、画面がありません）"};
+      return {nav:true, label:"画面を開く", lines:[], items:[{t:"「"+tb.label+(tb.id==="schedule"?"（工程表）":"")+"」を開く", screen:tb.id}]};
+    }
     if(a.tool==="add_task"){
       if(!i.title || !/^\d{4}-\d{2}-\d{2}$/.test(String(i.dueDate||""))) return {err:"タイトルか期限が足りません"};
       if(i.projectId && !pr) return {err:"案件が見つかりません"};
@@ -4522,6 +4559,7 @@
       division:DIVISIONS.indexOf(i.division)!==-1 ? i.division : "", assignees:asg, startDate:iso(i.startDate), endDate:iso(i.endDate), amount:amt, workInstruction:String(i.workInstruction||"").trim().slice(0,500)};
   }
   function aiRunAction(a){
+    if(a.tool==="open_project"||a.tool==="search_projects"||a.tool==="open_screen") return true;
     if(!state.canWrite){ toast("この操作を行う権限がありません"); return false; }
     var i = a.input||{}, pr = state.projects.find(function(x){ return x.id===i.projectId; });
     if(a.tool==="add_task"){ writeDoc("tasks", null, {title:String(i.title).slice(0,60), dueDate:i.dueDate, assignee:i.assignee||state.myName||"", projectId:pr?pr.id:"", projectName:pr?pr.name:"", note:String(i.note||"").slice(0,500), done:false}, "タスクを追加しました"); return true; }
@@ -4587,11 +4625,16 @@
     if(!state.ai.open){ if(box) box.style.display="none"; return; }
     if(!box){ box = document.createElement("div"); box.id = "ai-panel"; document.body.appendChild(box); }
     box.style.display = "flex";
-    var chips = ["今週の施工予定を教えて","期限が過ぎているタスクは？","新しい案件を登録したい","案件のお礼の連絡文を下書きして"];
+    var chips = ["今週の施工予定を教えて","期限が過ぎているタスクは？","新しい案件を登録したい","「施工中」の案件を探して"];
     var body = state.ai.msgs.map(function(m,mi){
       var h = m.text ? '<div class="ai-b '+(m.role==="user"?'ai-u':'ai-a')+'">'+esc(m.text)+'</div>' : '';
       (m.actions||[]).forEach(function(a,ai){
         var inf = aiActionInfo(a);
+        if(inf.nav){
+          h += '<div class="ai-b ai-a" style="border:1px solid var(--border);background:var(--surface,#fff)"><b>'+esc(inf.label)+'</b>'+inf.lines.map(function(l){ return '<div style="font-size:12px;margin-top:4px">'+esc(l)+'</div>'; }).join("")+
+            (inf.items.length?'<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">'+inf.items.map(function(it,ii){ return '<button class="btn sm outline" style="justify-content:flex-start;text-align:left;white-space:normal;line-height:1.4" data-ai-go="'+mi+':'+ai+':'+ii+'">'+esc(it.t)+'</button>'; }).join("")+'</div>':'')+'</div>';
+          return;
+        }
         h += '<div class="ai-b ai-a" style="border:1px solid var(--border);background:var(--surface,#fff)">'+(inf.err?'<span style="color:var(--danger)">実行できません：'+esc(inf.err)+'</span>':
           '<b>'+esc(inf.label)+'（提案）</b><div style="font-size:12px;margin-top:4px">'+inf.lines.map(esc).join("<br>")+'</div><div style="margin-top:8px;display:flex;gap:6px">'+(a.state==="done"?'<span style="color:var(--ink-faint);font-size:12px">実行しました</span>':(a.state==="skip"?'<span style="color:var(--ink-faint);font-size:12px">やめました</span>':'<button class="btn sm primary" data-ai-run="'+mi+':'+ai+'">実行する</button><button class="btn sm" data-ai-skip="'+mi+':'+ai+'">やめる</button>'))+'</div>')+'</div>';
       });
@@ -4599,7 +4642,7 @@
     }).join("");
     if(state.ai.busy) body += '<div class="ai-b ai-a" style="color:var(--ink-faint)">考えています…</div>';
     if(state.ai.enabled===false) body = '<div class="ai-b ai-a">AIアシスタントはまだ有効になっていません。管理者が、Vercelの環境変数 <b>ANTHROPIC_API_KEY</b> を登録して再デプロイすると使えます。</div>';
-    else if(!state.ai.msgs.length) body = '<div class="ai-b ai-a">こんにちは、AIロボです！案件・タスク・予定について聞いたり、文章の下書き、アプリの使い方の質問、操作（案件登録・タスク追加・進捗変更・メモ追加）の依頼ができます。操作は、確認してから実行します。</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+chips.map(function(c){ return '<button class="btn sm outline" data-ai-chip="'+esc(c)+'">'+esc(c)+'</button>'; }).join("")+'</div>';
+    else if(!state.ai.msgs.length) body = '<div class="ai-b ai-a">こんにちは、AIロボです！案件・タスク・予定について聞いたり、文章の下書き、アプリの使い方の質問、操作（案件登録・タスク追加・進捗変更・メモ追加）や、案件・画面を開く依頼ができます。操作は、確認してから実行します。</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+chips.map(function(c){ return '<button class="btn sm outline" data-ai-chip="'+esc(c)+'">'+esc(c)+'</button>'; }).join("")+'</div>';
     var keep = document.getElementById("ai-in") ? document.getElementById("ai-in").value : "";
     box.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border,#ddd)"><span style="display:inline-flex">'+aiKunSvg(30)+'</span><b style="flex:1;font-size:14px">AIロボ（アシスタント）</b><button class="btn sm" id="ai-clear">新しい会話</button><button class="btn sm" id="ai-close">閉じる</button></div>'+
       '<div class="ai-msgs" id="ai-msgs">'+body+'</div>'+
@@ -4624,6 +4667,10 @@
     inp.addEventListener("keydown", function(ev){ if(ev.key==="Enter" && (ev.ctrlKey||ev.metaKey)){ ev.preventDefault(); send(inp.value); } });
     box.querySelectorAll("[data-ai-chip]").forEach(function(b){ b.addEventListener("click", function(){ send(b.getAttribute("data-ai-chip")); }); });
     box.querySelectorAll("[data-ai-run]").forEach(function(b){ b.addEventListener("click", function(){ var ix = b.getAttribute("data-ai-run").split(":"), a = state.ai.msgs[+ix[0]].actions[+ix[1]]; if(aiRunAction(a)){ a.state = "done"; aiRender(); } }); });
+    box.querySelectorAll("[data-ai-go]").forEach(function(b){ b.addEventListener("click", function(){
+      var ix = b.getAttribute("data-ai-go").split(":"), inf = aiActionInfo(state.ai.msgs[+ix[0]].actions[+ix[1]]), it = inf.items && inf.items[+ix[2]]; if(!it) return;
+      if(it.screen){ if(window.innerWidth<=760) state.ai.open = false; setTab(it.screen); aiRender(); } else aiGoProject(it.id, it.page);
+    }); });
     box.querySelectorAll("[data-ai-skip]").forEach(function(b){ b.addEventListener("click", function(){ var ix = b.getAttribute("data-ai-skip").split(":"); state.ai.msgs[+ix[0]].actions[+ix[1]].state = "skip"; aiRender(); }); });
   }
   function aiProbe(){
