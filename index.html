@@ -1831,6 +1831,9 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-19-1", title:"11月19日の更新", items:[
+      {t:"AIアシスタントから案件を登録するとき、必要なら顧客も一緒に登録します", d:"依頼文に書かれた顧客名・ふりがな・電話・メール・住所・担当者を読み取り、まだ登録されていない顧客なら、案件と一緒に新しい顧客として登録します（確認画面に内容が出ます）。登録済みの顧客と同じ（表記ゆれ・電話番号が同じ）なら、新しく作らずその顧客を使います。"}
+    ]},
     {id:"2026-11-17-1", title:"11月17日の更新", items:[
       {t:"黒板アプリで案件の写真を読み込み、黒板を付けた写真を案件に保存できます", d:"案件の「連携アプリ」の黒板ボタンから開くと、その案件の写真を選んで黒板アプリに読み込めます。黒板を付けた写真は「案件に保存」で、その案件の「写真・ファイル」に追加されます（元の写真は残ります）。"},
       {t:"案件の画面から黒板アプリを開くと、案件の情報が渡るようになりました", d:"「連携アプリ」の黒板ボタンで、工事名・施工者・工種・場所などを黒板アプリに渡します。黒板アプリで、どの欄に入れるかを選んで入力できます。"},
@@ -4429,6 +4432,7 @@
     var cl = function(x,n){ return String(x==null?"":x).replace(/[\r\n|]+/g," ").slice(0,n); };
     L.push("【進捗の選択肢】"+STATUS_LIST.join("、"));
     L.push("【メンバー】"+state.members.map(function(m){ return m.name; }).slice(0,80).join("、"));
+    L.push("【顧客】（登録済みの顧客名｜ふりがな）"+state.customers.filter(function(c){ return c.name; }).slice(0,400).map(function(c){ return cl(c.name,30)+(c.kana?"｜"+cl(c.kana,30):""); }).join("、"));
     L.push("【案件】（ID|案件名|進捗|種類|事業部|担当|開始～終了"+(adm?"|金額":"")+"|最新メモ）");
     ps.forEach(function(q){
       var memo = projMemos(q).slice().sort(function(a,b){ return String(b.at||"").localeCompare(String(a.at||"")); })[0];
@@ -4468,14 +4472,37 @@
     }
     if(a.tool==="create_project"){
       var d = aiProjectData(i); if(d.err) return {err:d.err};
-      var lines = ["案件名："+d.name, "顧客："+(d.customerName ? d.customerName+(state.customers.some(function(c){ return c.name===d.customerName; })?"":"（新しく顧客登録します）") : "（未設定）"),
-        "進捗："+d.status].concat(d.address?["物件住所："+d.address]:[]).concat(d.division?["事業部："+d.division]:[]).concat(d.assignees.length?["担当："+d.assignees.map(function(x){ return x.name; }).join("、")]:[])
+      var fc = d.customerName ? aiFindCustomer(d.customerName, d.cust.phone) : null, nc = (d.customerName && !fc) ? aiNewCustomerData(d) : null;
+      var lines = ["案件名："+d.name, "顧客："+(d.customerName ? (fc ? fc.c.name+(fc.how==="near" ? "（登録済みの顧客「"+fc.c.name+"」を使います）" : "（登録済み）") : d.customerName+"（新しく顧客登録します）") : "（未設定）")]
+        .concat(nc ? [nc.entityType?"　顧客の種別："+nc.entityType:null, nc.kana?"　ふりがな："+nc.kana:null, nc.phone?"　電話："+nc.phone:null, nc.email?"　メール："+nc.email:null, (nc.prefecture||nc.address)?"　住所："+(nc.postalCode?"〒"+nc.postalCode+" ":"")+(nc.prefecture||"")+(nc.address||""):null, nc.contactName?"　担当者："+nc.contactName:null].filter(Boolean) : [])
+        .concat(["進捗："+d.status]).concat(d.address?["物件住所："+d.address]:[]).concat(d.division?["事業部："+d.division]:[]).concat(d.assignees.length?["担当："+d.assignees.map(function(x){ return x.name; }).join("、")]:[])
         .concat((d.startDate||d.endDate)?["期間："+(d.startDate||"？")+" 〜 "+(d.endDate||"？")]:[]).concat(d.amount?["契約金額："+d.amount.toLocaleString()+"円"]:[]).concat(d.workInstruction?["作業内容："+d.workInstruction.slice(0,120)]:[]);
       var dups = findProjectDuplicates({name:d.name, customerName:d.customerName, propertyAddress:d.address, address:d.address}, null);
       if(dups.length) lines.push("⚠ 似た案件があります："+dups.slice(0,3).map(function(x){ return x.p.name; }).join("、"));
       return {label:"案件を登録", lines:lines};
     }
     return {err:"未対応の操作です"};
+  }
+  // AIが案件登録で出した顧客が、登録済みの顧客と同じかを調べる（表記ゆれ・電話番号が同じも「同じ顧客」とみなし、重複登録を避ける）
+  function aiFindCustomer(name, phone){
+    if(!name) return null;
+    var list = state.customers.filter(function(c){ return c.name; });
+    var ex = list.find(function(c){ return c.name===name; });
+    if(ex) return {c:ex, how:"same"};
+    var nn = custNormName(name);
+    var near = nn.length>=2 ? list.find(function(c){ return custNormName(c.name)===nn; }) : null;
+    if(!near){ var pn = normPhone(phone); if(pn.length>=8) near = list.find(function(c){ return normPhone(c.phone)===pn || normPhone(c.mobile)===pn; }); }
+    return near ? {c:near, how:"near"} : null;
+  }
+  // 新しい顧客として登録する内容（依頼文に書かれていたことだけ）。住所の都道府県は住所の頭から切り分ける
+  function aiNewCustomerData(d){
+    var c = d.cust||{}, addr = c.address||"", pref = "";
+    for(var k=0;k<PREFS.length;k++){ if(addr.indexOf(PREFS[k])===0){ pref = PREFS[k]; addr = addr.slice(PREFS[k].length); break; } }
+    var et = c.entityType || (/株式会社|有限会社|合同会社|㈱|㈲|\(株\)|\(有\)|組合|協会|法人|事務所|局|省|庁|学校|病院|団体|管理会社|不動産/.test(d.customerName) ? "法人" : "個人");
+    var o = {name:d.customerName, entityType:et, region:"国内"};
+    if(c.kana) o.kana = c.kana; if(c.phone) o.phone = c.phone; if(c.email) o.email = c.email; if(c.contactName) o.contactName = c.contactName;
+    if(c.postalCode) o.postalCode = c.postalCode; if(pref) o.prefecture = pref; if(addr) o.address = addr;
+    return o;
   }
   // AIの提案（案件登録）を、保存できる形に整える。足りない・おかしい項目は err か、空にする
   function aiProjectData(i){
@@ -4485,7 +4512,10 @@
     var status = STATUS_LIST.indexOf(i.status)!==-1 ? i.status : "現地調査前";
     var asg = []; (Array.isArray(i.assignees)?i.assignees:[]).forEach(function(n){ var m = state.members.find(function(x){ return x.name===n; }); if(m && !asg.some(function(a){ return a.name===m.name; })) asg.push({name:m.name, kind:m.kind||"internal", status:"未確認"}); });
     var amt = state.isAdmin ? Math.max(0, Math.round(Number(i.amount)||0)) : 0;
-    return {name:name, customerName:String(i.customerName||"").trim().slice(0,80), address:String(i.address||"").trim().slice(0,150), status:status,
+    var tr = function(v,n){ return String(v||"").replace(/\s+/g," ").trim().slice(0,n); };
+    var cust = {kana:tr(i.customerKana,60), phone:tr(i.customerPhone,30), email:tr(i.customerEmail,80), postalCode:tr(i.customerPostalCode,10), address:tr(i.customerAddress,150),
+      entityType:(i.customerEntityType==="法人"||i.customerEntityType==="個人") ? i.customerEntityType : "", contactName:tr(i.customerContactName,40)};
+    return {cust:cust, name:name, customerName:String(i.customerName||"").trim().slice(0,80), address:String(i.address||"").trim().slice(0,150), status:status,
       division:DIVISIONS.indexOf(i.division)!==-1 ? i.division : "", assignees:asg, startDate:iso(i.startDate), endDate:iso(i.endDate), amount:amt, workInstruction:String(i.workInstruction||"").trim().slice(0,500)};
   }
   function aiRunAction(a){
@@ -4503,7 +4533,7 @@
         var o = {}; Object.keys(CUSTOMER_PROJECT_KEYS).forEach(function(k){ o[CUSTOMER_PROJECT_KEYS[k]] = cdata[k]==null ? "" : cdata[k]; });
         ensureCustomer(cdata, function(customerId){ data.customerId = customerId; Object.assign(data, o); writeDoc("projects", null, data, "案件「"+d.name+"」を登録しました"); });
       };
-      if(d.customerName){ var ex = state.customers.find(function(c){ return c.name===d.customerName; }); save(ex ? Object.assign({}, ex) : {name:d.customerName}); }
+      if(d.customerName){ var ex = aiFindCustomer(d.customerName, d.cust.phone); save(ex ? Object.assign({}, ex.c) : aiNewCustomerData(d)); }
       else { data.customerId = ""; writeDoc("projects", null, data, "案件「"+d.name+"」を登録しました"); }
       return true;
     }
