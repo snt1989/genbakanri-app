@@ -667,6 +667,20 @@
   .detail-grid{display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:flex-start;max-width:1180px;}
   .detail-grid > *{min-width:0;}
   @media (max-width:960px){.detail-grid{grid-template-columns:minmax(0,1fr);}}
+  /* 案件詳細のタブ */
+  .pd-tabs{display:flex;gap:2px;border-bottom:2px solid var(--border);margin:4px 0 16px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;position:sticky;top:0;z-index:5;background:var(--bg);}
+  .pd-tabs::-webkit-scrollbar{display:none;}
+  .pd-tab{flex:0 0 auto;appearance:none;-webkit-appearance:none;background:none;border:0;border-bottom:3px solid transparent;margin-bottom:-2px;padding:11px 16px 9px;font:inherit;font-size:13.5px;font-weight:700;color:var(--ink-soft);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;border-radius:8px 8px 0 0;}
+  .pd-tab:hover{color:var(--ink);background:var(--surface-2,rgba(0,0,0,.03));}
+  .pd-tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .pd-n{font-size:10.5px;font-weight:700;line-height:1;padding:3px 6px;border-radius:999px;background:var(--border);color:var(--ink-soft);}
+  .pd-tab.active .pd-n{background:var(--accent);color:#fff;}
+  .pd-pane>.form-section-title:first-child{padding-top:0;}
+  @media (max-width:640px){
+    .pd-tabs{margin:2px -4px 14px;gap:0;}
+    .pd-tab{flex:1 0 auto;justify-content:center;padding:11px 5px 9px;font-size:12.5px;gap:3px;}
+    .pd-n{font-size:9.5px;padding:2px 5px;}
+  }
   .detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin:6px 0 16px;}
   .detail-head h1{font-size:19px;}
   .detail-head .updated{font-size:11px;color:var(--ink-faint);}
@@ -1825,6 +1839,12 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-20-3", title:"11月20日の更新（案件詳細をタブ分け）", items:[
+      {t:"案件詳細をタブで切り替えられるようになりました", d:"これまで縦に長く並んでいた内容を、「概要」「ファイル」「工程・予算」「メモ」「報告書」のタブに分けました。見たいところをタップするとすぐ切り替わります。タブは画面を下に動かしても上に残ります。"},
+      {t:"タブの中身", d:"概要＝案件情報・物件情報（地図）・顧客情報。ファイル＝最近の写真と資料。工程・予算＝工程表と予算管理。メモ＝メモと指示書。報告書＝報告書PDFと報告書。件数があるタブには数字が付きます。"},
+      {t:"スマホでは「メンバー」タブが加わります", d:"案件メンバーと、この案件のタスクは「メンバー」タブにまとめました。パソコンでは今までどおり右側に常に表示されます。"},
+      {t:"最後に見ていたタブを覚えます", d:"別の案件を開いても、同じタブが開きます（例：いつも「ファイル」を見る人は、次の案件も「ファイル」から始まります）。"}
+    ]},
     {id:"2026-11-20-2", title:"11月20日の更新（スマホ画面の修正）", items:[
       {t:"スマホでホームが横にはみ出すことがある不具合を直しました", d:"案件名やタスク名が長いと、ホーム全体が横に広がって文字が小さく見えたり、横にずれたりしていました。長い名前は「…」で省略して、画面の幅に収まるようにしました。"},
       {t:"スマホのタスク管理を見やすくしました", d:"タスク名を一番上に大きく出し、「案件・担当者・期限」を項目名つきで並べ、一番下に「完了にする」「編集」「削除」をまとめました。"},
@@ -8366,8 +8386,7 @@
       '</div>';
 
     html += projectAppsHtml(p);
-    html += '<div class="detail-grid">';
-    html += '<div>';
+    var hHead = html; html = "";
 
     html += '<div class="form-section-title" style="padding-top:0"><span>ファイル管理</span></div>';
     var recentImgs = pfiles.filter(isImageFile).slice().reverse().slice(0,5);
@@ -8397,14 +8416,10 @@
       html += '<div style="font-size:12px;color:var(--ink-faint);padding:10px 0;border-top:1px solid var(--border)">資料はまだありません。「ファイル」ページからアップロードできます</div>';
     }
     html += '</div>';
-    var hPre = html; html = "";
+    var hFiles = html; html = "";
 
-    html += projectWorkSection(p);
-
-    html += projectBudgetSection(p);
-
-    html += renderMemoSection(p);
-    html += renderInstrSection(p);
+    var hWork = projectWorkSection(p) + projectBudgetSection(p);
+    var hMemo = renderMemoSection(p) + renderInstrSection(p);
 
     // 報告写真アプリで作って、この案件に保存した報告書PDF
     var rpdfs = pfiles.filter(function(f){ return f.source==="報告写真アプリ"; }).slice().sort(function(x,y){ return String(y.uploadedAt||"").localeCompare(String(x.uploadedAt||"")); });
@@ -8421,7 +8436,7 @@
         '<span class="badge '+((r.status||"下書き")==="提出済"?"line-green":"line-gray")+'">'+esc(r.status||"下書き")+'</span> <button class="btn sm" data-report-edit="'+esc(r.id)+'">'+iEdit()+' 編集</button></div>';
     }).join("")+(prReports.length>8?'<div style="font-size:12px;padding:8px 0"><a href="#" data-goto-reports="'+esc(p.id)+'">すべて見る（'+prReports.length+'件）</a></div>':'') : '<div style="font-size:12px;color:var(--ink-faint);padding:12px 0">この案件の報告書はまだありません</div>')+'</div>';
 
-    var hRest = html; html = "";
+    var hRep = html; html = "";
     var ext = isExternalViewer();
     var lockTag = function(key){ return (!ext && secretSet(p).indexOf(key)!==-1) ? ' '+iLock() : ''; };
     var hint = ext ? '' : '<span class="lockhint">'+iLock()+' ＝ 社外秘（社外メンバーには非表示）</span>';
@@ -8512,20 +8527,38 @@
       (ptasks.length ? ptasks.map(function(t){
         return '<div data-pt-edit="'+esc(t.id)+'" style="display:flex;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line);cursor:pointer"><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600;'+(t.done?'text-decoration:line-through;color:var(--ink-faint)':'')+'">'+esc(t.title||"タスク")+'</div><div class="cell-sub">'+(t.dueDate?'期限 '+esc(fmtDate(t.dueDate)):'')+(t.assignee?'　担当 '+esc(t.assignee):'')+'</div></div>'+(t.done?'<span class="badge">完了</span>':'')+'</div>';
       }).join("") : '<div class="cell-sub" style="margin-top:6px">まだタスクがありません。</div>')+'</div>';
+    var hTasks = html; html = "";
     html += '<div style="margin-top:14px"><button class="btn outline" style="width:100%;justify-content:center" data-copy-summary="'+p.id+'">'+iDownload()+' 案件情報をコピー</button></div>';
     html += '<div style="margin-top:8px"><button class="btn outline" style="width:100%;justify-content:center" data-copy-new="'+p.id+'">この案件をコピーして新規作成</button></div>';
     if(state.isAdmin) html += '<div style="margin-top:8px"><button class="btn outline" style="width:100%;justify-content:center" data-sns-post="'+p.id+'">'+iShare()+' SNS投稿を作る（Instagram）</button></div>';
     if(worksAvailable() && !isExternalViewer()) html += '<div style="margin-top:10px"><button class="btn outline" style="width:100%;justify-content:center" data-mail-project="'+esc(p.id)+'">'+iMail()+' メール（履歴・送信）</button></div>';
-    var hRight = html; html = "";
-    // 並び順：ファイル管理 → 案件メンバー → 案件情報 → 物件情報 → 工程・予算など。
-    // スマホは1列に並べ、PCは左列（ファイル・案件情報・物件情報…）と右列（メンバー・タスク…）に分ける
-    if(window.matchMedia && window.matchMedia("(max-width:960px)").matches){
-      html = hPre + '<div style="margin:14px 0 6px">' + hMember + '</div>' + hInfo + hProp + hRest + hCust + hRight + '</div></div>';
+    var hActs = html; html = "";
+    // タブ分け：概要／ファイル／工程・予算／メモ／報告書（スマホは「メンバー」も）。
+    // PCは右列に案件メンバー・タスク・操作ボタンを常に出し、左列だけをタブで切り替える。スマホは1列で、メンバーとタスクは「メンバー」タブに入れる
+    var narrow = !!(window.matchMedia && window.matchMedia("(max-width:960px)").matches);
+    var undone = ptasks.filter(function(t){ return !t.done; }).length;
+    var repN = rpdfs.length + prReports.length;
+    var pdTabs = [
+      {k:"overview", t:"概要", h: hInfo + hProp + hCust + (narrow ? hActs : "")},
+      {k:"files", t:"ファイル", n: pfiles.length, h: hFiles},
+      {k:"work", t:"工程・予算", h: hWork},
+      {k:"memo", t:"メモ", h: hMemo},
+      {k:"report", t:"報告書", n: repN, h: hRep}
+    ];
+    if(narrow) pdTabs.push({k:"member", t:"メンバー", h: '<div style="margin-top:4px">' + hMember + '</div>' + hTasks});
+    pdTabs = pdTabs.filter(function(x){ return String(x.h||"").trim(); });
+    var cur = pdTabs.filter(function(x){ return x.k===state.pdTab; })[0] || pdTabs[0] || {k:"", h:""};
+    var tabBar = '<div class="pd-tabs" role="tablist">'+pdTabs.map(function(x){
+      return '<button type="button" role="tab" class="pd-tab'+(x.k===cur.k?' active':'')+'" aria-selected="'+(x.k===cur.k?'true':'false')+'" data-pdtab="'+x.k+'">'+x.t+(x.n?'<span class="pd-n"'+(x.nt?' title="'+x.nt+'"':'')+'>'+x.n+'</span>':'')+'</button>';
+    }).join("")+'</div>';
+    var body = '<div class="pd-pane pd-'+cur.k+'" role="tabpanel">' + cur.h + '</div>';
+    if(narrow){
+      html = hHead + tabBar + body;
     }else{
-      html = hPre + hInfo + hProp + hRest + hCust + '</div><div>' + hMember + hRight + '</div></div>';
+      html = hHead + '<div class="detail-grid"><div>' + tabBar + body + '</div><div>' + hMember + hTasks + hActs + '</div></div>';
     }
 
-    html += '<div style="text-align:center;margin-top:26px"><button class="btn ghost" style="color:var(--danger)" data-del-project="'+p.id+'">'+iTrash()+' 案件情報を削除する</button></div>';
+    if(cur.k==="overview") html += '<div style="text-align:center;margin-top:26px"><button class="btn ghost" style="color:var(--danger)" data-del-project="'+p.id+'">'+iTrash()+' 案件情報を削除する</button></div>';
     return html;
   }
   // 未入力（空・「—」「-」だけ）の行は表示しない。「未入力も表示」で一時的に出せる
@@ -14577,6 +14610,7 @@
       confirmDelete(ids.length+"件のファイルを削除しますか？", function(){ state.pfSel={}; ids.forEach(function(id){ deleteDoc("files", id, "削除しました"); }); });
     });
     c.querySelectorAll("[data-list-cust]").forEach(function(el){ el.addEventListener("click", function(ev){ ev.stopPropagation(); openProjectSectionEdit("customer", el.getAttribute("data-list-cust")); }); });
+    c.querySelectorAll("[data-pdtab]").forEach(function(el){ el.addEventListener("click", function(){ var k = el.getAttribute("data-pdtab"); if(state.pdTab===k) return; state.pdTab = k; var y = window.scrollY; render(); try{ window.scrollTo(0, y); }catch(e){} }); });
     c.querySelectorAll("[data-toggle-empty]").forEach(function(el){ el.addEventListener("click", function(e){ e.preventDefault(); state.showEmptyKv = !state.showEmptyKv; render(); }); });
     c.querySelectorAll("[data-edit-section]").forEach(function(el){ el.addEventListener("click", function(){ openProjectSectionEdit(el.getAttribute("data-edit-section"), state.viewingProjectId); }); });
     c.querySelectorAll("[data-edit-project]").forEach(function(el){ el.addEventListener("click", function(){ var p=state.projects.find(function(x){return x.id===el.getAttribute("data-edit-project");}); goProjectForm(state.returnTab, p); }); });
