@@ -678,7 +678,7 @@
   .pd-pane>.form-section-title:first-child{padding-top:0;}
   @media (max-width:640px){
     .pd-tabs{margin:2px -4px 14px;gap:0;}
-    .pd-tab{flex:1 0 auto;justify-content:center;padding:11px 5px 9px;font-size:12.5px;gap:3px;}
+    .pd-tab{flex:1 0 auto;justify-content:center;padding:11px 3px 9px;font-size:12px;gap:2px;}
     .pd-n{font-size:9.5px;padding:2px 5px;}
   }
   .detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin:6px 0 16px;}
@@ -1839,6 +1839,10 @@
      追加すると、まだ見ていない人のお知らせ（ベル）に「アプリが新しくなりました」が出て、タップすると内容が読めます。
      admin:true の項目は管理者にだけ表示されます。 */
   var RELEASES = [
+    {id:"2026-11-20-4", title:"11月20日の更新（案件詳細の調整）", items:[
+      {t:"案件詳細の「メモ」と「指示書」を別のタブに分けました", d:"タブは「概要・ファイル・工程・予算・メモ・指示書・報告書」の順です（スマホは最後に「メンバー」）。"},
+      {t:"案件詳細の連携アプリを、案件で使うものだけにしました", d:"運行管理・備品管理・勤怠・報告写真・黒板・365カメラ・ファイルを小さくするアプリの7つです。ほかのアプリは、メニューの「連携アプリ」から今までどおり開けます。"}
+    ]},
     {id:"2026-11-20-3", title:"11月20日の更新（案件詳細をタブ分け）", items:[
       {t:"案件詳細をタブで切り替えられるようになりました", d:"これまで縦に長く並んでいた内容を、「概要」「ファイル」「工程・予算」「メモ」「報告書」のタブに分けました。見たいところをタップするとすぐ切り替わります。タブは画面を下に動かしても上に残ります。"},
       {t:"タブの中身", d:"概要＝案件情報・物件情報（地図）・顧客情報。ファイル＝最近の写真と資料。工程・予算＝工程表と予算管理。メモ＝メモと指示書。報告書＝報告書PDFと報告書。件数があるタブには数字が付きます。"},
@@ -8358,6 +8362,8 @@
     return '<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:600;color:var(--ink)">変更の履歴（'+h.length+'件）</summary><div style="margin-top:4px;font-size:12px;line-height:1.7">'+h.map(row).join("")+'</div></details>';
   }
   // 案件の画面から、連携アプリをそれぞれ開くボタン（報告写真アプリは、この案件を指定して開く）
+  // 案件詳細に出す連携アプリ（この順番で、これだけを出す。ほかのアプリは「連携アプリ」画面から開く）
+  var PROJECT_APP_KEYS = ["shayosha","bihin","kintai","houkoku","kokuban","camera365","compress"];
   function projectAppsHtml(p){
     var btn = function(a){
       var short = a.name.replace(/アプリ$/,"");
@@ -8371,7 +8377,7 @@
       }
       return '<a class="btn sm outline pa-btn" '+(a.key==="kokuban"?'data-kokuban-project="'+esc(p.id)+'" title="この案件の情報と写真を黒板アプリに渡して開きます。黒板を付けた写真は案件に保存できます" ':'')+(a.sso?'data-bihin-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を指定して備品管理アプリを開きます（持出時の現場名が自動で入ります）" ':'')+(a.site?'data-shayosha-link="1" data-bihin-project="'+esc(p.id)+'" title="この案件の現場名を行先に入れて運行管理アプリを開きます（ログインも引き継ぎます）" ':'')+(a.daito?'data-daito-link="1" title="大東アプリのアカウントがある人だけ入れます" ':'')+(a.jyosetsu?'data-jyosetsu-link="1" ':'')+'href="'+esc(kurl+((a.sso||a.site)?"?site="+encodeURIComponent(p.name||"")+(a.site&&p.division?"&division="+encodeURIComponent(p.division):""):""))+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>';
     };
-    return '<div class="card pa-card"><div class="pa-title">連携アプリ</div><div class="pa-list">'+appLinks().map(btn).join("")+'</div></div>';
+    return '<div class="card pa-card"><div class="pa-title">連携アプリ</div><div class="pa-list">'+PROJECT_APP_KEYS.map(function(k){ return appLinks().filter(function(a){ return a.key===k; })[0]; }).filter(Boolean).map(btn).join("")+'</div></div>';
   }
   function renderProjectDetail(){
     var p = state.projects.find(function(x){return x.id===state.viewingProjectId;});
@@ -8419,7 +8425,7 @@
     var hFiles = html; html = "";
 
     var hWork = projectWorkSection(p) + projectBudgetSection(p);
-    var hMemo = renderMemoSection(p) + renderInstrSection(p);
+    var hMemo = renderMemoSection(p), hInstr = renderInstrSection(p);
 
     // 報告写真アプリで作って、この案件に保存した報告書PDF
     var rpdfs = pfiles.filter(function(f){ return f.source==="報告写真アプリ"; }).slice().sort(function(x,y){ return String(y.uploadedAt||"").localeCompare(String(x.uploadedAt||"")); });
@@ -8543,6 +8549,7 @@
       {k:"files", t:"ファイル", n: pfiles.length, h: hFiles},
       {k:"work", t:"工程・予算", h: hWork},
       {k:"memo", t:"メモ", h: hMemo},
+      {k:"instr", t:"指示書", h: hInstr},
       {k:"report", t:"報告書", n: repN, h: hRep}
     ];
     if(narrow) pdTabs.push({k:"member", t:"メンバー", h: '<div style="margin-top:4px">' + hMember + '</div>' + hTasks});
